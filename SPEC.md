@@ -1,6 +1,6 @@
 # BugHunter — v0.1 spec (revised)
 
-**Status:** Draft, post-review · **Author:** @architect (Opus) · **Reviewer:** @architect (independent Opus pass) · **Date:** 2026-04-25 · **Depends on:** [SurfaceMCP](https://github.com/cunninghambe/SurfaceMCP) (revised), camofox MCP, [ClaudeMCP](https://github.com/cunninghambe/ClaudeMCP) (optional)
+**Status:** Draft, post-review, post-smoke · **Author:** @architect (Opus) · **Reviewer:** @architect (independent Opus pass) · **Date:** 2026-04-25 · **Depends on:** [SurfaceMCP](https://github.com/cunninghambe/SurfaceMCP) (revised), camofox MCP, **a Claude Code session for auto-fix orchestration**
 
 This revision incorporates the architect review of the original draft. See [`REVIEW.md`](REVIEW.md) for findings + resolutions.
 
@@ -10,7 +10,7 @@ This revision incorporates the architect review of the original draft. See [`REV
 
 Vibe-coded apps are fast to write, slow to verify. UI-only test agents check 200 responses and miss broken interactions; API-only tests miss UI-state regressions. Manual click-through of every button × slider × form × user-role combination eats hours and gets skipped under time pressure.
 
-BugHunter walks an app's surface — every route, every interactive element, every declared role — applying a bounded mutation palette to inputs. Same-shape elements collapse to one representative test (so the matrix stays tractable on real apps). It dual-executes via SurfaceMCP for the API layer and a browser MCP (camofox) for the UI layer. Captures every failure with full repro context (action sequence, DOM snapshot, console, network, screenshot). Clusters by root cause but retains every occurrence (with bounded artifact keeping). Optionally dispatches Claude Code via ClaudeMCP per-cluster to PR fixes, then re-runs to verify each cluster.
+BugHunter walks an app's surface — every route, every interactive element, every declared role — applying a bounded mutation palette to inputs. Same-shape elements collapse to one representative test (so the matrix stays tractable on real apps). It dual-executes via SurfaceMCP for the API layer and a browser MCP (camofox) for the UI layer. Captures every failure with full repro context (action sequence, DOM snapshot, console, network, screenshot). Clusters by root cause but retains every occurrence (with bounded artifact keeping). The auto-fix loop is **orchestrated from a Claude Code session via the `/bughunt fix` skill** — Claude reads the bug log and per-cluster invokes `Agent(architect, opus)` to write a fix spec, then `Agent(coder, sonnet)` to implement, calling BugHunter CLI helpers for the forbidden-path gate and retest verification.
 
 Output: a structured JSONL bug log a downstream agent can act on, plus a human-readable summary.
 
@@ -24,8 +24,8 @@ Output: a structured JSONL bug log a downstream agent can act on, plus a human-r
 - Bug clustering by root cause + per-occurrence logging with bounded full-artifact retention
 - JSONL output with structured action logs; `bughunter replay <occurrenceId>` for re-execution
 - Stop-and-emit at 200 unique clusters
-- Optional `--auto-fix` flag dispatching ClaudeMCP **per-cluster**, with post-hoc `git diff` gating against forbidden paths
-- CLI engine + optional MCP wrapper; skill is a markdown file shipped in the CLI package
+- Auto-fix is **skill-driven from a Claude Code session** (the `/bughunt fix` skill). The skill orchestrates `Agent(subagent_type='architect', model='opus')` → `Agent(subagent_type='coder', model='sonnet')` per cluster, calling BugHunter CLI helpers (`forbidden-path-gate`, `retest`) for the operational steps. No ClaudeMCP integration in BugHunter itself — the proven Claude Code Agent tool is the right primitive
+- CLI engine + skill markdown (the orchestrator) + optional MCP wrapper for non-Claude triggers
 - Local apps only
 
 **Out of scope (v0.1)**
@@ -36,6 +36,7 @@ Output: a structured JSONL bug log a downstream agent can act on, plus a human-r
 - Cross-browser matrix (one Chromium via camofox; "works in Firefox" out of scope)
 - WebSocket / SSE testing (paired with SurfaceMCP scope)
 - Auto-fix touching schema / migrations / dep version / env vars (rejected by post-hoc gate)
+- Headless / unattended auto-fix with no Claude session involved. v0.1's auto-fix requires a Claude Code session; for unattended runs, point a tmux/background Claude session at the project. ClaudeMCP-driven dispatch deferred to v0.2 if user demand emerges
 - Next.js parallel routes, intercepted routes, modal-only routes — v0.2
 - Closure-bound Next.js server actions (paired with SurfaceMCP scope) — v0.2
 - Playwright code-emission for repros (replaced by JSON action log + `replay` command) — v0.2 if user demand
@@ -45,7 +46,7 @@ Output: a structured JSONL bug log a downstream agent can act on, plus a human-r
 - Node 20+, TypeScript strict
 - A live SurfaceMCP instance for the target project
 - camofox MCP (https://github.com/...) — chosen because already deployed on this host
-- ClaudeMCP at `http://127.0.0.1:3101/mcp` (optional, only for `--auto-fix`)
+- A Claude Code session running with the `bughunt.md` skill mounted (only for auto-fix orchestration)
 - `axe-core` for accessibility heuristics (gated behind `--a11y`)
 - Internal: `playwright-core` for browser context APIs camofox doesn't surface
 
@@ -76,7 +77,7 @@ The skill is a markdown file (`packages/cli/bughunt.md`), not a package. Target 
 4. classify     — heuristic bug classification per § 3.5; record expectedOutcome
 5. cluster      — by stable signature; cap full-artifact occurrences per cluster
 6. emit         — write JSONL + summary; stop-and-emit at 200 clusters
-7. fix?         — if --auto-fix: per-cluster ClaudeMCP dispatch with post-hoc gate
+7. fix?         — orchestrated externally by the /bughunt fix skill (§ 3.9), not by `bughunter run`
 8. retest?      — post-fix verification per cluster; output classification
 ```
 
@@ -139,6 +140,7 @@ Per (role, page):
 - Per (role, api_tool) with `inputSchemaConfidence: 'introspected' | 'inferred'`: **four direct-call tests**.
 - Per (role, api_tool) with `inputSchemaConfidence: 'unknown'` AFTER probe upgrade: same four tests.
 - Per (role, api_tool) where probe failed to recover: **one happy-path call** with `surface_sample_inputs` value or empty body.
+- **Server actions are excluded from API direct-call tests.** Tools where `isServerAction === true` cannot be invoked via plain HTTP POST — they require Next.js's form-submit dispatch (`Next-Action` header or `<form action={fn}>` POST format). API direct-call tests against them produce false-positive 404s (smoke 2026-04-25 confirmed). Server actions are exercised only via the UI form-submit path during the DOM-walker phase. SurfaceMCP exposes `isServerAction` on `ToolMeta`; the planner filters on it.
 
 #### 3.4.1 Pre-plan schema enrichment
 
@@ -185,6 +187,10 @@ Set --max-runtime to a higher value or pass --budget <ms> to time-box this run.
 
 The user can abort, refine, or proceed.
 
+### 3.4.5 `surfaceMcpUrl` convention
+
+`BugHunterConfig.surfaceMcpUrl` is the **base URL** of the SurfaceMCP HTTP server (e.g. `http://127.0.0.1:3102`), without the `/mcp` path. The adapter appends `/mcp` internally on every call. The `init` wizard's prompt and default both use the base URL form. Configurations that include a trailing `/mcp` are accepted (the adapter strips one trailing `/mcp` if present) for backward compatibility, but the documented form is base-URL-only.
+
 ### 3.5 What counts as a bug (classification)
 
 | Class | Detection |
@@ -202,6 +208,29 @@ The user can abort, refine, or proceed.
 | `infrastructure_failure` | Browser MCP error / camofox crash / SurfaceMCP unreachable. **NOT a bug.** Logged separately in `infrastructure.jsonl`, not `bugs.jsonl`. After 20 consecutive: abort run with explicit error |
 
 False-positive tolerance: ~10%. The auto-fix loop has its own retest verification before committing fixes.
+
+#### 3.5.1 Priority hierarchy (canonical kind per occurrence)
+
+A single occurrence often satisfies multiple classification rules — e.g. a server action returning 404 trips `404_for_linked_route` AND `surface_call_failed` AND `network_4xx_unexpected`. Without a priority rule, that single event creates three clusters and burns three slots of the `--max-bugs` budget. Smoke 2026-04-25 confirmed.
+
+The classifier emits **one canonical kind per occurrence**, picked by this priority (highest wins):
+
+```
+1. unhandled_exception
+2. network_5xx
+3. react_error
+4. surface_call_failed         (mutating tool with happy input failed)
+5. network_4xx_unexpected      (4xx where expectedOutcome='success')
+6. 404_for_linked_route        (intra-app navigation to a 404)
+7. dom_error_text
+8. missing_state_change
+9. console_error
+10. accessibility_critical     (only when --a11y is enabled)
+```
+
+Other observations that fired but lost the priority race are recorded on the occurrence as `secondaryObservations: Array<{ kind, detail }>` for diagnostic — they don't create separate clusters.
+
+This is a **classification-time rule**, applied before clustering. Two occurrences from different events can still legitimately produce the same canonical kind and cluster together via the § 3.6 signature.
 
 ### 3.6 Bug clustering — fingerprint normalization
 
@@ -321,63 +350,194 @@ In-flight tests after the 200-cluster cap: occurrences append to existing cluste
 
 Per-test browser-MCP errors retry once with a fresh browser context. Then mark `infrastructure_failure` (not a bug). After 20 consecutive infrastructure failures, abort the run with explicit error and partial-emit. Counter resets on a successful test.
 
-### 3.9 Auto-fix loop — per-cluster dispatch
+### 3.9 Auto-fix loop — orchestrated by the `/bughunt fix` skill from a Claude Code session
 
-When `--auto-fix`:
+The auto-fix workflow lives in the skill markdown (`packages/cli/bughunt.md`), not in BugHunter's CLI. BugHunter's CLI exposes operational helpers; the skill teaches Claude how to orchestrate them, and uses the `Agent` tool to dispatch architect/coder sub-agents per cluster. This is the proven workflow used elsewhere in the project (CLAUDE.md, project memory `feedback_spec_then_sonnet.md`).
 
-For each cluster (excluding `bugs_skipped: third_party_or_generated`):
+This decision is intentional. ClaudeMCP-driven dispatch was the prior design (committed as `577a1ba`); smoke 2026-04-25 confirmed the systems compose, but the model routing was prompt-based only — both phases ran on whatever model ClaudeMCP's `claude -p` defaulted to. Reusing the Claude Code `Agent` tool gives real Opus-for-architect, Sonnet-for-coder routing for free, and removes ~250 lines of in-CLI dispatch code.
 
-1. **Dispatch one ClaudeMCP `claude_run` per cluster** (or per cluster batch grouped by overlapping `suspectedFiles`):
-   ```
-   prompt: |
-     Fix one bug cluster from a BugHunter run.
-     Run: .bughunter/runs/{{runId}}/bugs.jsonl
-     Cluster id: {{clusterId}}
-     suspectedFiles: {{suspectedFiles}}
-     fixHints: {{fixHints}}
-     Steps:
-       1. Investigate root cause (use gitnexus_impact if available)
-       2. Write the fix
-       3. Add regression test exercising one of the cluster's occurrences
-       4. Commit on branch bughunter/{{runId}}/{{clusterId}}
-       5. Output last commit SHA
-     Do NOT push. Do NOT touch: prisma/migrations/**, prisma/schema.prisma,
-       package.json, package-lock.json, .env*, .gitignore, migrations/**, alembic/**
-   project: {{projectName}}
-   timeoutMs: 3600000   # 1h per cluster
-   allowedTools: [Bash, Edit, Write, Read, Grep, Glob, ToolSearch, WebFetch, WebSearch, TodoWrite, mcp__paperclip__*]
-   ```
+#### 3.9.1 What BugHunter's CLI provides (operational helpers)
 
-2. **Post-hoc forbidden-path gate** (BugHunter, not ClaudeMCP):
-   ```bash
-   cd <project> && git diff <baseBranch>..bughunter/<runId>/<clusterId> --name-only
-   ```
-   Compare against `forbiddenPaths` list (defaults above + user-configurable). If any match:
-   - `git update-ref refs/heads/bughunter/<runId>/<clusterId> <baseBranch>` (hard-reset to base)
-   - Mark cluster as `bugs_skipped: { reason: "touched_forbidden_path", paths: [...] }`
-   - Skip retest
+```
+bughunter forbidden-path-gate <branch> [--base <baseBranch>] [--reset]
+  Runs `git diff <baseBranch>..<branch> --name-only` against the configured
+  forbiddenPaths list. Returns JSON:
+    { ok: true, violations: [] }
+  or
+    { ok: false, violations: ["prisma/migrations/...", ".env"], reset: true }
+  When `--reset` is passed and violations exist, hard-resets the branch
+  to baseBranch via `git update-ref` before returning.
 
-3. **Retest the cluster**:
-   - Refresh SurfaceMCP catalog; capture new `revision`
-   - For each of the cluster's occurrences (full-artifact ones first):
-     - If `toolId` no longer exists (fix removed the route): mark occurrence `verified_fixed_by_removal`
-     - If `inputSchema` for the toolId changed: re-derive mutation from the new schema, replay
-     - Else: replay verbatim
-   - Cluster verdict:
-     - All replayed occurrences pass: `verified_fixed`
-     - Any still fail: `not_fixed` (kept open for next run)
-   - If full-artifact occurrences pass but lightweight ones can't be replayed (no inputs cached): `partially_verified` with full-artifact subset confirmed
+bughunter retest <runId> <clusterId> [--base <baseBranch>] [--branch <fixBranch>]
+  Refreshes the SurfaceMCP catalog. Replays each occurrence of the cluster
+  with revision-aware input regeneration (see § 3.9.4). Returns JSON:
+    { verdict: "verified_fixed" | "verified_fixed_by_removal" |
+               "partially_verified" | "not_fixed" | "bugs_lost_to_revision",
+      replayedOccurrences: N, passedOccurrences: M, details: [...] }
 
-4. **Final report** distinguishes:
-   - `bugs_filed`: total clusters from initial run
-   - `bugs_attempted_fix`: clusters dispatched
-   - `bugs_verified_fixed`: re-tested and pass
-   - `partially_verified`: some occurrences pass; full set unverifiable
-   - `bugs_persistent`: replayed and still fail
-   - `bugs_skipped`: touched forbidden path / third-party / Claude refused
-   - `bugs_lost_to_revision`: pre-existing toolId removed AND no replay possible
+bughunter fix-summary <runId>
+  Prints a per-cluster table of verdicts after a /bughunt fix orchestration.
+  Reads .bughunter/runs/<runId>/fix-state.json which the skill maintains.
+```
 
-`bughunter fix` (no `run` first): reads latest run's bugs.jsonl, dispatches the fix loop without re-running discovery. Honors original run's filters (e.g. if run was scoped to `--route /admin/products/**`, retest is too).
+Each helper is single-purpose, idempotent, and JSON-output by default. They're designed to be called by the skill — not by humans, and not by ClaudeMCP. Humans get pretty-printed output via `bughunter inspect` / `bughunter list`.
+
+#### 3.9.2 What the skill (`bughunt.md`) does
+
+The skill is a markdown file with explicit step-by-step orchestration instructions for Claude. When the user invokes `/bughunt fix`:
+
+```
+For each cluster in .bughunter/runs/<latest>/bugs.jsonl
+   (skipping clusters where thirdPartyOrGenerated === true):
+
+  1. Create branch bughunter/<runId>/<clusterId> from baseBranch.
+
+  2. Phase A — architect (Opus). Spawn:
+       Agent(
+         subagent_type: 'architect',
+         model: 'opus',
+         prompt: <architect brief, see § 3.9.3>
+       )
+     The architect reads the cluster, suspectedFiles, exemplar occurrence;
+     investigates; writes a focused fix spec to:
+       .bughunter/runs/<runId>/specs/<clusterId>.md
+     Commits the spec on the cluster branch. Returns when committed.
+
+  3. If the spec content begins with "REFUSE:" (after stripping leading
+     blank lines), record verdict = "architect_refused" with the architect's
+     reasoning. Skip to step 6.
+
+  4. Phase B — coder (Sonnet). Spawn:
+       Agent(
+         subagent_type: 'coder',
+         model: 'sonnet',
+         prompt: <coder brief, see § 3.9.4>
+       )
+     The coder reads the spec; implements; runs tests; commits. Returns
+     with last commit SHA.
+
+  5. Phase C — forbidden-path gate. Call:
+       bughunter forbidden-path-gate bughunter/<runId>/<clusterId>
+                                     --base <baseBranch>
+                                     --reset
+     If violations: record verdict = "touched_forbidden_path" with paths.
+     Skip to step 6.
+
+  6. Phase D — retest. Call:
+       bughunter retest <runId> <clusterId>
+                        --base <baseBranch>
+                        --branch bughunter/<runId>/<clusterId>
+     Record the verdict from the JSON output.
+
+  7. Append the verdict to .bughunter/runs/<runId>/fix-state.json.
+
+After the loop:
+  Call: bughunter fix-summary <runId>
+  Pretty-print the table to the user.
+```
+
+The skill is the orchestrator; BugHunter's CLI is the operational toolbox. This separates "what should happen per cluster" (skill prose, easy to update) from "how the operations execute" (CLI code, tested).
+
+#### 3.9.3 Architect brief (passed by the skill to `Agent`)
+
+```
+You are an architect writing a focused fix spec for a single BugHunter cluster.
+You DO NOT implement the fix — you produce a spec for the implementer.
+
+Project: <projectName>
+Cluster: <clusterId>
+Bug log: .bughunter/runs/<runId>/bugs.jsonl
+
+Suspected files: <list>
+Fix hints: <list>
+Exemplar occurrence (full repro context): <inline JSON>
+
+Investigate the root cause. Read the suspected files. Form a hypothesis.
+If gitnexus is registered for this project, use gitnexus_impact to assess
+blast radius before recommending the fix.
+
+Write a focused spec to:
+  .bughunter/runs/<runId>/specs/<clusterId>.md
+
+Use the project's spec discipline (Problem / Root cause with file:line /
+Boundaries / Interface change if any / Edge cases / Acceptance criteria /
+Files to touch).
+
+If the fix is impossible or unsafe (requires schema migration, forbidden-path
+changes, or genuinely uncertain root cause), instead write a spec whose
+first non-blank line is "REFUSE: <reason>". The implementer will see this
+and skip the cluster.
+
+Commit the spec on branch bughunter/<runId>/<clusterId>. Do NOT implement
+the fix. Do NOT push.
+```
+
+#### 3.9.4 Coder brief (passed by the skill to `Agent`)
+
+```
+You are a coder. Implement the fix specified at:
+  .bughunter/runs/<runId>/specs/<clusterId>.md
+
+You're on branch bughunter/<runId>/<clusterId> which already has the spec
+committed by the architect. Read the spec; treat it as the contract; do not
+re-derive its decisions; do not exceed its boundaries.
+
+Steps:
+  1. Implement exactly as specified.
+  2. Add a regression test exercising one of the cluster's occurrences.
+  3. Run the project's tests; they must pass before you commit.
+  4. Commit on the same branch with a message referencing <clusterId>.
+  5. Output the last commit SHA.
+
+Do NOT push. Do NOT touch (will be hard-reset by the post-hoc gate):
+  prisma/migrations/**, prisma/schema.prisma, package.json, package-lock.json,
+  yarn.lock, pnpm-lock.yaml, .env*, .gitignore, migrations/**, alembic/**,
+  .next/**, node_modules/**, dist/**, build/**
+```
+
+#### 3.9.5 Retest verdicts (`bughunter retest` output schema)
+
+```ts
+type RetestResult = {
+  verdict:
+    | 'verified_fixed'
+    | 'verified_fixed_by_removal'   // toolId no longer in catalog
+    | 'partially_verified'           // full-artifact pass; lightweight unverifiable
+    | 'not_fixed'
+    | 'bugs_lost_to_revision';       // toolId removed AND no replay possible
+  replayedOccurrences: number;
+  passedOccurrences: number;
+  details: Array<{
+    occurrenceId: string;
+    via: 'verbatim' | 'regenerated' | 'tool_removed';
+    passed: boolean;
+    error?: string;
+  }>;
+};
+```
+
+Schema-change retest behavior is preserved from prior § 3.9.4: when `inputSchema.hash` differs between catalog snapshot at original-run-time and post-fix, BugHunter re-derives input via `buildApiInput(newToolMeta, palette, sampleInput, domainHints)`. Otherwise replays verbatim.
+
+#### 3.9.6 Final report (printed by `bughunter fix-summary`)
+
+Distinguishes:
+- `bugs_filed`: total clusters from initial run
+- `bugs_specced`: architect produced a spec
+- `bugs_attempted_fix`: coder dispatched
+- `bugs_architect_refused`: architect returned `REFUSE:`
+- `bugs_verified_fixed`: retest passed
+- `partially_verified`: some occurrences pass; full set unverifiable
+- `bugs_persistent`: retest failed
+- `bugs_skipped`: touched forbidden path / third-party / generated
+- `bugs_lost_to_revision`: pre-existing toolId removed AND no replay possible
+
+#### 3.9.7 Why not ClaudeMCP?
+
+ClaudeMCP-driven dispatch was the prior design (commit `577a1ba`). It worked structurally — two jobs per cluster, role-setting via prompts — but the model routing was prompt-based only; both phases ran whatever model ClaudeMCP's `claude -p` defaulted to (Sonnet). Real Opus-for-architect routing would have required ClaudeMCP to gain a `model` parameter, the runner to pass `--model` to spawned `claude`, BugHunter to thread it through. Three changes across two repos.
+
+Switching to the skill-driven flow gets real model routing for free (the `Agent` tool already has it), removes the ClaudeMCP dependency from BugHunter's auto-fix path, and aligns with the workflow pattern already in use everywhere else on this host. The trade-off: auto-fix requires a Claude Code session running. For unattended runs, the user keeps a tmux'd session with the skill loaded — same pattern as the Discord bridge.
+
+ClaudeMCP-driven dispatch may return as a v0.2 option for headless contexts (Hermes/Paperclip triggers) but isn't in v0.1 scope.
 
 ### 3.10 Run isolation & state drift
 
@@ -401,12 +561,11 @@ Default: `per-page`. User can set in `.bughunter/config.json`.
 ```
 bughunter init
   Walks project; writes .bughunter/config.json template. Prompts for:
-    SurfaceMCP URL, browser MCP URL, ClaudeMCP URL (optional),
+    SurfaceMCP URL (base form, e.g. http://127.0.0.1:3102), browser MCP URL,
     discoveryFixtures for known dynamic routes,
     resetPolicy + resetCommand, forbiddenPaths additions.
 
 bughunter run [options]
-  --auto-fix              After emit, dispatch per-cluster fixes via ClaudeMCP
   --route <pattern>       Limit to routes matching a glob
   --role <name>           Limit to a single role
   --max-bugs <n>          Stop-and-emit at N (default 200)
@@ -420,18 +579,36 @@ bughunter run [options]
   --a11y                  Enable accessibility_critical class
   --include-external      Allow side-effect-class=external API calls
 
+  Note: there is no --auto-fix flag. Auto-fix is orchestrated by the
+  /bughunt fix skill from a Claude Code session — see § 3.9.
+
 bughunter replay <occurrenceId>
   Reads action-logs/<occurrenceId>.json; re-executes against current dev server.
-  Useful for human investigation and as the auto-fix retest backbone.
 
 bughunter inspect <occurrenceId|clusterId>
-  Pretty-prints from JSONL + opens artifact paths (no GUI viewer).
+  Pretty-prints from JSONL + lists artifact paths (no GUI viewer).
 
-bughunter fix
-  Read latest run; dispatch ClaudeMCP fix loop. Skips run.
+bughunter forbidden-path-gate <branch> [--base <baseBranch>] [--reset]
+  JSON-output operational helper called by the /bughunt fix skill (§ 3.9.1).
+  Runs `git diff <baseBranch>..<branch> --name-only` against the configured
+  forbiddenPaths list. Returns:
+    { ok: true, violations: [] }
+  or
+    { ok: false, violations: [...], reset: true }
+  When --reset is passed and violations exist, hard-resets the branch via
+  `git update-ref` before returning.
+
+bughunter retest <runId> <clusterId> [--base <baseBranch>] [--branch <fixBranch>]
+  JSON-output operational helper called by the /bughunt fix skill (§ 3.9.1).
+  Refreshes the SurfaceMCP catalog; replays each occurrence with revision-
+  aware input regeneration; returns RetestResult per § 3.9.5.
+
+bughunter fix-summary <runId>
+  Pretty-prints per-cluster verdicts after a /bughunt fix orchestration.
+  Reads .bughunter/runs/<runId>/fix-state.json which the skill maintains.
 
 bughunter list
-  Show last 20 runs with cluster counts + verdicts.
+  Show last 20 runs with cluster counts + verdicts (if /bughunt fix ran).
 
 bughunter status <runId>
   Detailed status of a run.
@@ -445,34 +622,44 @@ bughunter prune
 
 ### 4.2 Skill (`bughunt.md`)
 
-A markdown file mounted at `.claude/skills/bughunt.md` in target projects (via symlink or copy). Teaches Claude:
+A markdown file mounted at `.claude/skills/bughunt.md` in target projects (via symlink or copy). The skill has two responsibilities:
 
-- When to invoke the CLI (`bughunter run`, `bughunter run --auto-fix`, etc.)
-- How to interpret bugs.jsonl: cite cluster id, group by kind, rank by clusterSize
-- What to summarize after an auto-fix run (verified vs persistent split)
+**`/bughunt`** — for status / triage. Teaches Claude:
+- When to invoke `bughunter run` (e.g. user asks "find bugs", "test the app")
+- How to interpret `bugs.jsonl`: cite cluster id, group by kind, rank by clusterSize
 - How to read `infrastructure.jsonl` (those are NOT bugs to report)
-- How to use `bughunter inspect` to drill into a cluster the user asks about
-- The forbidden-path policy — explain to the user when a fix was skipped
+- How to use `bughunter inspect` to drill into a specific cluster
 
-This is **prose**, not code. The CLI is the engine.
+**`/bughunt fix`** — the orchestrator. Per § 3.9.2, the skill walks the latest run's bugs.jsonl and per cluster:
+1. Creates branch `bughunter/<runId>/<clusterId>` from baseBranch.
+2. Spawns `Agent(subagent_type='architect', model='opus', prompt=<§ 3.9.3>)`. Architect commits a focused fix spec.
+3. If spec begins `REFUSE:` → records `architect_refused`; skips to step 6.
+4. Spawns `Agent(subagent_type='coder', model='sonnet', prompt=<§ 3.9.4>)`. Coder implements + tests + commits.
+5. Calls `bughunter forbidden-path-gate <branch> --reset`. On violation → records `touched_forbidden_path`; skips to step 6.
+6. Calls `bughunter retest <runId> <clusterId>`. Records the verdict.
+7. Appends to `.bughunter/runs/<runId>/fix-state.json`.
+
+After the loop, calls `bughunter fix-summary <runId>` and pretty-prints to the user.
+
+This is **prose**, not code. The skill ships in `packages/cli/bughunt.md` and is mounted by target projects via symlink.
 
 ### 4.3 MCP wrapper (optional)
 
 ```ts
-bughunt_run({ project: string, autoFix?: boolean, routePattern?: string, roles?: string[], maxBugs?: number, budget?: number })
+bughunt_run({ project: string, routePattern?: string, roles?: string[], maxBugs?: number, budget?: number })
   → { jobId: string }
 
 bughunt_status({ jobId })
-  → { state: 'queued'|'running'|'done'|'failed', runId?, bugCounts?: { filed, verified_fixed, persistent, skipped }, error? }
+  → { state: 'queued'|'running'|'done'|'failed', runId?, bugCounts?: { filed }, error? }
 
 bughunt_latest_bugs({ project, limit?: number, kind?: string })
-  → Array<{ id, kind, clusterSize, rootCause, suspectedFiles, verdict }>
+  → Array<{ id, kind, clusterSize, rootCause, suspectedFiles, verdict? }>
 
 bughunt_replay({ project, occurrenceId })
   → { ok: boolean, observation: object }
 ```
 
-For Hermes / Paperclip agents that want to trigger a bug hunt without a Claude session.
+For Hermes / Paperclip agents that want to trigger a discovery bug hunt without a Claude session. Note: **the MCP wrapper does NOT expose auto-fix** — that's intentional. Auto-fix is a Claude-skill-driven workflow per § 3.9. Non-Claude agents can collect bugs but not fix them in v0.1.
 
 ## 5. Edge Cases
 
@@ -510,7 +697,12 @@ For Hermes / Paperclip agents that want to trigger a bug hunt without a Claude s
    - Forbidden-path gate hard-resets branch and marks cluster `bugs_skipped`
    - `replay` re-executes a captured action log against the dev server
    - `surface_probe` invocation in plan phase upgrades unknown → inferred
-   - Per-cluster ClaudeMCP dispatch (mocked) generates one job per cluster
+   - `forbidden-path-gate <branch>` returns JSON; on violation + `--reset`, hard-resets the branch
+   - `retest <runId> <clusterId>` returns RetestResult with verdict + per-occurrence details
+   - The `bughunt.md` skill markdown contains the orchestration instructions (architect/coder dispatch, REFUSE handling) — verify by grep that the markdown references `Agent(subagent_type='architect', model='opus')` and `Agent(subagent_type='coder', model='sonnet')` and the CLI helpers
+   - Server-action tools (`isServerAction: true`) are excluded from API direct-call test plan
+   - Classifier priority hierarchy: a single occurrence triggering `404_for_linked_route` + `surface_call_failed` + `network_4xx_unexpected` clusters to the **highest-priority** kind only (here: `surface_call_failed`); the others land in `secondaryObservations`
+   - `surfaceMcpUrl` adapter strips one trailing `/mcp` if present (backward-compat); init wizard default is base URL `http://127.0.0.1:3102` without `/mcp`
 3. **Manual smoke against Spoonworks** (Next.js + revised SurfaceMCP):
    - `bughunter init` writes valid config
    - `bughunter run` discovers ~50 API routes (from SurfaceMCP) + filesystem-routed pages + DOM elements per page
@@ -518,12 +710,12 @@ For Hermes / Paperclip agents that want to trigger a bug hunt without a Claude s
    - Run completes within `--max-runtime` 24h default
    - Captures real bugs (introduce a deliberate `throw new Error(...)` in a route — verify it's caught and clustered correctly)
    - Same deliberate bug introduced in two routes clusters to one entry with two occurrences (signature normalization works)
-4. **Auto-fix smoke**:
-   - Introduce a deliberate bug; run with `--auto-fix`
-   - Verify ClaudeMCP receives one job per cluster (via ClaudeMCP `jobs_list`)
-   - Verify a fix branch is created
-   - Forbidden-path gate test: introduce a bug whose "fix" Claude attempts to apply by editing `prisma/schema.prisma`; verify gate hard-resets and marks `bugs_skipped`
-   - Verify retest distinguishes `verified_fixed` / `verified_fixed_by_removal` / `not_fixed`
+4. **Auto-fix smoke** (manual, from a Claude Code session):
+   - Introduce a deliberate bug; `bughunter run` to capture it
+   - From a Claude session in the project, invoke `/bughunt fix`
+   - Verify the skill creates branch `bughunter/<runId>/<clusterId>`, dispatches `Agent(architect, opus)`, then `Agent(coder, sonnet)`
+   - Forbidden-path gate test: introduce a bug whose "fix" the architect-or-coder would apply by editing `prisma/schema.prisma`; verify `bughunter forbidden-path-gate --reset` hard-resets and the skill records `bugs_skipped: touched_forbidden_path`
+   - Verify `bughunter retest` distinguishes `verified_fixed` / `verified_fixed_by_removal` / `not_fixed`
 5. **Skill smoke**: `/bughunt` from a Claude session (skill markdown mounted) invokes the CLI and reports a summary citing cluster ids. Confirm the skill file is markdown-only, no executable code in `packages/skill/`.
 6. **Resume smoke**: kill `bughunter run` mid-execution; `bughunter run --resume <runId>` picks up from saved state. Then change a SurfaceMCP-tracked file; resume refuses without `--force-resume`.
 7. **Headless inspect**: `bughunter inspect <bug-id>` prints the cluster summary + artifact paths without requiring a viewer.
@@ -559,12 +751,10 @@ BugHunter/
 │   │   │   │   ├── execute.ts
 │   │   │   │   ├── classify.ts
 │   │   │   │   ├── cluster.ts
-│   │   │   │   ├── emit.ts
-│   │   │   │   └── auto-fix.ts      # per-cluster dispatch + gate
+│   │   │   │   └── emit.ts
 │   │   │   ├── adapters/
 │   │   │   │   ├── surface-mcp.ts   # surface_call/list_tools/probe/sample_inputs
-│   │   │   │   ├── browser-mcp.ts   # camofox client
-│   │   │   │   └── claude-mcp.ts
+│   │   │   │   └── browser-mcp.ts   # camofox client
 │   │   │   ├── discovery/
 │   │   │   │   ├── filesystem-pages.ts  # AST scan of app/**
 │   │   │   │   ├── dom-walker.ts
@@ -591,10 +781,10 @@ BugHunter/
 │   │   │   │   ├── run-state.ts
 │   │   │   │   ├── filesystem.ts
 │   │   │   │   └── artifact-budget.ts
-│   │   │   ├── auto-fix/
-│   │   │   │   ├── dispatch.ts      # one job per cluster
-│   │   │   │   ├── forbidden-paths.ts  # post-hoc gate
-│   │   │   │   └── verify.ts        # retest + revision-aware classification
+│   │   │   ├── ops/                 # operational helpers exposed as CLI subcommands
+│   │   │   │   ├── forbidden-paths.ts   # bughunter forbidden-path-gate
+│   │   │   │   ├── retest.ts            # bughunter retest (revision-aware verify)
+│   │   │   │   └── fix-summary.ts       # bughunter fix-summary
 │   │   │   ├── config.ts
 │   │   │   ├── log.ts
 │   │   │   └── types.ts
@@ -619,7 +809,8 @@ type BugHunterConfig = {
   projectName: string;
   surfaceMcpUrl: string;                // http://127.0.0.1:3102/mcp
   browserMcpUrl?: string;
-  claudeMcpUrl?: string;                // required for --auto-fix
+  // claudeMcpUrl removed in v0.1: auto-fix is now skill-driven via Claude
+  // Code's Agent tool, not ClaudeMCP. May return as v0.2 option.
   roles?: string[];                     // default: all roles from SurfaceMCP
   resetCommand?: string;
   resetPolicy?: 'transactional'|'per-test'|'per-page'|'per-run';  // default 'per-page'
@@ -637,7 +828,7 @@ type BugHunterConfig = {
   excludedRoutes?: string[];
   externalIntegrationsAllowed?: boolean;  // default false
   enableA11y?: boolean;                 // default false
-  autoFixDispatchProject?: string;      // ClaudeMCP project name (default: same as projectName)
+  // autoFixDispatchProject removed in v0.1; the skill operates in the cwd's project
   forbiddenPaths?: string[];            // user-extensible; defaults baked in
   extraHeaders?: Record<string, string>;  // e.g. { "X-Test-Mode": "true" } added to UI calls
   artifactBudgetBytes?: number;         // default 4 GB; oldest full artifacts degrade to summaries
@@ -658,7 +849,7 @@ A reviewer can:
 cd /root/spoonworks
 # Assume SurfaceMCP is running on :3102 for spoonworks (revised v0.1)
 # Assume camofox MCP is running
-# Assume ClaudeMCP is running on :3101
+# (no ClaudeMCP needed for auto-fix in v0.1 — that's the skill's job)
 npx bughunter init                    # writes .bughunter/config.json
 npx bughunter run                     # full exhaustive run
 ```
@@ -670,7 +861,7 @@ npx bughunter run                     # full exhaustive run
 - The summary printed to stdout shows: total clusters, by-kind breakdown, by-role breakdown, projected-vs-actual runtime
 - A deliberately-introduced bug is caught and clustered correctly
 - A second deliberately-introduced bug in a different file with the same root-cause shape clusters to the same entry
-- `npx bughunter run --auto-fix` (with ClaudeMCP running) dispatches per-cluster, gates against forbidden paths, retests, prints verified-vs-persistent counts
+- From a Claude session in the project, invoking `/bughunt fix` orchestrates per-cluster architect→coder dispatch, gates against forbidden paths, retests, prints verified-vs-persistent counts via `bughunter fix-summary`
 
 …and from a Claude Code session inside the project:
 - `/bughunt` invokes the CLI and reports a summary citing cluster ids
