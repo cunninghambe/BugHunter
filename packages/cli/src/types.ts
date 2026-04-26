@@ -87,6 +87,12 @@ export type OccurrenceSummary = {
   action: Action;
   fullArtifacts: false;
   timestamp: string;
+  secondaryObservations?: SecondaryObservation[];
+};
+
+export type SecondaryObservation = {
+  kind: BugKind;
+  detail: string;
 };
 
 export type OccurrenceFull = {
@@ -104,6 +110,7 @@ export type OccurrenceFull = {
   actionLogPath: string;
   reproSteps: string[];
   replayCommand: string;
+  secondaryObservations?: SecondaryObservation[];
 };
 
 export type Occurrence = OccurrenceFull | OccurrenceSummary;
@@ -129,12 +136,14 @@ export type ClusterVerdict =
   | 'verified_fixed'
   | 'verified_fixed_by_removal'
   | 'not_fixed'
-  | 'partially_verified';
+  | 'partially_verified'
+  | 'architect_refused';
 
 export type BugsSkippedReason =
   | 'third_party_or_generated'
   | 'touched_forbidden_path'
-  | 'claude_refused';
+  | 'claude_refused'
+  | 'architect_refused';
 
 export type BugsSkipped = {
   reason: BugsSkippedReason;
@@ -271,6 +280,7 @@ export type BugDetection = {
   triggeringAction?: Action;
   targetPath?: string;
   a11yViolations?: unknown[];
+  secondaryObservations?: SecondaryObservation[];
 };
 
 export type RunPhase =
@@ -344,7 +354,9 @@ export type AutoFixResult = {
 export type RunSummary = {
   runId: string;
   bugs_filed: number;
+  bugs_specced: number;
   bugs_attempted_fix: number;
+  bugs_architect_refused: number;
   bugs_verified_fixed: number;
   partially_verified: number;
   bugs_persistent: number;
