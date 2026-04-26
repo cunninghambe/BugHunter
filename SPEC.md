@@ -139,6 +139,7 @@ Per (role, page):
 - Per (role, api_tool) with `inputSchemaConfidence: 'introspected' | 'inferred'`: **four direct-call tests**.
 - Per (role, api_tool) with `inputSchemaConfidence: 'unknown'` AFTER probe upgrade: same four tests.
 - Per (role, api_tool) where probe failed to recover: **one happy-path call** with `surface_sample_inputs` value or empty body.
+- **Server actions are excluded from API direct-call tests.** Tools where `isServerAction === true` cannot be invoked via plain HTTP POST — they require Next.js's form-submit dispatch (`Next-Action` header or `<form action={fn}>` POST format). API direct-call tests against them produce false-positive 404s (smoke 2026-04-25 confirmed). Server actions are exercised only via the UI form-submit path during the DOM-walker phase. SurfaceMCP exposes `isServerAction` on `ToolMeta`; the planner filters on it.
 
 #### 3.4.1 Pre-plan schema enrichment
 
@@ -185,6 +186,10 @@ Set --max-runtime to a higher value or pass --budget <ms> to time-box this run.
 
 The user can abort, refine, or proceed.
 
+### 3.4.5 `surfaceMcpUrl` convention
+
+`BugHunterConfig.surfaceMcpUrl` is the **base URL** of the SurfaceMCP HTTP server (e.g. `http://127.0.0.1:3102`), without the `/mcp` path. The adapter appends `/mcp` internally on every call. The `init` wizard's prompt and default both use the base URL form. Configurations that include a trailing `/mcp` are accepted (the adapter strips one trailing `/mcp` if present) for backward compatibility, but the documented form is base-URL-only.
+
 ### 3.5 What counts as a bug (classification)
 
 | Class | Detection |
@@ -202,6 +207,29 @@ The user can abort, refine, or proceed.
 | `infrastructure_failure` | Browser MCP error / camofox crash / SurfaceMCP unreachable. **NOT a bug.** Logged separately in `infrastructure.jsonl`, not `bugs.jsonl`. After 20 consecutive: abort run with explicit error |
 
 False-positive tolerance: ~10%. The auto-fix loop has its own retest verification before committing fixes.
+
+#### 3.5.1 Priority hierarchy (canonical kind per occurrence)
+
+A single occurrence often satisfies multiple classification rules — e.g. a server action returning 404 trips `404_for_linked_route` AND `surface_call_failed` AND `network_4xx_unexpected`. Without a priority rule, that single event creates three clusters and burns three slots of the `--max-bugs` budget. Smoke 2026-04-25 confirmed.
+
+The classifier emits **one canonical kind per occurrence**, picked by this priority (highest wins):
+
+```
+1. unhandled_exception
+2. network_5xx
+3. react_error
+4. surface_call_failed         (mutating tool with happy input failed)
+5. network_4xx_unexpected      (4xx where expectedOutcome='success')
+6. 404_for_linked_route        (intra-app navigation to a 404)
+7. dom_error_text
+8. missing_state_change
+9. console_error
+10. accessibility_critical     (only when --a11y is enabled)
+```
+
+Other observations that fired but lost the priority race are recorded on the occurrence as `secondaryObservations: Array<{ kind, detail }>` for diagnostic — they don't create separate clusters.
+
+This is a **classification-time rule**, applied before clustering. Two occurrences from different events can still legitimately produce the same canonical kind and cluster together via the § 3.6 signature.
 
 ### 3.6 Bug clustering — fingerprint normalization
 
@@ -321,61 +349,129 @@ In-flight tests after the 200-cluster cap: occurrences append to existing cluste
 
 Per-test browser-MCP errors retry once with a fresh browser context. Then mark `infrastructure_failure` (not a bug). After 20 consecutive infrastructure failures, abort the run with explicit error and partial-emit. Counter resets on a successful test.
 
-### 3.9 Auto-fix loop — per-cluster dispatch
+### 3.9 Auto-fix loop — per-cluster, two-phase (Opus spec → Sonnet implementation)
 
 When `--auto-fix`:
 
 For each cluster (excluding `bugs_skipped: third_party_or_generated`):
 
-1. **Dispatch one ClaudeMCP `claude_run` per cluster** (or per cluster batch grouped by overlapping `suspectedFiles`):
-   ```
-   prompt: |
-     Fix one bug cluster from a BugHunter run.
-     Run: .bughunter/runs/{{runId}}/bugs.jsonl
-     Cluster id: {{clusterId}}
-     suspectedFiles: {{suspectedFiles}}
-     fixHints: {{fixHints}}
-     Steps:
-       1. Investigate root cause (use gitnexus_impact if available)
-       2. Write the fix
-       3. Add regression test exercising one of the cluster's occurrences
-       4. Commit on branch bughunter/{{runId}}/{{clusterId}}
-       5. Output last commit SHA
-     Do NOT push. Do NOT touch: prisma/migrations/**, prisma/schema.prisma,
-       package.json, package-lock.json, .env*, .gitignore, migrations/**, alembic/**
-   project: {{projectName}}
-   timeoutMs: 3600000   # 1h per cluster
-   allowedTools: [Bash, Edit, Write, Read, Grep, Glob, ToolSearch, WebFetch, WebSearch, TodoWrite, mcp__paperclip__*]
-   ```
+The auto-fix workflow mirrors the project's spec-then-implement pattern (see CLAUDE.md, project memory `feedback_spec_then_sonnet.md`): **Opus writes a focused fix spec; Sonnet implements from that spec.** Each phase is a separate ClaudeMCP job, serialized through ClaudeMCP's per-project queue. Quality wins per SlopCodeBench evidence justify the second hop.
 
-2. **Post-hoc forbidden-path gate** (BugHunter, not ClaudeMCP):
-   ```bash
-   cd <project> && git diff <baseBranch>..bughunter/<runId>/<clusterId> --name-only
-   ```
-   Compare against `forbiddenPaths` list (defaults above + user-configurable). If any match:
-   - `git update-ref refs/heads/bughunter/<runId>/<clusterId> <baseBranch>` (hard-reset to base)
-   - Mark cluster as `bugs_skipped: { reason: "touched_forbidden_path", paths: [...] }`
-   - Skip retest
+#### 3.9.1 Phase A — architect spec (Opus)
 
-3. **Retest the cluster**:
-   - Refresh SurfaceMCP catalog; capture new `revision`
-   - For each of the cluster's occurrences (full-artifact ones first):
-     - If `toolId` no longer exists (fix removed the route): mark occurrence `verified_fixed_by_removal`
-     - If `inputSchema` for the toolId changed: re-derive mutation from the new schema, replay
-     - Else: replay verbatim
-   - Cluster verdict:
-     - All replayed occurrences pass: `verified_fixed`
-     - Any still fail: `not_fixed` (kept open for next run)
-   - If full-artifact occurrences pass but lightweight ones can't be replayed (no inputs cached): `partially_verified` with full-artifact subset confirmed
+Dispatch ClaudeMCP `claude_run` with a prompt that puts the model in an architect role:
 
-4. **Final report** distinguishes:
-   - `bugs_filed`: total clusters from initial run
-   - `bugs_attempted_fix`: clusters dispatched
-   - `bugs_verified_fixed`: re-tested and pass
-   - `partially_verified`: some occurrences pass; full set unverifiable
-   - `bugs_persistent`: replayed and still fail
-   - `bugs_skipped`: touched forbidden path / third-party / Claude refused
-   - `bugs_lost_to_revision`: pre-existing toolId removed AND no replay possible
+```
+prompt: |
+  You are an architect writing a focused fix spec for a single BugHunter cluster.
+  You DO NOT implement the fix — you produce a spec the implementer will follow.
+
+  Cluster:
+  .bughunter/runs/{{runId}}/bugs.jsonl   (cluster id: {{clusterId}})
+
+  Suspected files: {{suspectedFiles}}
+  Fix hints: {{fixHints}}
+  Sample occurrence with full repro context: {{exemplarOccurrenceJson}}
+
+  Investigate the root cause. Use gitnexus_impact if the project has gitnexus
+  registered. Read the suspected files. Form a hypothesis.
+
+  Write the spec to:
+    .bughunter/runs/{{runId}}/specs/{{clusterId}}.md
+
+  Format (follow the project's CLAUDE.md spec discipline):
+  - Problem (one paragraph: what's broken and why)
+  - Root cause (cite file:line)
+  - Boundaries (what's in scope / what's not)
+  - Interface change (if any types or signatures need to change)
+  - Edge cases the fix must handle
+  - Acceptance criteria (specific, testable)
+  - Files to touch (exhaustive)
+
+  If the fix is impossible (e.g. requires schema migration / forbidden-path
+  changes), write a spec that says "REFUSE: <reason>" instead. The
+  implementer will see this and refuse to proceed.
+
+  Commit on branch bughunter/{{runId}}/{{clusterId}} (create off baseBranch).
+  Do NOT implement. Do NOT push.
+project: {{projectName}}
+modelHint: 'opus'                  # ClaudeMCP routes to Opus when available
+timeoutMs: 1800000                 # 30 min per spec
+allowedTools: [Read, Grep, Glob, Bash, Write, Edit, ToolSearch, WebFetch, WebSearch, TodoWrite, mcp__paperclip__*]
+```
+
+If the spec content begins with `REFUSE:`, the cluster is marked `bugs_skipped: { reason: "architect_refused", detail: <reason> }` and Phase B is not dispatched.
+
+#### 3.9.2 Phase B — implementation (Sonnet)
+
+Dispatch ClaudeMCP `claude_run` with a prompt that puts the model in a coder role:
+
+```
+prompt: |
+  You are a coder. Implement the fix described at:
+    .bughunter/runs/{{runId}}/specs/{{clusterId}}.md
+
+  Working on branch bughunter/{{runId}}/{{clusterId}} which already has the
+  spec committed by the architect. Read the spec; do not re-derive its
+  decisions; do not exceed its boundaries. Treat the spec as the contract.
+
+  Steps:
+    1. Implement the change exactly as specified.
+    2. Add a regression test that exercises one of the cluster's occurrences.
+    3. Run the project's test command (npm test / pytest / etc.). Tests must
+       pass before commit.
+    4. Commit on the same branch with a message referencing the cluster id.
+    5. Output last commit SHA.
+  Do NOT push.
+  Do NOT touch (will be hard-reset by the post-hoc gate):
+    prisma/migrations/**, prisma/schema.prisma, package.json, package-lock.json,
+    yarn.lock, pnpm-lock.yaml, .env*, .gitignore, migrations/**, alembic/**,
+    .next/**, node_modules/**, dist/**, build/**
+project: {{projectName}}
+modelHint: 'sonnet'                # default; ClaudeMCP can override per cluster
+timeoutMs: 3600000                 # 1h per implementation
+allowedTools: [Bash, Edit, Write, Read, Grep, Glob, ToolSearch, WebFetch, WebSearch, TodoWrite, mcp__paperclip__*]
+```
+
+Note on `modelHint`: ClaudeMCP currently doesn't accept a `model` parameter on `claude_run` (per ClaudeMCP SPEC § 4.1). BugHunter passes `modelHint` for forward-compat; ClaudeMCP can ignore it, or v0.2 of ClaudeMCP can honor it. The prompt's role-setting is the canonical signal in the meantime.
+
+#### 3.9.3 Phase C — post-hoc forbidden-path gate (BugHunter)
+
+After Phase B commit lands (or if Phase B times out / fails):
+
+```bash
+cd <project> && git diff <baseBranch>..bughunter/<runId>/<clusterId> --name-only
+```
+
+Compare against the `forbiddenPaths` list. If any match:
+- `git update-ref refs/heads/bughunter/<runId>/<clusterId> <baseBranch>` (hard-reset to base)
+- Mark cluster as `bugs_skipped: { reason: "touched_forbidden_path", paths: [...] }`
+- Skip retest
+
+#### 3.9.4 Phase D — retest
+
+Refresh SurfaceMCP catalog. For each of the cluster's occurrences (full-artifact ones first):
+- If `toolId` no longer exists (fix removed the route): mark occurrence `verified_fixed_by_removal`
+- If `inputSchema.hash` for the toolId changed: re-derive input via `buildApiInput(newToolMeta, palette, sampleInput, domainHints)`, replay
+- Else: replay verbatim
+
+Cluster verdicts:
+- All replayed occurrences pass: `verified_fixed`
+- Any still fail: `not_fixed` (kept open for next run)
+- Full-artifact pass + lightweight unverifiable: `partially_verified`
+
+#### 3.9.5 Final report
+
+Distinguishes:
+- `bugs_filed`: total clusters from initial run
+- `bugs_specced`: Phase A produced a spec (incl. REFUSE)
+- `bugs_attempted_fix`: Phase B dispatched
+- `bugs_architect_refused`: Phase A returned `REFUSE:`
+- `bugs_verified_fixed`: re-tested and pass
+- `partially_verified`: some occurrences pass; full set unverifiable
+- `bugs_persistent`: replayed and still fail
+- `bugs_skipped`: touched forbidden path / third-party
+- `bugs_lost_to_revision`: pre-existing toolId removed AND no replay possible
 
 `bughunter fix` (no `run` first): reads latest run's bugs.jsonl, dispatches the fix loop without re-running discovery. Honors original run's filters (e.g. if run was scoped to `--route /admin/products/**`, retest is too).
 
@@ -510,7 +606,11 @@ For Hermes / Paperclip agents that want to trigger a bug hunt without a Claude s
    - Forbidden-path gate hard-resets branch and marks cluster `bugs_skipped`
    - `replay` re-executes a captured action log against the dev server
    - `surface_probe` invocation in plan phase upgrades unknown → inferred
-   - Per-cluster ClaudeMCP dispatch (mocked) generates one job per cluster
+   - Per-cluster ClaudeMCP dispatch (mocked) generates **two** jobs per cluster: Phase A (architect, opus) writes spec; Phase B (coder, sonnet) implements
+   - Architect-refused spec (`REFUSE:` prefix) skips Phase B and marks `bugs_skipped: architect_refused`
+   - Server-action tools (`isServerAction: true`) are excluded from API direct-call test plan
+   - Classifier priority hierarchy: a single occurrence triggering `404_for_linked_route` + `surface_call_failed` + `network_4xx_unexpected` clusters to the **highest-priority** kind only (here: `surface_call_failed`); the others land in `secondaryObservations`
+   - `surfaceMcpUrl` adapter strips one trailing `/mcp` if present (backward-compat); init wizard default is base URL `http://127.0.0.1:3102` without `/mcp`
 3. **Manual smoke against Spoonworks** (Next.js + revised SurfaceMCP):
    - `bughunter init` writes valid config
    - `bughunter run` discovers ~50 API routes (from SurfaceMCP) + filesystem-routed pages + DOM elements per page
