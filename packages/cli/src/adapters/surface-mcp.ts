@@ -82,7 +82,9 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
   private readonly baseUrl: string;
 
   constructor(baseUrl: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, '');
+    // Strip one trailing /mcp (with optional trailing slash) for backward-compat
+    // with configs that include the path. The adapter appends /mcp internally.
+    this.baseUrl = baseUrl.replace(/\/mcp\/?$/, '').replace(/\/$/, '');
   }
 
   private async mcpCall<T>(tool: string, args: unknown): Promise<T> {

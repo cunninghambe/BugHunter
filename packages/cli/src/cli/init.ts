@@ -17,7 +17,7 @@ export async function initCommand(projectDir: string): Promise<void> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   const projectName = await rl.question('Project name: ');
-  const surfaceMcpUrl = await rl.question('SurfaceMCP URL [http://127.0.0.1:3102/mcp]: ') || 'http://127.0.0.1:3102/mcp';
+  const surfaceMcpUrl = await rl.question('SurfaceMCP URL [http://127.0.0.1:3102]: ') || 'http://127.0.0.1:3102';
   const browserMcpUrl = await rl.question('Browser MCP URL [http://127.0.0.1:3100/mcp]: ') || 'http://127.0.0.1:3100/mcp';
   const claudeMcpUrl = await rl.question('ClaudeMCP URL (optional, for --auto-fix) [http://127.0.0.1:3101/mcp]: ') || 'http://127.0.0.1:3101/mcp';
   const resetCommand = await rl.question('Reset command (e.g. npm run db:seed): ');
