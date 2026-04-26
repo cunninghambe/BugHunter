@@ -15,6 +15,8 @@ export type ActionLogEntry = {
   toolId?: string;
   palette?: string;
   input?: unknown;
+  /** SHA-1 hash (first 12 hex chars) of the tool's inputSchema at the time this entry was written. */
+  inputSchemaHash?: string;
   timestamp: string;
 };
 

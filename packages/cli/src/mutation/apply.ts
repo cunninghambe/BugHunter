@@ -95,7 +95,7 @@ function buildFormInput(
   return result;
 }
 
-function buildApiInput(
+export function buildApiInput(
   tool: ToolMeta,
   palette: PaletteVariant,
   sampleInput: unknown,

@@ -4,13 +4,14 @@ import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   TestCase, TestResult, BugDetection, InfrastructureFailure, PreState, PostState,
-  ConsoleError, NetworkRequest, RunState
+  ConsoleError, NetworkRequest, RunState, ToolMeta
 } from '../types.js';
 import { classifyConsoleErrors } from '../classify/console.js';
 import { classifyNetworkRequests } from '../classify/network.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
 import { classifyDomErrorText } from '../classify/dom-error-text.js';
 import { writeActionLog } from '../repro/action-log.js';
+import { hashSchema } from '../util/hash.js';
 import { runPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
 import { createId } from '@paralleldrive/cuid2';
@@ -29,6 +30,8 @@ export type ExecuteOptions = {
   onClusterFound: (clusterKey: string) => number; // returns current cluster count
   extraHeaders?: Record<string, string>;
   enableA11y?: boolean;
+  /** Tool catalog keyed by toolId; used to persist inputSchemaHash in action logs. */
+  toolMap?: Map<string, ToolMeta>;
 };
 
 export type ExecuteResult = {
@@ -37,7 +40,7 @@ export type ExecuteResult = {
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
@@ -53,7 +56,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     try {
       const result = tc.action.via === 'ui'
         ? await executeUiTest(tc, browser!, surface, runState.runId, paths.actionLogsDir, extraHeaders)
-        : await executeApiTest(tc, surface, runState.runId, paths.actionLogsDir);
+        : await executeApiTest(tc, surface, runState.runId, paths.actionLogsDir, toolMap);
       return result;
     } catch (err) {
       const infra: InfrastructureFailure = {
@@ -234,6 +237,10 @@ async function executeUiTest(
     if (domBug) bugs.push(domBug);
   }
 
+  // Suppress unused variable warnings — snapshots captured for future use
+  void preSnapshot;
+  void postSnapshot;
+
   // Write action log
   writeActionLog(actionLogsDir, actionLog);
 
@@ -249,7 +256,8 @@ async function executeApiTest(
   tc: TestCase,
   surface: SurfaceMcpAdapter,
   runId: string,
-  actionLogsDir: string
+  actionLogsDir: string,
+  toolMap?: Map<string, ToolMeta>
 ): Promise<TestResult> {
   const start = Date.now();
   const bugs: BugDetection[] = [];
@@ -292,6 +300,7 @@ async function executeApiTest(
   }
 
   // Write action log
+  const toolSchema = toolMap?.get(tc.action.toolId)?.inputSchema;
   const actionLog = {
     occurrenceId,
     runId,
@@ -306,6 +315,7 @@ async function executeApiTest(
       toolId: tc.action.toolId,
       palette: tc.action.palette,
       input: tc.action.input,
+      inputSchemaHash: toolSchema ? hashSchema(toolSchema) : undefined,
       timestamp: new Date().toISOString(),
     }],
     createdAt: new Date().toISOString(),
