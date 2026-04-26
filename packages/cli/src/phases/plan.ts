@@ -77,8 +77,10 @@ export async function runPlan(
       }
     }
 
-    // Per-tool API tests
+    // Per-tool API tests — server actions are excluded (§ 3.4)
     for (const tool of enrichedTools) {
+      if (tool.isServerAction) continue;
+
       const samples = await surface.surface_sample_inputs({ toolId: tool.toolId })
         .then(r => r.samples.map(s => s.input))
         .catch(() => []);
