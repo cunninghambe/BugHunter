@@ -48,7 +48,6 @@ function bugsFilePath(projectDir: string, runId: string): string {
 async function importCli(): Promise<{
   runCommand: (opts: {
     projectDir: string;
-    autoFix?: boolean;
     route?: string;
     role?: string;
     maxBugs?: number;
@@ -67,7 +66,6 @@ export function registerTools(server: McpServer): void {
     'Start a BugHunter run. Returns a jobId to poll for completion.',
     {
       project: z.string().min(1).describe('Path to the project directory'),
-      autoFix: z.boolean().optional().describe('Run auto-fix after discovery'),
       routePattern: z.string().optional().describe('Limit to routes matching glob'),
       roles: z.array(z.string()).optional().describe('Limit to specific roles'),
       maxBugs: z.number().int().optional().describe('Stop-and-emit at N clusters'),
@@ -84,7 +82,6 @@ export function registerTools(server: McpServer): void {
             const cli = await importCli();
             await cli.runCommand({
               projectDir: args.project,
-              autoFix: args.autoFix,
               route: args.routePattern,
               role: args.roles?.[0],
               maxBugs: args.maxBugs,
