@@ -1,0 +1,34 @@
+{
+  "name": "bughunter",
+  "version": "0.1.0",
+  "description": "Exhaustive mutation-based UI + API bug hunter for local dev apps",
+  "type": "module",
+  "bin": {
+    "bughunter": "./dist/cli/main.js"
+  },
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json",
+    "typecheck": "../../node_modules/.bin/tsc -p tsconfig.json --noEmit",
+    "test": "../../node_modules/.bin/vitest run",
+    "test:watch": "../../node_modules/.bin/vitest",
+    "dev": "../../node_modules/.bin/tsx watch src/cli/main.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@paralleldrive/cuid2": "2.2.2",
+    "glob": "11.0.2",
+    "micromatch": "4.0.8",
+    "picocolors": "1.1.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/micromatch": "4.0.9",
+    "@types/node": "22.19.17",
+    "tsx": "4.21.0",
+    "typescript": "5.8.3",
+    "vitest": "4.1.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
