@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { clusterSignature } from '../src/cluster/signature.js';
 import { normalizeErrorMessage, fingerprintStackTrace } from '../src/cluster/normalize.js';
 import type { BugDetection } from '../src/types.js';
-import stackFixture from '../../fixtures/stack-trace-clustering/stacks.json' assert { type: 'json' };
+import stackFixture from '../../../fixtures/stack-trace-clustering/stacks.json' with { type: 'json' };
 
 describe('normalizeErrorMessage', () => {
   it('lowercases and strips numeric ids (4+ digits)', () => {
@@ -100,7 +100,7 @@ describe('cluster signature — 10 known stacks → 3 clusters', () => {
     // Group by signature
     const groups = new Map<string, string[]>();
     for (const [id, sig] of signatures) {
-      const stackData = stackFixture.stacks.find(s => s.id === id)!;
+      const stackData = stackFixture.stacks.find((s: { id: string; expectedCluster: string }) => s.id === id)!;
       const cluster = stackData.expectedCluster;
       if (!groups.has(sig)) groups.set(sig, []);
       groups.get(sig)!.push(cluster);
