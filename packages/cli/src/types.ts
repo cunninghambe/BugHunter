@@ -148,6 +148,7 @@ export type BugsSkippedReason =
 export type BugsSkipped = {
   reason: BugsSkippedReason;
   paths?: string[];
+  detail?: string;
 };
 
 export type InfrastructureFailure = {

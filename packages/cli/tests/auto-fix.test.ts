@@ -1,8 +1,20 @@
-import { describe, it, expect, vi } from 'vitest';
-import { dispatchClusterFix } from '../src/auto-fix/dispatch.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { checkForbiddenPaths } from '../src/auto-fix/forbidden-paths.js';
 import type { BugCluster } from '../src/types.js';
-import type { ClaudeMcpAdapter } from '../src/adapters/claude-mcp.js';
+import type { ClaudeMcpAdapter, ClaudeJobStatus } from '../src/adapters/claude-mcp.js';
+
+// Mock node:fs so dispatch.ts's readFileSync is controllable per-test.
+vi.mock('node:fs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs')>();
+  return { ...real, readFileSync: vi.fn(real.readFileSync) };
+});
+
+import * as fs from 'node:fs';
+import { dispatchClusterFix } from '../src/auto-fix/dispatch.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function makeCluster(id = 'cluster-1'): BugCluster {
   return {
@@ -20,44 +32,111 @@ function makeCluster(id = 'cluster-1'): BugCluster {
   };
 }
 
-describe('per-cluster ClaudeMCP dispatch', () => {
-  it('dispatches one job per cluster', async () => {
-    const jobs: string[] = [];
-    const mockAdapter: ClaudeMcpAdapter = {
-      claude_run: vi.fn().mockImplementation(async (args: { project: string; prompt: string }) => {
-        jobs.push(args.project);
-        return { jobId: `job-${jobs.length}` };
-      }),
-      claude_job_status: vi.fn(),
-    };
+function makeAdapter(): { adapter: ClaudeMcpAdapter; runCalls: Array<{ project: string; prompt: string }> } {
+  const runCalls: Array<{ project: string; prompt: string }> = [];
+  let jobCounter = 0;
+  const adapter: ClaudeMcpAdapter = {
+    claude_run: vi.fn().mockImplementation(async (args: { project: string; prompt: string }) => {
+      runCalls.push({ project: args.project, prompt: args.prompt });
+      jobCounter++;
+      return { jobId: `job-${jobCounter}` };
+    }),
+    claude_job_status: vi.fn().mockResolvedValue({ state: 'done' } satisfies ClaudeJobStatus),
+  };
+  return { adapter, runCalls };
+}
 
-    const clusters = [makeCluster('c1'), makeCluster('c2'), makeCluster('c3')];
+function mockSpecFile(content: string): void {
+  vi.mocked(fs.readFileSync).mockReturnValue(content);
+}
 
-    for (const cluster of clusters) {
-      const result = await dispatchClusterFix(cluster, 'myproject', 'run-1', '/project', mockAdapter);
-      expect(result.clusterId).toBe(cluster.id);
-      expect(result.jobId).toMatch(/^job-/);
-    }
+describe('per-cluster ClaudeMCP dispatch — two-phase (§ 3.9.1–3.9.2)', () => {
+  it('dispatches TWO jobs per cluster (Phase A + Phase B)', async () => {
+    mockSpecFile('# Valid spec content');
+    const { adapter, runCalls } = makeAdapter();
 
-    expect(mockAdapter.claude_run).toHaveBeenCalledTimes(3);
-    expect(jobs).toHaveLength(3);
+    const cluster = makeCluster('c1');
+    const result = await dispatchClusterFix(cluster, 'myproject', 'run-1', '/project', adapter);
+
+    expect(adapter.claude_run).toHaveBeenCalledTimes(2);
+    expect(runCalls).toHaveLength(2);
+    expect(result.clusterId).toBe('c1');
+    expect(result.architectJobId).toBe('job-1');
+    expect(result.coderJobId).toBe('job-2');
+    expect(result.bugsSkipped).toBeUndefined();
   });
 
-  it('prompt includes cluster id, suspectedFiles, and forbidden paths note', async () => {
-    let capturedPrompt = '';
-    const mockAdapter: ClaudeMcpAdapter = {
-      claude_run: vi.fn().mockImplementation(async (args: { prompt: string }) => {
-        capturedPrompt = args.prompt;
-        return { jobId: 'job-1' };
-      }),
-      claude_job_status: vi.fn(),
-    };
+  it('Phase A prompt includes architect role, cluster id, suspected files, spec path', async () => {
+    mockSpecFile('# Spec');
+    const { adapter, runCalls } = makeAdapter();
 
-    const cluster = makeCluster('cluster-abc');
-    await dispatchClusterFix(cluster, 'proj', 'run-1', '/proj', mockAdapter);
+    await dispatchClusterFix(makeCluster('cluster-abc'), 'proj', 'run-1', '/proj', adapter);
 
-    expect(capturedPrompt).toContain('cluster-abc');
-    expect(capturedPrompt).toContain('prisma/schema.prisma');
+    const architectPrompt = runCalls[0].prompt;
+    expect(architectPrompt).toContain('You are an architect');
+    expect(architectPrompt).toContain('cluster-abc');
+    expect(architectPrompt).toContain('src/api/route.ts');
+    expect(architectPrompt).toContain('.bughunter/runs/run-1/specs/cluster-abc.md');
+    expect(architectPrompt).toContain('Do NOT implement');
+  });
+
+  it('Phase B prompt includes coder role, cluster id, spec path, forbidden paths', async () => {
+    mockSpecFile('# Spec');
+    const { adapter, runCalls } = makeAdapter();
+
+    await dispatchClusterFix(makeCluster('cluster-xyz'), 'proj', 'run-1', '/proj', adapter);
+
+    const coderPrompt = runCalls[1].prompt;
+    expect(coderPrompt).toContain('You are a coder');
+    expect(coderPrompt).toContain('cluster-xyz');
+    expect(coderPrompt).toContain('prisma/schema.prisma');
+    expect(coderPrompt).toContain('Do NOT push');
+  });
+
+  it('dispatches two jobs each for three clusters (total 6 claude_run calls)', async () => {
+    mockSpecFile('# Some spec');
+    const { adapter } = makeAdapter();
+
+    const clusters = [makeCluster('c1'), makeCluster('c2'), makeCluster('c3')];
+    for (const cluster of clusters) {
+      await dispatchClusterFix(cluster, 'myproject', 'run-1', '/project', adapter);
+    }
+
+    expect(adapter.claude_run).toHaveBeenCalledTimes(6);
+  });
+
+  it('REFUSE: in spec skips Phase B and marks bugs_skipped: architect_refused', async () => {
+    mockSpecFile('REFUSE: requires schema migration');
+    const { adapter } = makeAdapter();
+
+    const result = await dispatchClusterFix(makeCluster('cluster-refuse'), 'proj', 'run-1', '/proj', adapter);
+
+    // Only Phase A dispatched
+    expect(adapter.claude_run).toHaveBeenCalledTimes(1);
+    expect(result.coderJobId).toBeUndefined();
+    expect(result.bugsSkipped).toBeDefined();
+    expect(result.bugsSkipped!.reason).toBe('architect_refused');
+    expect(result.bugsSkipped!.detail).toBe('requires schema migration');
+  });
+
+  it('REFUSE: is detected even with leading blank lines in spec', async () => {
+    mockSpecFile('\n\nREFUSE: forbidden path touched');
+    const { adapter } = makeAdapter();
+
+    const result = await dispatchClusterFix(makeCluster('cluster-refuse2'), 'proj', 'run-1', '/proj', adapter);
+
+    expect(adapter.claude_run).toHaveBeenCalledTimes(1);
+    expect(result.bugsSkipped?.reason).toBe('architect_refused');
+  });
+
+  it('polls claude_job_status after Phase A before dispatching Phase B', async () => {
+    mockSpecFile('# Valid spec');
+    const { adapter } = makeAdapter();
+
+    await dispatchClusterFix(makeCluster('c1'), 'myproject', 'run-1', '/project', adapter);
+
+    // job_status must be called for the Phase A job (job-1) before Phase B runs
+    expect(adapter.claude_job_status).toHaveBeenCalledWith({ jobId: 'job-1' });
   });
 });
 

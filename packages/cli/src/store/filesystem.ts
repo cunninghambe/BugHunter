@@ -14,6 +14,7 @@ export type RunPaths = {
   networkDir: string;
   actionLogsDir: string;
   summaryFile: string;
+  specsDir: string;
 };
 
 export function runPaths(projectDir: string, runId: string): RunPaths {
@@ -29,6 +30,7 @@ export function runPaths(projectDir: string, runId: string): RunPaths {
     networkDir: path.join(runDir, 'network'),
     actionLogsDir: path.join(runDir, 'action-logs'),
     summaryFile: path.join(runDir, 'summary.json'),
+    specsDir: path.join(runDir, 'specs'),
   };
 }
 
@@ -40,6 +42,7 @@ export function ensureRunDirs(paths: RunPaths): void {
     paths.consoleDir,
     paths.networkDir,
     paths.actionLogsDir,
+    paths.specsDir,
   ]) {
     fs.mkdirSync(dir, { recursive: true });
   }
