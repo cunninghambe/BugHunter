@@ -22,7 +22,7 @@ vi.mock('../src/repro/replay.js', () => ({
 
 import { readActionLog } from '../src/repro/action-log.js';
 import { replayActionLog } from '../src/repro/replay.js';
-import { verifyClusterFix } from '../src/auto-fix/verify.js';
+import { replayCluster } from '../src/ops/retest.js';
 
 // --- helpers ---
 
@@ -142,13 +142,15 @@ function mockSurface(tools: ToolMeta[]): SurfaceMcpAdapter {
   };
 }
 
+const ACTION_LOGS_DIR = '/tmp/bughunter-test/run-1/action-logs';
+
 // --- tests ---
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('verifyClusterFix — schema unchanged', () => {
+describe('replayCluster — schema unchanged', () => {
   it('replays input verbatim when inputSchemaHash matches post-fix schema', async () => {
     const toolId = 'tool-unchanged';
     const schema = oldSchema;
@@ -163,7 +165,7 @@ describe('verifyClusterFix — schema unchanged', () => {
     const surface = mockSurface([makeToolMeta(toolId, schema)]);
     const cluster = makeCluster([makeOccurrence(toolId)]);
 
-    const result = await verifyClusterFix(cluster, '/proj', 'run-1', surface);
+    const result = await replayCluster(cluster, ACTION_LOGS_DIR, surface);
 
     expect(result.verdict).toBe('verified_fixed');
     expect(result.passedOccurrences).toBe(1);
@@ -174,7 +176,7 @@ describe('verifyClusterFix — schema unchanged', () => {
   });
 });
 
-describe('verifyClusterFix — schema changed', () => {
+describe('replayCluster — schema changed', () => {
   it('regenerates input with same palette when inputSchema changed after fix', async () => {
     const toolId = 'tool-changed';
     // The action log was written against oldSchema
@@ -190,7 +192,7 @@ describe('verifyClusterFix — schema changed', () => {
     const surface = mockSurface([makeToolMeta(toolId, newSchema)]);
     const cluster = makeCluster([makeOccurrence(toolId)]);
 
-    await verifyClusterFix(cluster, '/proj', 'run-1', surface);
+    await replayCluster(cluster, ACTION_LOGS_DIR, surface);
 
     const passedLog = vi.mocked(replayActionLog).mock.calls[0][0] as ActionLog;
     const passedInput = passedLog.actions[0].input as Record<string, unknown>;
@@ -216,7 +218,7 @@ describe('verifyClusterFix — schema changed', () => {
     const surface = mockSurface([makeToolMeta(toolId, newSchema)]);
     const cluster = makeCluster([makeOccurrence(toolId)]);
 
-    await verifyClusterFix(cluster, '/proj', 'run-1', surface);
+    await replayCluster(cluster, ACTION_LOGS_DIR, surface);
 
     // We can verify the palette was 'edge' by confirming the action log entry's palette is intact
     const passedLog = vi.mocked(replayActionLog).mock.calls[0][0] as ActionLog;
@@ -224,14 +226,14 @@ describe('verifyClusterFix — schema changed', () => {
   });
 });
 
-describe('verifyClusterFix — tool removed entirely', () => {
+describe('replayCluster — tool removed entirely', () => {
   it('returns verified_fixed_by_removal when the tool no longer exists in the catalog', async () => {
     const toolId = 'tool-removed';
 
     const surface = mockSurface([]); // empty catalog — tool gone
     const cluster = makeCluster([makeOccurrence(toolId)]);
 
-    const result = await verifyClusterFix(cluster, '/proj', 'run-1', surface);
+    const result = await replayCluster(cluster, ACTION_LOGS_DIR, surface);
 
     expect(result.verdict).toBe('verified_fixed_by_removal');
     expect(result.passedOccurrences).toBe(1);
