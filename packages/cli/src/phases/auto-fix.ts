@@ -12,7 +12,9 @@ import type { BugHunterConfig } from '../types.js';
 import { log } from '../log.js';
 
 export type AutoFixReport = {
+  bugs_specced: number;
   bugs_attempted_fix: number;
+  bugs_architect_refused: number;
   bugs_verified_fixed: number;
   partially_verified: number;
   bugs_persistent: number;
@@ -22,7 +24,8 @@ export type AutoFixReport = {
     clusterId: string;
     verdict?: string;
     bugsSkipped?: BugsSkipped;
-    jobId?: string;
+    architectJobId?: string;
+    coderJobId?: string;
     branch?: string;
   }>;
 };
@@ -41,7 +44,9 @@ export async function runAutoFix(
   const projectName = config.autoFixDispatchProject ?? config.projectName;
 
   const report: AutoFixReport = {
+    bugs_specced: 0,
     bugs_attempted_fix: 0,
+    bugs_architect_refused: 0,
     bugs_verified_fixed: 0,
     partially_verified: 0,
     bugs_persistent: 0,
@@ -59,11 +64,9 @@ export async function runAutoFix(
     const branch = `bughunter/${runId}/${cluster.id}`;
     log.info(`Auto-fix: dispatching cluster ${cluster.id}`);
 
-    let jobId: string;
+    let dispatch: Awaited<ReturnType<typeof dispatchClusterFix>>;
     try {
-      const dispatch = await dispatchClusterFix(cluster, projectName, runId, projectDir, claudeMcp);
-      jobId = dispatch.jobId;
-      report.bugs_attempted_fix++;
+      dispatch = await dispatchClusterFix(cluster, projectName, runId, projectDir, claudeMcp, baseBranch);
     } catch (err) {
       log.error(`Failed to dispatch fix for cluster ${cluster.id}`, err);
       const skipped: BugsSkipped = { reason: 'claude_refused' };
@@ -72,17 +75,23 @@ export async function runAutoFix(
       continue;
     }
 
-    // Wait for job to complete (poll)
-    const jobResult = await pollJobCompletion(jobId, claudeMcp);
+    report.bugs_specced++;
 
-    if (!jobResult) {
-      const skipped: BugsSkipped = { reason: 'claude_refused' };
+    // Architect refused — no coder phase, no retest
+    if (dispatch.bugsSkipped) {
+      report.bugs_architect_refused++;
       report.bugs_skipped++;
-      report.clusterResults.push({ clusterId: cluster.id, bugsSkipped: skipped, jobId });
+      report.clusterResults.push({
+        clusterId: cluster.id,
+        bugsSkipped: dispatch.bugsSkipped,
+        architectJobId: dispatch.architectJobId,
+      });
       continue;
     }
 
-    // Post-hoc forbidden-path gate
+    report.bugs_attempted_fix++;
+
+    // Phase C: post-hoc forbidden-path gate (Phase B already committed)
     const gateResult = checkForbiddenPaths(projectDir, baseBranch, branch, forbiddenPatterns);
 
     if (!gateResult.allowed) {
@@ -93,11 +102,17 @@ export async function runAutoFix(
         paths: gateResult.violatingPaths,
       };
       report.bugs_skipped++;
-      report.clusterResults.push({ clusterId: cluster.id, bugsSkipped: skipped, jobId, branch });
+      report.clusterResults.push({
+        clusterId: cluster.id,
+        bugsSkipped: skipped,
+        architectJobId: dispatch.architectJobId,
+        coderJobId: dispatch.coderJobId,
+        branch,
+      });
       continue;
     }
 
-    // Retest
+    // Phase D: retest
     const verifyResult = await verifyClusterFix(cluster, projectDir, runId, surface, browser);
 
     switch (verifyResult.verdict) {
@@ -116,7 +131,8 @@ export async function runAutoFix(
     report.clusterResults.push({
       clusterId: cluster.id,
       verdict: verifyResult.verdict,
-      jobId,
+      architectJobId: dispatch.architectJobId,
+      coderJobId: dispatch.coderJobId,
       branch,
     });
   }
@@ -124,20 +140,3 @@ export async function runAutoFix(
   return report;
 }
 
-async function pollJobCompletion(
-  jobId: string,
-  claudeMcp: ClaudeMcpAdapter
-): Promise<{ commitSha?: string } | null> {
-  const maxWaitMs = 3_600_000; // 1h
-  const pollIntervalMs = 10_000; // 10s
-  const deadline = Date.now() + maxWaitMs;
-
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, pollIntervalMs));
-    const status = await claudeMcp.claude_job_status({ jobId }).catch(() => null);
-    if (!status) continue;
-    if (status.state === 'done') return { commitSha: status.commitSha };
-    if (status.state === 'failed' || status.state === 'cancelled') return null;
-  }
-  return null;
-}
