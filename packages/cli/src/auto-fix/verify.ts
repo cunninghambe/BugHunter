@@ -1,10 +1,13 @@
 // Post-fix verification — retest + revision-aware classification (§ 3.9 step 3).
 
-import type { BugCluster, ClusterVerdict, OccurrenceFull } from '../types.js';
+import type { BugCluster, ClusterVerdict, OccurrenceFull, ToolMeta, PaletteVariant } from '../types.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
+import type { ActionLog } from '../repro/action-log.js';
 import { replayActionLog } from '../repro/replay.js';
 import { readActionLog } from '../repro/action-log.js';
+import { buildApiInput } from '../mutation/apply.js';
+import { hashSchema } from '../util/hash.js';
 import { runPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
 
@@ -24,9 +27,11 @@ export async function verifyClusterFix(
 ): Promise<VerifyResult> {
   const paths = runPaths(projectDir, runId);
 
-  // Refresh catalog to detect tool removals
+  // Refresh catalog to detect tool removals and schema changes
   const catalog = await surface.surface_list_tools().catch(() => null);
-  const existingToolIds = new Set((catalog?.tools ?? []).map(t => t.toolId));
+  const tools = catalog?.tools ?? [];
+  const existingToolIds = new Set(tools.map(t => t.toolId));
+  const toolMap = new Map<string, ToolMeta>(tools.map(t => [t.toolId, t]));
 
   const fullOccs = cluster.occurrences.filter((o): o is OccurrenceFull => o.fullArtifacts);
   const lightweightCount = cluster.occurrences.filter(o => !o.fullArtifacts).length;
@@ -53,8 +58,9 @@ export async function verifyClusterFix(
         log.warn(`Cannot replay UI occurrence ${occ.occurrenceId} without browser`);
         continue;
       }
+      const replayLog = applySchemaChanges(actionLog, toolMap);
       const result = await replayActionLog(
-        actionLog,
+        replayLog,
         browser ?? ({} as BrowserMcpAdapter),
         surface,
         runId
@@ -88,4 +94,23 @@ export async function verifyClusterFix(
   }
 
   return { clusterId: cluster.id, verdict: 'not_fixed', replayedOccurrences, passedOccurrences };
+}
+
+/**
+ * Returns a shallow copy of the action log with inputs regenerated for any
+ * entries whose tool's inputSchema changed since the log was captured.
+ */
+function applySchemaChanges(actionLog: ActionLog, toolMap: Map<string, ToolMeta>): ActionLog {
+  const updatedActions = actionLog.actions.map(entry => {
+    if (!entry.toolId || !entry.inputSchemaHash) return entry;
+    const newTool = toolMap.get(entry.toolId);
+    if (!newTool) return entry;
+    if (hashSchema(newTool.inputSchema) === entry.inputSchemaHash) return entry;
+
+    const palette = (entry.palette ?? 'happy') as PaletteVariant;
+    const regenerated = buildApiInput(newTool, palette, entry.input, undefined);
+    return { ...entry, input: regenerated };
+  });
+
+  return { ...actionLog, actions: updatedActions };
 }
