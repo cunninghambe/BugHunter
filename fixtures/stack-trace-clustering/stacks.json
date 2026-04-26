@@ -1,0 +1,65 @@
+{
+  "stacks": [
+    {
+      "id": "s1",
+      "message": "TypeError: Cannot read properties of undefined (reading 'map')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'map')\n    at ProductList (src/features/products/ProductList.tsx:42:15)\n    at fetchProducts (src/features/products/useProducts.ts:18:3)\n    at ProductsPage (src/pages/products/ProductsPage.tsx:12:5)\n    at react-dom/cjs/react-dom.development.js:123:4\n    at node_modules/react/index.js:456:10",
+      "expectedCluster": "cluster_a"
+    },
+    {
+      "id": "s2",
+      "message": "TypeError: Cannot read properties of undefined (reading 'map')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'map')\n    at ProductList (src/features/products/ProductList.tsx:67:22)\n    at fetchProducts (src/features/products/useProducts.ts:23:8)\n    at ProductsPage (src/pages/products/ProductsPage.tsx:15:3)\n    at webpack-internal:///./node_modules/react-dom/cjs/react-dom.development.js:456:10",
+      "expectedCluster": "cluster_a"
+    },
+    {
+      "id": "s3",
+      "message": "TypeError: Cannot read properties of undefined (reading 'filter')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'filter')\n    at ProductList (src/features/products/ProductList.tsx:42:15)\n    at fetchProducts (src/features/products/useProducts.ts:18:3)\n    at ProductsPage (src/pages/products/ProductsPage.tsx:12:5)\n    at react-dom/cjs/react-dom.development.js:123:4",
+      "expectedCluster": "cluster_a"
+    },
+    {
+      "id": "s4",
+      "message": "Error: Failed to fetch data from /api/orders/12345",
+      "stack": "Error: Failed to fetch data from /api/orders/12345\n    at OrdersService (src/services/orders.ts:88:5)\n    at useOrders (src/hooks/useOrders.ts:34:12)\n    at OrdersPage (src/pages/orders/OrdersPage.tsx:22:4)\n    at node_modules/react/index.js:234:6",
+      "expectedCluster": "cluster_b"
+    },
+    {
+      "id": "s5",
+      "message": "Error: Failed to fetch data from /api/orders/67890",
+      "stack": "Error: Failed to fetch data from /api/orders/67890\n    at OrdersService (src/services/orders.ts:92:5)\n    at useOrders (src/hooks/useOrders.ts:38:12)\n    at OrdersPage (src/pages/orders/OrdersPage.tsx:25:4)\n    at webpack-internal:///node_modules/react-dom/index.js:100:5",
+      "expectedCluster": "cluster_b"
+    },
+    {
+      "id": "s6",
+      "message": "Error: Failed to fetch data from /api/orders/99999",
+      "stack": "Error: Failed to fetch data from /api/orders/99999\n    at OrdersService (src/services/orders.ts:95:3)\n    at useOrders (src/hooks/useOrders.ts:40:8)\n    at OrdersPage (src/pages/orders/OrdersPage.tsx:27:2)\n    at .next/static/chunks/pages/orders.js:5:10",
+      "expectedCluster": "cluster_b"
+    },
+    {
+      "id": "s7",
+      "message": "ReferenceError: window is not defined",
+      "stack": "ReferenceError: window is not defined\n    at Analytics.init (src/lib/analytics.ts:15:3)\n    at _app (src/pages/_app.tsx:28:5)\n    at next/dist/server/render.js:100:4",
+      "expectedCluster": "cluster_c"
+    },
+    {
+      "id": "s8",
+      "message": "ReferenceError: window is not defined",
+      "stack": "ReferenceError: window is not defined\n    at Analytics.init (src/lib/analytics.ts:17:10)\n    at _app (src/pages/_app.tsx:30:5)\n    at next/dist/pages/_document.js:88:3",
+      "expectedCluster": "cluster_c"
+    },
+    {
+      "id": "s9",
+      "message": "ReferenceError: window is not defined",
+      "stack": "ReferenceError: window is not defined\n    at Analytics.init (src/lib/analytics.ts:45:3)\n    at _app (src/pages/_app.tsx:28:5)\n    at node_modules/next/dist/pages/_document.js:200:3",
+      "expectedCluster": "cluster_c"
+    },
+    {
+      "id": "s10",
+      "message": "ReferenceError: window is not defined",
+      "stack": "ReferenceError: window is not defined\n    at Analytics.init (src/lib/analytics.ts:15:3)\n    at _app (src/pages/_app.tsx:28:5)\n    at node_modules/next/dist/server/render.js:100:4",
+      "expectedCluster": "cluster_c"
+    }
+  ],
+  "expectedClusterCount": 3
+}
