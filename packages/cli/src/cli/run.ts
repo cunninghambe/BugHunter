@@ -6,7 +6,6 @@ import { initRunState, saveRunState, loadRunState } from '../store/run-state.js'
 import { runPaths } from '../store/filesystem.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
-import { HttpClaudeMcpAdapter } from '../adapters/claude-mcp.js';
 import { runValidate } from '../phases/validate.js';
 import { runDiscover } from '../phases/discover.js';
 import { runPlan } from '../phases/plan.js';
@@ -14,13 +13,10 @@ import { runExecute } from '../phases/execute.js';
 import { runClassify } from '../phases/classify.js';
 import { runCluster } from '../phases/cluster.js';
 import { runEmit } from '../phases/emit.js';
-import { runAutoFix } from '../phases/auto-fix.js';
-import { appendJsonl } from '../store/filesystem.js';
 import { log } from '../log.js';
 
 export type RunOptions = {
   projectDir: string;
-  autoFix?: boolean;
   route?: string;
   role?: string;
   maxBugs?: number;
@@ -51,7 +47,6 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
   const browser = resolved.browserMcpUrl ? new CamofoxBrowserMcpAdapter(resolved.browserMcpUrl) : undefined;
-  const claudeMcp = resolved.claudeMcpUrl ? new HttpClaudeMcpAdapter(resolved.claudeMcpUrl) : undefined;
 
   // Resume or new run
   let runId: string;
@@ -171,40 +166,6 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const actualRuntimeMs = Date.now() - startMs;
   runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs);
   runState.emitted = true;
-  runState.phase = opts.autoFix ? 'fix' : 'done';
+  runState.phase = 'done';
   saveRunState(runState);
-
-  // Phase 7: auto-fix (optional)
-  if (opts.autoFix) {
-    if (!claudeMcp) {
-      log.error('--auto-fix requires claudeMcpUrl in config');
-    } else {
-      const { execSync } = await import('node:child_process');
-      let baseBranch = 'main';
-      try {
-        baseBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-          cwd: opts.projectDir,
-          encoding: 'utf-8',
-        }).trim();
-      } catch {}
-
-      const fixReport = await runAutoFix(
-        clusters,
-        opts.projectDir,
-        runId,
-        resolved,
-        baseBranch,
-        claudeMcp,
-        surface,
-        browser
-      );
-
-      log.info('Auto-fix complete', fixReport);
-      process.stdout.write(
-        `\nAuto-fix: ${fixReport.bugs_verified_fixed} fixed, ${fixReport.bugs_persistent} persistent, ${fixReport.bugs_skipped} skipped\n`
-      );
-    }
-    runState.phase = 'done';
-    saveRunState(runState);
-  }
 }

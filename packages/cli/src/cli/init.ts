@@ -19,7 +19,6 @@ export async function initCommand(projectDir: string): Promise<void> {
   const projectName = await rl.question('Project name: ');
   const surfaceMcpUrl = await rl.question('SurfaceMCP URL [http://127.0.0.1:3102]: ') || 'http://127.0.0.1:3102';
   const browserMcpUrl = await rl.question('Browser MCP URL [http://127.0.0.1:3100/mcp]: ') || 'http://127.0.0.1:3100/mcp';
-  const claudeMcpUrl = await rl.question('ClaudeMCP URL (optional, for --auto-fix) [http://127.0.0.1:3101/mcp]: ') || 'http://127.0.0.1:3101/mcp';
   const resetCommand = await rl.question('Reset command (e.g. npm run db:seed): ');
   const resetPolicy = await rl.question('Reset policy [per-page]: ') || 'per-page';
 
@@ -29,7 +28,6 @@ export async function initCommand(projectDir: string): Promise<void> {
     projectName,
     surfaceMcpUrl,
     browserMcpUrl: browserMcpUrl || undefined,
-    claudeMcpUrl: claudeMcpUrl || undefined,
     resetCommand: resetCommand || undefined,
     resetPolicy: (resetPolicy as BugHunterConfig['resetPolicy']) || 'per-page',
     maxBugs: 200,
@@ -41,5 +39,5 @@ export async function initCommand(projectDir: string): Promise<void> {
   saveConfig(projectDir, config);
   log.info(`Config written to ${configPath}`);
   process.stdout.write(`\nConfig written to ${configPath}\n`);
-  process.stdout.write(`\nNext steps:\n  bughunter run\n  bughunter run --auto-fix\n`);
+  process.stdout.write(`\nNext steps:\n  bughunter run\n  # For auto-fix, open a Claude Code session and invoke /bughunt fix\n`);
 }

@@ -292,8 +292,6 @@ export type RunPhase =
   | 'classify'
   | 'cluster'
   | 'emit'
-  | 'fix'
-  | 'retest'
   | 'done';
 
 export type RunState = {
@@ -319,7 +317,6 @@ export type BugHunterConfig = {
   projectName: string;
   surfaceMcpUrl: string;
   browserMcpUrl?: string;
-  claudeMcpUrl?: string;
   roles?: string[];
   resetCommand?: string;
   resetPolicy?: ResetPolicy;
@@ -337,19 +334,9 @@ export type BugHunterConfig = {
   excludedRoutes?: string[];
   externalIntegrationsAllowed?: boolean;
   enableA11y?: boolean;
-  autoFixDispatchProject?: string;
   forbiddenPaths?: string[];
   extraHeaders?: Record<string, string>;
   artifactBudgetBytes?: number;
-};
-
-export type AutoFixResult = {
-  clusterId: string;
-  bugsSkipped?: BugsSkipped;
-  verdict?: ClusterVerdict;
-  jobId?: string;
-  commitSha?: string;
-  branch?: string;
 };
 
 export type RunSummary = {
