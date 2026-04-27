@@ -6,12 +6,17 @@ const FIXTURE_SOURCE = '/root/SurfaceMCP/fixtures/nextjs-app';
 
 /**
  * Copies the SurfaceMCP fixture Next.js app into a fresh temp directory.
+ * Excludes the `.bughunter/` directory so pre-existing run artifacts from the
+ * source fixture don't pollute the e2e test's run reads.
  * Returns the path of the temp directory. The caller is responsible for
  * removing it on teardown.
  */
 export function copyFixtureToTemp(): string {
   const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-e2e-fixture-'));
-  fs.cpSync(FIXTURE_SOURCE, dest, { recursive: true });
+  fs.cpSync(FIXTURE_SOURCE, dest, {
+    recursive: true,
+    filter: (src) => !src.includes(`${path.sep}.bughunter`),
+  });
   return dest;
 }
 

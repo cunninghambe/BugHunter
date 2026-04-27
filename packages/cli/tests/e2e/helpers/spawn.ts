@@ -24,6 +24,8 @@ export function startNextDev(fixtureDir: string, port: number): ChildProcess {
   return spawn('npm', ['run', 'dev'], {
     cwd: fixtureDir,
     env: { ...process.env, PORT: String(port) },
+    // detached: spawn in its own process group so we can kill the whole group
+    detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
@@ -32,12 +34,17 @@ export function startNextDev(fixtureDir: string, port: number): ChildProcess {
 export function startSurfaceMcp(fixtureDir: string): ChildProcess {
   return spawn('node', [SURFACEMCP_BIN, 'serve'], {
     cwd: fixtureDir,
+    detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
 
-/** Runs `bughunter run` in the given project dir. Resolves with exit code + stdout. */
-export function runBugHunter(projectDir: string): Promise<{ code: number; stdout: string }> {
+/**
+ * Runs `bughunter run` in the given project dir.
+ * Resolves with exit code, combined stdout/stderr, and the run ID extracted from
+ * the "Starting new run <id>" log line (or undefined if not found).
+ */
+export function runBugHunter(projectDir: string): Promise<{ code: number; stdout: string; runId: string | undefined }> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const proc = spawn(
@@ -52,17 +59,35 @@ export function runBugHunter(projectDir: string): Promise<{ code: number; stdout
     proc.stderr.on('data', (d: Buffer) => chunks.push(d));
     proc.on('error', reject);
     proc.on('close', code => {
-      resolve({ code: code ?? 1, stdout: Buffer.concat(chunks).toString('utf8') });
+      const stdout = Buffer.concat(chunks).toString('utf8');
+      const match = /Starting new run ([a-z0-9]+)/.exec(stdout);
+      resolve({ code: code ?? 1, stdout, runId: match?.[1] });
     });
   });
 }
 
-/** Sends SIGTERM to a process and waits for it to exit (up to timeoutMs). */
-export async function kill(proc: ChildProcess, timeoutMs = 5_000): Promise<void> {
+/**
+ * Kills a child process and all its descendants by sending SIGKILL to the
+ * process group (negative pid). Uses SIGTERM first with a SIGKILL fallback.
+ * This is critical for Next.js which spawns worker processes that outlive the
+ * parent if only the parent is signaled.
+ */
+export async function kill(proc: ChildProcess, timeoutMs = 8_000): Promise<void> {
   return new Promise(resolve => {
     if (proc.exitCode !== null) { resolve(); return; }
-    const timer = setTimeout(() => { proc.kill('SIGKILL'); }, timeoutMs);
+
+    const timer = setTimeout(() => {
+      try { process.kill(-(proc.pid!), 'SIGKILL'); } catch {}
+      resolve();
+    }, timeoutMs);
+
     proc.once('close', () => { clearTimeout(timer); resolve(); });
-    proc.kill('SIGTERM');
+
+    // Kill the entire process group
+    try {
+      process.kill(-(proc.pid!), 'SIGTERM');
+    } catch {
+      proc.kill('SIGTERM');
+    }
   });
 }
