@@ -166,6 +166,7 @@ describe('postState plumbing — mutationObserverWindowMs flows into OccurrenceF
       consoleDir: path.join(tmpDir, 'console'),
       networkDir: path.join(tmpDir, 'network'),
       maxClusters: 200,
+      occurrenceIdByTestId: new Map([[testId, testId]]),
       stateByTestId,
     });
 
@@ -211,6 +212,7 @@ describe('postState plumbing — mutationObserverWindowMs flows into OccurrenceF
       consoleDir: path.join(tmpDir, 'console'),
       networkDir: path.join(tmpDir, 'network'),
       maxClusters: 200,
+      occurrenceIdByTestId: new Map([[testId, testId]]),
       // stateByTestId intentionally omitted
     });
 
@@ -220,6 +222,60 @@ describe('postState plumbing — mutationObserverWindowMs flows into OccurrenceF
     if (occ.fullArtifacts) {
       expect(occ.postState.mutationObserverWindowMs).toBe(0);
     }
+  });
+});
+
+describe('occurrenceIdByTestId plumbing', () => {
+  const tmpDir = os.tmpdir();
+  const runId = 'r1';
+
+  const SOME_BUG: BugDetection = {
+    kind: 'missing_state_change',
+    rootCause: "Action 'click' produced no observable state change",
+    pageRoute: '/test',
+  };
+
+  const TEST_CASE_T1: TestCase = {
+    id: 't1',
+    runId,
+    role: 'owner',
+    page: '/test',
+    action: { kind: 'click', via: 'ui', expectedOutcome: 'success', palette: 'happy', selector: 'button' },
+    expectedOutcome: 'success',
+    palette: 'happy',
+  };
+
+  it('reuses executor-minted occurrenceId from occurrenceIdByTestId', () => {
+    const result = runCluster({
+      detections: [{ testId: 't1', detection: SOME_BUG }],
+      testCases: [TEST_CASE_T1],
+      runId,
+      projectDir: tmpDir,
+      actionLogsDir: path.join(tmpDir, 'al'),
+      screenshotsDir: path.join(tmpDir, 's'),
+      domDir: path.join(tmpDir, 'd'),
+      consoleDir: path.join(tmpDir, 'c'),
+      networkDir: path.join(tmpDir, 'n'),
+      maxClusters: 100,
+      occurrenceIdByTestId: new Map([['t1', 'exec-occ-1']]),
+    });
+    expect(result.clusters[0]!.occurrences[0]!.occurrenceId).toBe('exec-occ-1');
+  });
+
+  it('throws when occurrenceIdByTestId is missing an entry', () => {
+    expect(() => runCluster({
+      detections: [{ testId: 't1', detection: SOME_BUG }],
+      testCases: [TEST_CASE_T1],
+      runId,
+      projectDir: tmpDir,
+      actionLogsDir: path.join(tmpDir, 'al'),
+      screenshotsDir: path.join(tmpDir, 's'),
+      domDir: path.join(tmpDir, 'd'),
+      consoleDir: path.join(tmpDir, 'c'),
+      networkDir: path.join(tmpDir, 'n'),
+      maxClusters: 100,
+      occurrenceIdByTestId: new Map(),
+    })).toThrow(/missing occurrenceId for testId/);
   });
 });
 

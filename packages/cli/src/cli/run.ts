@@ -157,6 +157,9 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       .filter(r => r.postState !== undefined)
       .map(r => [r.testId, { preState: r.preState!, postState: r.postState! }])
   );
+  const occurrenceIdByTestId = new Map<string, string>(
+    results.map(r => [r.testId, r.occurrenceId]),
+  );
   const { clusters } = runCluster({
     detections: bugs,
     testCases,
@@ -168,6 +171,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     consoleDir: paths.consoleDir,
     networkDir: paths.networkDir,
     maxClusters: resolved.maxBugs!,
+    occurrenceIdByTestId,
     stateByTestId,
   });
 

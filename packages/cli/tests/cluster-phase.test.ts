@@ -2,6 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { runCluster } from '../src/phases/cluster.js';
 import type { BugDetection, TestCase } from '../src/types.js';
 
+function makeOccurrenceIdByTestId(detections: Array<{ testId: string }>): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const { testId } of detections) {
+    if (!map.has(testId)) map.set(testId, testId);
+  }
+  return map;
+}
+
 const BASE_OPTS = {
   runId: 'test-run',
   projectDir: '/tmp/test',
@@ -74,6 +82,7 @@ describe('runCluster — stop-and-emit at maxClusters', () => {
       testCases,
       detections,
       maxClusters: 200,
+      occurrenceIdByTestId: makeOccurrenceIdByTestId(detections),
     });
 
     expect(clusters.length).toBe(200);
@@ -104,6 +113,7 @@ describe('runCluster — full-artifact cap at > 50 occurrences', () => {
       testCases,
       detections,
       maxClusters: 200,
+      occurrenceIdByTestId: makeOccurrenceIdByTestId(detections),
     });
 
     expect(clusters).toHaveLength(1);
@@ -138,6 +148,7 @@ describe('runCluster — full-artifact cap at > 50 occurrences', () => {
       testCases,
       detections,
       maxClusters: 200,
+      occurrenceIdByTestId: makeOccurrenceIdByTestId(detections),
     });
 
     const cluster = clusters[0];

@@ -1,6 +1,8 @@
 // Phase 3: execute — bounded-parallel dispatch (§ 3.8).
 
-import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { BrowserMcpAdapter, TabScope } from '../adapters/browser-mcp.js';
 import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
@@ -13,7 +15,7 @@ import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OB
 import { classifyDomErrorText } from '../classify/dom-error-text.js';
 import { writeActionLog } from '../repro/action-log.js';
 import { hashSchema } from '../util/hash.js';
-import { runPaths } from '../store/filesystem.js';
+import { runPaths, type RunPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
 import { createId } from '@paralleldrive/cuid2';
 import { MAX_CONSECUTIVE_INFRA_FAILURES } from '../config.js';
@@ -78,10 +80,13 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
   async function runTest(tc: TestCase): Promise<TestResult> {
     const start = Date.now();
+    // Mint a synthetic occurrenceId so the outer catch can always return one.
+    // If the inner executor runs, it overwrites this with its own minted id.
+    const syntheticOccurrenceId = createId();
     try {
       const result = tc.action.via === 'ui'
-        ? await executeUiTest(tc, browser!, surface, runState.runId, paths.actionLogsDir, extraHeaders, appBaseUrl)
-        : await executeApiTest(tc, surface, runState.runId, paths.actionLogsDir, toolMap);
+        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl)
+        : await executeApiTest(tc, surface, runState.runId, paths, toolMap);
       return result;
     } catch (err) {
       const infra: InfrastructureFailure = {
@@ -96,6 +101,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
       };
       return {
         testId: tc.id,
+        occurrenceId: syntheticOccurrenceId,
         passed: false,
         bugs: [],
         infrastructureFailure: infra,
@@ -147,12 +153,179 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   return { results, abortReason, skipReasons };
 }
 
+type ArtifactPaths = Pick<RunPaths, 'actionLogsDir' | 'screenshotsDir' | 'domDir' | 'consoleDir' | 'networkDir'>;
+
+async function persistUiArtifacts(
+  scope: TabScope,
+  occurrenceId: string,
+  postSnapshot: { snapshot: string } | null,
+  postConsoleErrors: ConsoleError[],
+  artifactPaths: ArtifactPaths,
+): Promise<void> {
+  const { screenshotsDir, domDir, consoleDir, networkDir } = artifactPaths;
+
+  await scope
+    .screenshot(path.join(screenshotsDir, `${occurrenceId}.png`))
+    .catch(err => log.warn('screenshot failed', { occurrenceId, err: String(err) }));
+
+  if (postSnapshot?.snapshot) {
+    fs.writeFileSync(path.join(domDir, `${occurrenceId}.html`), postSnapshot.snapshot);
+  }
+
+  const consoleContent = postConsoleErrors.length > 0
+    ? postConsoleErrors.map(e => JSON.stringify({ level: e.level, text: e.text, stack: e.stack })).join('\n') + '\n'
+    : '';
+  fs.writeFileSync(path.join(consoleDir, `${occurrenceId}.log`), consoleContent);
+
+  // HAR v0.1 stub: real network capture deferred to camofox-mcp v0.2.
+  // Emits a valid empty HAR so retest existence check passes.
+  fs.writeFileSync(
+    path.join(networkDir, `${occurrenceId}.har`),
+    JSON.stringify({ log: { version: '1.2', creator: { name: 'bughunter', version: '0.1' }, entries: [] } }),
+  );
+}
+
+async function executeUiTestInner(
+  scope: TabScope,
+  tc: TestCase,
+  runId: string,
+  occurrenceId: string,
+  start: number,
+  appBaseUrl: string | undefined,
+  artifactPaths: ArtifactPaths,
+  actionLog: Parameters<typeof writeActionLog>[1],
+): Promise<TestResult> {
+  const bugs: BugDetection[] = [];
+  const preConsoleErrors: ConsoleError[] = [];
+  const preSnapshot = await scope.snapshot().catch(() => null);
+
+  try {
+    await scope.evaluate(MUTATION_OBSERVER_START_SCRIPT);
+  } catch (err) {
+    log.warn('MutationObserver start failed; mutWindowMs will be 0', { err: String(err), tcId: tc.id });
+  }
+
+  try {
+    switch (tc.action.kind) {
+      case 'click':
+        if (tc.action.selector) await scope.click(tc.action.selector);
+        break;
+      case 'submit':
+        if (tc.action.selector) await scope.click(tc.action.selector);
+        break;
+      case 'fill':
+        if (tc.action.selector) {
+          await scope.type(tc.action.selector, String(tc.action.input ?? ''));
+        }
+        break;
+      case 'navigate':
+        if (tc.action.selector) {
+          const target = tc.action.selector.startsWith('http')
+            ? tc.action.selector
+            : `${appBaseUrl ?? ''}${tc.action.selector}`;
+          await scope.navigate(target);
+        }
+        break;
+      case 'render':
+        break;
+    }
+  } catch (err) {
+    if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
+      return {
+        testId: tc.id,
+        occurrenceId,
+        passed: false,
+        bugs: [],
+        infrastructureFailure: {
+          id: createId(),
+          runId,
+          timestamp: new Date().toISOString(),
+          kind: 'browser_element_not_found',
+          detail: (err as BrowserMcpError).message,
+          role: tc.role,
+          page: tc.page,
+          action: tc.action,
+        } as InfrastructureFailure,
+        durationMs: Date.now() - start,
+      };
+    }
+    if (err instanceof BrowserMcpError && (err.kind === 'transport' || err.kind === 'timeout')) {
+      return {
+        testId: tc.id,
+        occurrenceId,
+        passed: false,
+        bugs: [],
+        infrastructureFailure: {
+          id: createId(),
+          runId,
+          timestamp: new Date().toISOString(),
+          kind: 'browser_crash',
+          detail: (err as BrowserMcpError).message,
+          role: tc.role,
+          page: tc.page,
+          action: tc.action,
+        } as InfrastructureFailure,
+        durationMs: Date.now() - start,
+      };
+    }
+    throw new Error(`Browser action failed: ${String(err)}`);
+  }
+
+  const mutResult = await scope.evaluate(MUTATION_OBSERVER_STOP_SCRIPT).catch(() => null);
+  const mutWindowMs = (mutResult?.value as { durationMs?: number })?.durationMs ?? 0;
+
+  const consoleResult = await scope.evaluate(
+    '(window.__bhConsoleErrors || []).map(e => ({ level: "error", text: e.text, stack: e.stack }))'
+  ).catch(() => null);
+
+  const postConsoleErrors: ConsoleError[] = Array.isArray(consoleResult?.value)
+    ? (consoleResult.value as ConsoleError[])
+    : [];
+
+  const postSnapshot = await scope.snapshot().catch(() => null);
+
+  const preState: PreState = {
+    url: tc.page,
+    title: '',
+    consoleErrorCount: preConsoleErrors.length,
+  };
+
+  const postState: PostState = {
+    url: tc.page,
+    title: '',
+    consoleErrors: postConsoleErrors,
+    networkRequests: [],
+    domErrorTextDetected: false,
+    mutationObserverWindowMs: mutWindowMs,
+  };
+
+  bugs.push(...classifyConsoleErrors(postConsoleErrors, tc.page));
+  bugs.push(...classifyNetworkRequests([], tc.expectedOutcome, true));
+
+  const missingChange = classifyMissingStateChange(preState, postState, tc.action, tc.page);
+  if (missingChange) bugs.push(missingChange);
+
+  void preSnapshot;
+
+  await persistUiArtifacts(scope, occurrenceId, postSnapshot, postConsoleErrors, artifactPaths);
+
+  return {
+    testId: tc.id,
+    occurrenceId,
+    passed: bugs.length === 0,
+    bugs,
+    durationMs: Date.now() - start,
+    preState,
+    postState,
+  };
+}
+
 async function executeUiTest(
   tc: TestCase,
   browser: BrowserMcpAdapter,
   _surface: SurfaceMcpAdapter,
   runId: string,
-  actionLogsDir: string,
+  paths: ArtifactPaths,
   extraHeaders?: Record<string, string>,
   appBaseUrl?: string
 ): Promise<TestResult> {
@@ -182,210 +355,52 @@ async function executeUiTest(
     createdAt: new Date().toISOString(),
   };
 
+  let result: TestResult;
   try {
-    return await browser.withTab(pageUrl, headers, async (scope) => {
-      const bugs: BugDetection[] = [];
-      const preConsoleErrors: ConsoleError[] = [];
-      const preSnapshot = await scope.snapshot().catch(() => null);
-
-      try {
-        await scope.evaluate(MUTATION_OBSERVER_START_SCRIPT);
-      } catch (err) {
-        log.warn('MutationObserver start failed; mutWindowMs will be 0', { err: String(err), tcId: tc.id });
-      }
-
-      try {
-        switch (tc.action.kind) {
-          case 'click':
-            if (tc.action.selector) await scope.click(tc.action.selector);
-            break;
-          case 'submit':
-            if (tc.action.selector) await scope.click(tc.action.selector);
-            break;
-          case 'fill':
-            if (tc.action.selector) {
-              await scope.type(tc.action.selector, String(tc.action.input ?? ''));
-            }
-            break;
-          case 'navigate':
-            if (tc.action.selector) {
-              const target = tc.action.selector.startsWith('http')
-                ? tc.action.selector
-                : `${appBaseUrl ?? ''}${tc.action.selector}`;
-              await scope.navigate(target, headers);
-            }
-            break;
-          case 'render':
-            break;
-        }
-      } catch (err) {
-        if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
-          writeActionLog(actionLogsDir, actionLog);
-          return {
-            testId: tc.id,
-            passed: false,
-            bugs: [],
-            infrastructureFailure: {
-              id: createId(),
-              runId,
-              timestamp: new Date().toISOString(),
-              kind: 'browser_element_not_found',
-              detail: (err as BrowserMcpError).message,
-              role: tc.role,
-              page: tc.page,
-              action: tc.action,
-            } as InfrastructureFailure,
-            durationMs: Date.now() - start,
-          };
-        }
-        if (err instanceof BrowserMcpError && (err.kind === 'transport' || err.kind === 'timeout')) {
-          writeActionLog(actionLogsDir, actionLog);
-          return {
-            testId: tc.id,
-            passed: false,
-            bugs: [],
-            infrastructureFailure: {
-              id: createId(),
-              runId,
-              timestamp: new Date().toISOString(),
-              kind: 'browser_crash',
-              detail: (err as BrowserMcpError).message,
-              role: tc.role,
-              page: tc.page,
-              action: tc.action,
-            } as InfrastructureFailure,
-            durationMs: Date.now() - start,
-          };
-        }
-        throw new Error(`Browser action failed: ${String(err)}`);
-      }
-
-      const mutResult = await scope.evaluate(MUTATION_OBSERVER_STOP_SCRIPT).catch(() => null);
-      const mutWindowMs = (mutResult?.value as { durationMs?: number })?.durationMs ?? 0;
-
-      const consoleResult = await scope.evaluate(
-        '(window.__bhConsoleErrors || []).map(e => ({ level: "error", text: e.text, stack: e.stack }))'
-      ).catch(() => null);
-
-      const postConsoleErrors: ConsoleError[] = Array.isArray(consoleResult?.value)
-        ? (consoleResult.value as ConsoleError[])
-        : [];
-
-      const postSnapshot = await scope.snapshot().catch(() => null);
-
-      const preState: PreState = {
-        url: tc.page,
-        title: '',
-        consoleErrorCount: preConsoleErrors.length,
-      };
-
-      const postState: PostState = {
-        url: tc.page,
-        title: '',
-        consoleErrors: postConsoleErrors,
-        networkRequests: [],
-        domErrorTextDetected: false,
-        mutationObserverWindowMs: mutWindowMs,
-      };
-
-      bugs.push(...classifyConsoleErrors(postConsoleErrors, tc.page));
-      bugs.push(...classifyNetworkRequests([], tc.expectedOutcome, true));
-
-      const missingChange = classifyMissingStateChange(preState, postState, tc.action, tc.page);
-      if (missingChange) bugs.push(missingChange);
-
-      void preSnapshot;
-      void postSnapshot;
-
-      writeActionLog(actionLogsDir, actionLog);
-
-      return {
-        testId: tc.id,
-        passed: bugs.length === 0,
-        bugs,
-        durationMs: Date.now() - start,
-        preState,
-        postState,
-      };
-    });
+    result = await browser.withTab(pageUrl, headers, (scope) =>
+      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog)
+    );
   } catch (err) {
     // withTab itself failed (openTab or closeTab threw, or fn re-threw after unexpected error)
-    const infra: InfrastructureFailure = {
-      id: createId(),
-      runId,
-      timestamp: new Date().toISOString(),
-      kind: 'generic',
-      detail: String(err),
-      role: tc.role,
-      page: tc.page,
-      action: tc.action,
-    };
-    return {
+    result = {
       testId: tc.id,
+      occurrenceId,
       passed: false,
       bugs: [],
-      infrastructureFailure: infra,
+      infrastructureFailure: {
+        id: createId(),
+        runId,
+        timestamp: new Date().toISOString(),
+        kind: 'generic',
+        detail: String(err),
+        role: tc.role,
+        page: tc.page,
+        action: tc.action,
+      },
       durationMs: Date.now() - start,
     };
+  } finally {
+    try {
+      writeActionLog(paths.actionLogsDir, actionLog);
+    } catch (writeErr) {
+      log.warn('writeActionLog failed', { occurrenceId, err: String(writeErr) });
+    }
   }
+  return result!;
 }
 
 async function executeApiTest(
   tc: TestCase,
   surface: SurfaceMcpAdapter,
   runId: string,
-  actionLogsDir: string,
+  paths: ArtifactPaths,
   toolMap?: Map<string, ToolMeta>
 ): Promise<TestResult> {
   const start = Date.now();
   const bugs: BugDetection[] = [];
   const occurrenceId = createId();
 
-  if (!tc.action.toolId) {
-    return { testId: tc.id, passed: true, bugs: [], durationMs: 0 };
-  }
-
-  const result = await surface.surface_call({
-    toolId: tc.action.toolId,
-    role: tc.role,
-    input: tc.action.input ?? {},
-    noAutoRelogin: tc.action.palette !== 'happy',
-  });
-
-  // surface_call_failed
-  if (!result.ok && tc.action.palette === 'happy') {
-    const status = result.status ?? 0;
-    if (status >= 400 && status < 500) {
-      const meta = toolMap?.get(tc.action.toolId);
-      const endpoint = meta
-        ? `${meta.method} ${normalizePath(meta.path)}`
-        : tc.action.toolId;
-      if (!meta) {
-        log.debug(`toolMap miss for toolId ${tc.action.toolId}; using bare id as endpoint`);
-      }
-      bugs.push({
-        kind: 'surface_call_failed',
-        rootCause: `surface_call failed with status ${status} for tool ${tc.action.toolId}`,
-        endpoint,
-        status,
-        responseBodyShape: result.error?.message,
-      });
-    }
-  }
-
-  // Network classification via status
-  if (result.status) {
-    const req: NetworkRequest = {
-      method: 'POST',
-      path: tc.action.toolId,
-      status: result.status,
-      duration: result.durationMs,
-    };
-    bugs.push(...classifyNetworkRequests([req], tc.expectedOutcome, true));
-  }
-
-  // Write action log
-  const toolSchema = toolMap?.get(tc.action.toolId)?.inputSchema;
+  const toolSchema = toolMap?.get(tc.action.toolId ?? '')?.inputSchema;
   const actionLog = {
     occurrenceId,
     runId,
@@ -405,12 +420,84 @@ async function executeApiTest(
     }],
     createdAt: new Date().toISOString(),
   };
-  writeActionLog(actionLogsDir, actionLog);
 
-  return {
-    testId: tc.id,
-    passed: bugs.length === 0,
-    bugs,
-    durationMs: Date.now() - start,
-  };
+  let result: TestResult;
+  try {
+    if (!tc.action.toolId) {
+      result = { testId: tc.id, occurrenceId, passed: true, bugs: [], durationMs: 0 };
+    } else {
+      const callResult = await surface.surface_call({
+        toolId: tc.action.toolId,
+        role: tc.role,
+        input: tc.action.input ?? {},
+        noAutoRelogin: tc.action.palette !== 'happy',
+      });
+
+      // surface_call_failed
+      if (!callResult.ok && tc.action.palette === 'happy') {
+        const status = callResult.status ?? 0;
+        if (status >= 400 && status < 500) {
+          const meta = toolMap?.get(tc.action.toolId);
+          const endpoint = meta
+            ? `${meta.method} ${normalizePath(meta.path)}`
+            : tc.action.toolId;
+          if (!meta) {
+            log.debug(`toolMap miss for toolId ${tc.action.toolId}; using bare id as endpoint`);
+          }
+          bugs.push({
+            kind: 'surface_call_failed',
+            rootCause: `surface_call failed with status ${status} for tool ${tc.action.toolId}`,
+            endpoint,
+            status,
+            responseBodyShape: callResult.error?.message,
+          });
+        }
+      }
+
+      // Network classification via status
+      if (callResult.status) {
+        const req: NetworkRequest = {
+          method: 'POST',
+          path: tc.action.toolId,
+          status: callResult.status,
+          duration: callResult.durationMs,
+        };
+        bugs.push(...classifyNetworkRequests([req], tc.expectedOutcome, true));
+      }
+
+      result = {
+        testId: tc.id,
+        occurrenceId,
+        passed: bugs.length === 0,
+        bugs,
+        durationMs: Date.now() - start,
+      };
+    }
+  } catch (err) {
+    result = {
+      testId: tc.id,
+      occurrenceId,
+      passed: false,
+      bugs: [],
+      infrastructureFailure: {
+        id: createId(),
+        runId,
+        timestamp: new Date().toISOString(),
+        kind: 'generic',
+        detail: String(err),
+        role: tc.role,
+        page: tc.page,
+        action: tc.action,
+      },
+      durationMs: Date.now() - start,
+    };
+  } finally {
+    // API occurrences only emit the action log; no screenshot/DOM/console/HAR.
+    try {
+      writeActionLog(paths.actionLogsDir, actionLog);
+    } catch (writeErr) {
+      log.warn('writeActionLog failed', { occurrenceId, err: String(writeErr) });
+    }
+  }
+  return result!;
 }
