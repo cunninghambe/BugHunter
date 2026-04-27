@@ -66,17 +66,13 @@ function applySchemaChanges(actionLog: ActionLog, toolMap: Map<string, ToolMeta>
   return { log: { ...actionLog, actions: updatedActions }, via: regenerated ? 'regenerated' : 'verbatim' };
 }
 
-export async function retestCluster(
-  projectDir: string,
-  runId: string,
-  clusterId: string,
+export async function replayCluster(
+  cluster: BugCluster,
+  actionLogsDir: string,
   surface: SurfaceMcpAdapter,
   browser?: BrowserMcpAdapter,
+  runId?: string,
 ): Promise<RetestResult> {
-  const cluster = findCluster(projectDir, runId, clusterId);
-  const paths = runPaths(projectDir, runId);
-
-  // Refresh catalog to detect tool removals and schema changes
   const catalog = await surface.surface_list_tools().catch(() => null);
   const tools = catalog?.tools ?? [];
   const existingToolIds = new Set(tools.map(t => t.toolId));
@@ -108,13 +104,13 @@ export async function retestCluster(
     }
 
     try {
-      const rawLog = readActionLog(paths.actionLogsDir, occ.occurrenceId);
+      const rawLog = readActionLog(actionLogsDir, occ.occurrenceId);
       const { log: replayLog, via } = applySchemaChanges(rawLog, toolMap);
       const result = await replayActionLog(
         replayLog,
         browser ?? ({} as BrowserMcpAdapter),
         surface,
-        runId,
+        runId ?? cluster.runId,
       );
       const passed = result.ok && result.observation.consoleErrors.length === 0;
       details.push({ occurrenceId: occ.occurrenceId, via, passed });
@@ -131,12 +127,10 @@ export async function retestCluster(
   const replayedOccurrences = details.length;
   const passedOccurrences = details.filter(d => d.passed).length;
 
-  // All tools removed and no full-artifact occurrences remain to replay
   if (removedCount === fullOccs.length && fullOccs.length > 0 && lightweightCount === 0) {
     return { verdict: 'verified_fixed_by_removal', replayedOccurrences, passedOccurrences, details };
   }
 
-  // All tools removed but lightweight occurrences exist — can't replay those
   if (removedCount === fullOccs.length && fullOccs.length > 0 && lightweightCount > 0) {
     return { verdict: 'bugs_lost_to_revision', replayedOccurrences, passedOccurrences, details };
   }
@@ -155,6 +149,18 @@ export async function retestCluster(
   }
 
   return { verdict: 'not_fixed', replayedOccurrences, passedOccurrences, details };
+}
+
+export async function retestCluster(
+  projectDir: string,
+  runId: string,
+  clusterId: string,
+  surface: SurfaceMcpAdapter,
+  browser?: BrowserMcpAdapter,
+): Promise<RetestResult> {
+  const cluster = findCluster(projectDir, runId, clusterId);
+  const paths = runPaths(projectDir, runId);
+  return replayCluster(cluster, paths.actionLogsDir, surface, browser, runId);
 }
 
 export async function retestOp(
