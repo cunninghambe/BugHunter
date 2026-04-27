@@ -267,6 +267,19 @@ export type TestCase = {
 
 export type TestResult = {
   testId: string;
+  /**
+   * Stable id minted by the executor at test start. Used as the filename
+   * for action-log + screenshot + DOM + console + network artifacts:
+   *   action-logs/<occurrenceId>.json
+   *   screenshots/<occurrenceId>.png
+   *   dom/<occurrenceId>.html
+   *   console/<occurrenceId>.log
+   *   network/<occurrenceId>.har
+   * The cluster phase reuses this id when materializing OccurrenceFull,
+   * so that the recorded artifact paths point to files that exist.
+   * Always set; never undefined.
+   */
+  occurrenceId: string;
   passed: boolean;
   bugs: BugDetection[];
   infrastructureFailure?: InfrastructureFailure;

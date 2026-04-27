@@ -17,6 +17,15 @@ export type ClusterOptions = {
   consoleDir: string;
   networkDir: string;
   maxClusters: number;
+  /**
+   * Map from testId → occurrenceId minted by the executor. The cluster
+   * phase reuses these ids when forming OccurrenceSummary so that
+   * recorded artifact paths match the files written during execute.
+   * Required: every detection's testId must be present.
+   * All detections from the same testId share one occurrenceId — the
+   * artifacts capture the test, not the individual bug.
+   */
+  occurrenceIdByTestId: Map<string, string>;
   /** Per-test pre/post observation captured by the executor. When absent, OccurrenceFull
    * falls back to an empty PostState (preserves backward-compat for unit tests). */
   stateByTestId?: Map<string, { preState: PreState; postState: PostState }>;
@@ -63,7 +72,13 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
     }
 
     const cluster = clusterMap.get(sig)!;
-    const occId = createId();
+    const occId = opts.occurrenceIdByTestId.get(testId);
+    if (!occId) {
+      throw new Error(
+        `cluster: missing occurrenceId for testId ${testId}; ` +
+        `executor must populate occurrenceIdByTestId for every TestResult`,
+      );
+    }
     const now = new Date().toISOString();
 
     cluster.lastSeenAt = now;

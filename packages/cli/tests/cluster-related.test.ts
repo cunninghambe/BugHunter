@@ -12,6 +12,10 @@ function makeTmpDir(): string {
 function makeOpts(detections: Array<{ testId: string; detection: BugDetection }>, testCases: TestCase[]) {
   const tmpDir = makeTmpDir();
   const runId = 'test-run';
+  const occurrenceIdByTestId = new Map<string, string>();
+  for (const { testId } of detections) {
+    if (!occurrenceIdByTestId.has(testId)) occurrenceIdByTestId.set(testId, testId);
+  }
   return {
     detections,
     testCases,
@@ -23,6 +27,7 @@ function makeOpts(detections: Array<{ testId: string; detection: BugDetection }>
     consoleDir: path.join(tmpDir, 'console'),
     networkDir: path.join(tmpDir, 'network'),
     maxClusters: 200,
+    occurrenceIdByTestId,
   };
 }
 
