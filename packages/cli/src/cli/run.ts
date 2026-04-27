@@ -60,7 +60,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
   const browser = resolved.browserMcpUrl ? new CamofoxBrowserMcpAdapter(resolved.browserMcpUrl) : undefined;
 
-  // Resolve vision auth (API key OR Claude Code OAuth token) and construct client/budget
+  // Resolve vision auth — Anthropic Messages API requires an API key.
+  // CLAUDE_CODE_OAUTH_TOKEN is NOT usable here (Messages API explicitly rejects OAuth tokens).
   const visionEnabled = resolved.vision?.enabled ?? false;
   let visionAuth: import('../adapters/vision-client.js').VisionAuth | undefined;
   if (visionEnabled) {
@@ -68,18 +69,14 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       resolved.vision?.apiKey ??
       process.env['ANTHROPIC_API_KEY'] ??
       process.env['CLAUDE_API_KEY'];
-    const oauthToken = process.env['CLAUDE_CODE_OAUTH_TOKEN'];
-    if (apiKey) {
-      visionAuth = { kind: 'apiKey', apiKey };
-    } else if (oauthToken) {
-      visionAuth = { kind: 'oauth', authToken: oauthToken };
-      log.info('vision: using CLAUDE_CODE_OAUTH_TOKEN (Claude Code session auth)');
-    } else {
+    if (!apiKey) {
       throw new Error(
-        'vision.enabled is true but no Anthropic credentials were found. ' +
-        'Set ANTHROPIC_API_KEY, vision.apiKey, or run inside a Claude Code session that exposes CLAUDE_CODE_OAUTH_TOKEN.'
+        'vision.enabled is true but no ANTHROPIC_API_KEY was found. ' +
+        'Set ANTHROPIC_API_KEY or vision.apiKey. ' +
+        'Note: CLAUDE_CODE_OAUTH_TOKEN does not work for the Messages API — provision a real API key at console.anthropic.com.'
       );
     }
+    visionAuth = { kind: 'apiKey', apiKey };
   }
 
   // Resume or new run
