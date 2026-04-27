@@ -140,7 +140,7 @@ function telCases(): MutationCase[] {
   return [
     { variant: 'null', value: '' },
     { variant: 'happy', value: '+15555550100' },
-    { variant: 'edge', value: '+1' + '5'.repeat(13) }, // format-extreme valid
+    { variant: 'edge', value: `+1${  '5'.repeat(13)}` }, // format-extreme valid
     { variant: 'out_of_bounds', value: 'not-a-phone-number!!@#' },
   ];
 }
@@ -149,7 +149,7 @@ function urlCases(): MutationCase[] {
   return [
     { variant: 'null', value: '' },
     { variant: 'happy', value: 'https://test.local/x' },
-    { variant: 'edge', value: 'https://' + 'a'.repeat(2000) },
+    { variant: 'edge', value: `https://${  'a'.repeat(2000)}` },
     { variant: 'out_of_bounds', value: 'not-a-url' },
     { variant: 'out_of_bounds', value: 'hxtp://malformed.scheme' },
   ];
@@ -159,7 +159,7 @@ function passwordCases(schema: TextSchema): MutationCase[] {
   const minLen = schema.minLength ?? 8;
   return [
     { variant: 'null', value: '' },
-    { variant: 'happy', value: 'T3st!P@ss' + 'x'.repeat(Math.max(0, minLen - 9)) },
+    { variant: 'happy', value: `T3st!P@ss${  'x'.repeat(Math.max(0, minLen - 9))}` },
     { variant: 'edge', value: 'a'.repeat(minLen) },
     { variant: 'out_of_bounds', value: 'a'.repeat(10_000) },
   ];

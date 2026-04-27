@@ -155,6 +155,7 @@ export async function classifyVisualAnomalies(input: ClassifyVisualInput): Promi
   }
 
   const anomalies = parseVisionResponse(rawText, input.screenshotPath);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- parseVisionResponse always sets visualSeverity on returned anomalies
   return anomalies.filter(d => severityMeetsThreshold(d.visualSeverity!, threshold));
 }
 

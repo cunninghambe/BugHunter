@@ -92,9 +92,9 @@ export async function runDiscover(
       extraHeaders: config.extraHeaders,
     });
     log.info(
-      `crawl: visited ${result.pages.length} pages` +
-      (result.hitMaxPages ? ' (max-pages cap hit)' : '') +
-      (result.hitMaxDepth ? ' (max-depth cap hit)' : '')
+      `crawl: visited ${result.pages.length} pages${ 
+      result.hitMaxPages ? ' (max-pages cap hit)' : '' 
+      }${result.hitMaxDepth ? ' (max-depth cap hit)' : ''}`
     );
     crawledPages.push(...result.pages);
     for (const s of result.skipped) {
@@ -201,7 +201,7 @@ export async function runDiscover(
       const canonical = config.routeAliases?.[p.route] ?? p.route;
       if (seen.has(canonical)) continue;
       seen.add(canonical);
-      if ((config.excludedRoutes?.length ?? 0) > 0 && micromatch([p.route], config.excludedRoutes!).length > 0) continue;
+      if (config.excludedRoutes && config.excludedRoutes.length > 0 && micromatch([p.route], config.excludedRoutes).length > 0) continue;
       pages.push(p);
     }
   }
@@ -251,7 +251,7 @@ async function runVisualBaseline(
 
     try {
       await browser.withTab(`${baseUrl}${page.route}`, undefined, async scope => {
-        await new Promise<void>(r => setTimeout(r, VISION_BASELINE_SETTLE_MS));
+        await new Promise<void>(r => { setTimeout(r, VISION_BASELINE_SETTLE_MS); });
         await scope.screenshot(screenshotPath);
       });
     } catch (err) {

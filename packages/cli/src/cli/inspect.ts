@@ -67,5 +67,5 @@ function printCluster(cluster: BugCluster, focusOcc: Occurrence | null): void {
     }
   }
 
-  process.stdout.write(lines.join('\n') + '\n');
+  process.stdout.write(`${lines.join('\n')  }\n`);
 }

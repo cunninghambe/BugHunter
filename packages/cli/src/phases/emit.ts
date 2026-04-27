@@ -95,6 +95,6 @@ export function runEmit(
     `Summary: ${paths.summaryFile}`,
   ];
 
-  process.stdout.write(lines.join('\n') + '\n');
+  process.stdout.write(`${lines.join('\n')  }\n`);
   log.info('Emitted', { clusters: clusters.length, infraFailures: infraFailures.length });
 }

@@ -98,7 +98,7 @@ export function saveConfig(projectDir: string, config: BugHunterConfig): void {
   const configDir = path.join(projectDir, '.bughunter');
   fs.mkdirSync(configDir, { recursive: true });
   const configPath = path.join(configDir, 'config.json');
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)  }\n`);
 }
 
 export function resolvedConfig(config: BugHunterConfig): Required<

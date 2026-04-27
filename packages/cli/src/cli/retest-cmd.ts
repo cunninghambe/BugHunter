@@ -10,5 +10,5 @@ export async function retestCommand(
   fixBranch: string | undefined,
 ): Promise<void> {
   const result = await retestOp(projectDir, runId, clusterId, baseBranch, fixBranch);
-  process.stdout.write(JSON.stringify(result) + '\n');
+  process.stdout.write(`${JSON.stringify(result)  }\n`);
 }

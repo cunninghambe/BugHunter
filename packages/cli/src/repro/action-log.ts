@@ -32,7 +32,7 @@ export type ActionLog = {
 
 export function writeActionLog(actionLogsDir: string, log: ActionLog): string {
   const filePath = path.join(actionLogsDir, `${log.occurrenceId}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(log, null, 2) + '\n');
+  fs.writeFileSync(filePath, `${JSON.stringify(log, null, 2)  }\n`);
   return filePath;
 }
 

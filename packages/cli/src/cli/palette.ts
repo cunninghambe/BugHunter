@@ -32,7 +32,7 @@ export function paletteCommand(projectDir: string): void {
 
   if (Object.keys(overrides).length > 0) {
     process.stdout.write('\nUser overrides from palette.json:\n');
-    process.stdout.write(JSON.stringify(overrides, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(overrides, null, 2)  }\n`);
   } else {
     process.stdout.write('\nNo overrides. Edit .bughunter/palette.json to customize.\n');
   }

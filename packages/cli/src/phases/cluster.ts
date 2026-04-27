@@ -71,6 +71,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
       });
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- set just above or on previous iteration; cannot be absent here
     const cluster = clusterMap.get(sig)!;
     const occId = opts.occurrenceIdByTestId.get(testId);
     if (!occId) {
@@ -163,8 +164,9 @@ function annotateRelatedClusters(clusters: BugCluster[]): void {
 
   for (let i = 0; i < clusters.length; i++) {
     for (let j = i + 1; j < clusters.length; j++) {
-      const a = clusters[i]!;
-      const b = clusters[j]!;
+      const a = clusters[i];
+      const b = clusters[j];
+      if (!a || !b) continue;
 
       const eligible =
         (a.kind === '404_for_linked_route' && b.kind === 'surface_call_failed') ||

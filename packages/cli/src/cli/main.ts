@@ -75,7 +75,7 @@ async function main(): Promise<void> {
   // Pass-through --help / -h before any other validation so init and other
   // commands that open stdin don't block on the readline prompt.
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
-    process.stdout.write(USAGE + '\n');
+    process.stdout.write(`${USAGE  }\n`);
     return;
   }
 
@@ -178,7 +178,7 @@ async function main(): Promise<void> {
       }
 
       default:
-        process.stdout.write(USAGE + '\n');
+        process.stdout.write(`${USAGE  }\n`);
         break;
     }
   } catch (err) {

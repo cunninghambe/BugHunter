@@ -9,5 +9,5 @@ export function forbiddenPathGateCommand(
   reset: boolean,
 ): void {
   const result = forbiddenPathGate(projectDir, branch, baseBranch, reset);
-  process.stdout.write(JSON.stringify(result) + '\n');
+  process.stdout.write(`${JSON.stringify(result)  }\n`);
 }
