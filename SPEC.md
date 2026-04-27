@@ -559,11 +559,14 @@ Default: `per-page`. User can set in `.bughunter/config.json`.
 ### 4.1 CLI
 
 ```
-bughunter init
-  Walks project; writes .bughunter/config.json template. Prompts for:
+bughunter init [--no-interactive] [--project-name <name>] [--surface-mcp-url <url>]
+               [--browser-mcp-url <url>] [--reset-command <cmd>] [--reset-policy <policy>]
+  Walks project; writes .bughunter/config.json template. Without --no-interactive, prompts for:
     SurfaceMCP URL (base form, e.g. http://127.0.0.1:3102), browser MCP URL,
     discoveryFixtures for known dynamic routes,
     resetPolicy + resetCommand, forbiddenPaths additions.
+  With --no-interactive: skips readline entirely; resolves each field by precedence:
+    flag > BUGHUNTER_<FIELD> env var > default. Fails loudly via Zod on invalid input.
 
 bughunter run [options]
   --route <pattern>       Limit to routes matching a glob

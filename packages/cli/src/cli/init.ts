@@ -3,28 +3,49 @@
 import * as readline from 'node:readline/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { saveConfig } from '../config.js';
+import { z } from 'zod';
+import { saveConfig, ConfigSchema } from '../config.js';
 import type { BugHunterConfig } from '../types.js';
 import { log } from '../log.js';
 
-export async function initCommand(projectDir: string): Promise<void> {
+export type InitOptions = {
+  noInteractive?: boolean;
+  projectName?: string;
+  surfaceMcpUrl?: string;
+  browserMcpUrl?: string;
+  resetCommand?: string;
+  resetPolicy?: 'transactional' | 'per-test' | 'per-page' | 'per-run';
+};
+
+export async function initCommand(projectDir: string, opts?: InitOptions): Promise<void> {
   const configPath = path.join(projectDir, '.bughunter', 'config.json');
   if (fs.existsSync(configPath)) {
     log.warn(`.bughunter/config.json already exists at ${configPath}`);
     return;
   }
 
+  const config = opts?.noInteractive
+    ? await resolveNonInteractive(projectDir, opts)
+    : await resolveInteractive(projectDir);
+
+  saveConfig(projectDir, config);
+  log.info(`Config written to ${configPath}`);
+  process.stdout.write(`\nConfig written to ${configPath}\n`);
+  process.stdout.write(`\nNext steps:\n  bughunter run\n  # For auto-fix, open a Claude Code session and invoke /bughunt fix\n`);
+}
+
+async function resolveInteractive(projectDir: string): Promise<BugHunterConfig> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   const projectName = await rl.question('Project name: ');
   const surfaceMcpUrl = await rl.question('SurfaceMCP URL [http://127.0.0.1:3102]: ') || 'http://127.0.0.1:3102';
-  const browserMcpUrl = await rl.question('Browser MCP URL [http://127.0.0.1:3100/mcp]: ') || 'http://127.0.0.1:3100/mcp';
+  const browserMcpUrl = await rl.question('Browser MCP URL [http://127.0.0.1:3100]: ') || 'http://127.0.0.1:3100';
   const resetCommand = await rl.question('Reset command (e.g. npm run db:seed): ');
   const resetPolicy = await rl.question('Reset policy [per-page]: ') || 'per-page';
 
   rl.close();
 
-  const config: BugHunterConfig = {
+  return {
     projectName,
     surfaceMcpUrl,
     browserMcpUrl: browserMcpUrl || undefined,
@@ -35,9 +56,60 @@ export async function initCommand(projectDir: string): Promise<void> {
     domainHints: {},
     forbiddenPaths: [],
   };
+}
 
-  saveConfig(projectDir, config);
-  log.info(`Config written to ${configPath}`);
-  process.stdout.write(`\nConfig written to ${configPath}\n`);
-  process.stdout.write(`\nNext steps:\n  bughunter run\n  # For auto-fix, open a Claude Code session and invoke /bughunt fix\n`);
+async function resolveNonInteractive(projectDir: string, opts: InitOptions): Promise<BugHunterConfig> {
+  const env = process.env;
+  const projectName =
+    opts.projectName ??
+    env['BUGHUNTER_PROJECT_NAME'] ??
+    path.basename(projectDir);
+
+  const surfaceMcpUrl =
+    opts.surfaceMcpUrl ??
+    env['BUGHUNTER_SURFACE_MCP_URL'] ??
+    'http://127.0.0.1:3102';
+
+  const browserMcpUrl =
+    opts.browserMcpUrl ??
+    env['BUGHUNTER_BROWSER_MCP_URL'] ??
+    undefined;
+
+  const resetCommand =
+    opts.resetCommand ??
+    env['BUGHUNTER_RESET_COMMAND'] ??
+    undefined;
+
+  const resetPolicy =
+    opts.resetPolicy ??
+    (env['BUGHUNTER_RESET_POLICY'] as InitOptions['resetPolicy']) ??
+    'per-page';
+
+  const candidate = { projectName, surfaceMcpUrl, browserMcpUrl, resetCommand, resetPolicy };
+  const result = ConfigSchema.pick({
+    projectName: true,
+    surfaceMcpUrl: true,
+    browserMcpUrl: true,
+    resetCommand: true,
+    resetPolicy: true,
+  }).safeParse(candidate);
+
+  if (!result.success) {
+    const issues = result.error.issues
+      .map(i => `${i.path.join('.')}: ${i.message}`)
+      .join('; ');
+    throw new Error(`Invalid .bughunter/config.json: ${issues}`);
+  }
+
+  return {
+    projectName,
+    surfaceMcpUrl,
+    browserMcpUrl,
+    resetCommand,
+    resetPolicy,
+    maxBugs: 200,
+    discoveryFixtures: {},
+    domainHints: {},
+    forbiddenPaths: [],
+  };
 }
