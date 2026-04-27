@@ -19,7 +19,11 @@ function emit(level: LogLevel, msg: string, data?: unknown): void {
     warn: pc.yellow('[warn]'),
     error: pc.red('[error]'),
   }[level];
-  const line = data !== undefined ? `${msg} ${JSON.stringify(data)}` : msg;
+  const serialized =
+    data instanceof Error
+      ? JSON.stringify({ message: data.message, stack: data.stack })
+      : JSON.stringify(data);
+  const line = data !== undefined ? `${msg} ${serialized}` : msg;
   if (level === 'error') {
     process.stderr.write(`${ts} ${prefix} ${line}\n`);
   } else {

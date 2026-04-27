@@ -212,7 +212,12 @@ async function executeUiTest(
         }
         break;
       case 'navigate':
-        if (tc.action.selector) await browser.navigate(tc.action.selector, headers);
+        if (tc.action.selector) {
+          const target = tc.action.selector.startsWith('http')
+            ? tc.action.selector
+            : `${appBaseUrl ?? ''}${tc.action.selector}`;
+          await browser.navigate(target, headers);
+        }
         break;
       case 'render':
         // Just capture post-state
