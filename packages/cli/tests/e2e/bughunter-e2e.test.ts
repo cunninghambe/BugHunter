@@ -22,17 +22,21 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { execSync } from 'node:child_process';
 import { getFreePort, getFreePortInRange } from './helpers/free-port.js';
 import {
   copyFixtureToTemp,
   copyViteAppFixtureToTemp,
+  copyViteCrawlAppFixtureToTemp,
   writeSurfaceMcpConfig,
   writeSurfaceMcpConfigForVite,
+  writeSurfaceMcpConfigForViteCrawl,
   writeBugHunterConfig,
 } from './helpers/fixture-project.js';
 import {
   startNextDev,
   startSurfaceMcp,
+  startViteDev,
   waitForUrl,
   runBugHunter,
   kill,
@@ -415,4 +419,155 @@ describe('BugHunter e2e — Vite SPA', () => {
       `Expected a missing_fixture skip entry. skippedReasons: ${JSON.stringify(skipped)}`
     ).toBe(true);
   }, 90_000);
+});
+
+// ---------------------------------------------------------------------------
+// BugHunter e2e — Vite SPA crawl (no router) (spec § 5.7)
+// ---------------------------------------------------------------------------
+
+let crawlFixtureDir: string;
+let crawlViteProc: ChildProcess | null = null;
+let crawlSurfaceProc: ChildProcess | null = null;
+let crawlAppPort: number;
+let crawlSurfacePort: number;
+let crawlAppBaseUrl: string;
+let crawlSurfaceMcpUrl: string;
+
+beforeAll(async () => {
+  crawlFixtureDir = copyViteCrawlAppFixtureToTemp();
+
+  // Install deps in the copied fixture (node_modules excluded from copy)
+  execSync('npm install --prefer-offline --no-audit --no-fund', {
+    cwd: crawlFixtureDir,
+    stdio: 'ignore',
+    timeout: 120_000,
+  });
+
+  crawlAppPort = await getFreePort();
+  crawlSurfacePort = await getFreePortInRange(3103, 3199);
+  crawlAppBaseUrl = `http://127.0.0.1:${crawlAppPort}`;
+  crawlSurfaceMcpUrl = `http://127.0.0.1:${crawlSurfacePort}/mcp`;
+
+  writeSurfaceMcpConfigForViteCrawl(crawlFixtureDir, crawlAppPort, crawlSurfacePort);
+
+  crawlViteProc = startViteDev(crawlFixtureDir, crawlAppPort);
+  crawlSurfaceProc = startSurfaceMcp(crawlFixtureDir);
+
+  const [viteReady, surfaceReady] = await Promise.all([
+    waitForUrl(crawlAppBaseUrl, 60_000),
+    waitForUrl(`http://127.0.0.1:${crawlSurfacePort}/health`, 30_000),
+  ]);
+
+  if (!viteReady) throw new Error(`Vite dev server did not start on ${crawlAppBaseUrl}`);
+  if (!surfaceReady) throw new Error(`SurfaceMCP (crawl) did not start on port ${crawlSurfacePort}`);
+}, 180_000);
+
+afterAll(async () => {
+  if (crawlViteProc) await kill(crawlViteProc);
+  if (crawlSurfaceProc) await kill(crawlSurfaceProc);
+  try { if (crawlFixtureDir) fs.rmSync(crawlFixtureDir, { recursive: true, force: true }); } catch {}
+}, 30_000);
+
+describe('BugHunter e2e — Vite SPA crawl (no router)', () => {
+  it('plans non-zero UI tests (case 20)', async () => {
+    if (!browserAvailable) {
+      process.stdout.write('[skip] camofox unavailable — crawl e2e case 20 skipped\n');
+      return;
+    }
+
+    writeBugHunterConfig(crawlFixtureDir, {
+      surfaceMcpUrl: crawlSurfaceMcpUrl,
+      appBaseUrl: crawlAppBaseUrl,
+      browserMcpUrl: CAMOFOX_URL,
+    });
+
+    const { code, stdout, runId } = await runBugHunter(crawlFixtureDir);
+    expect(code, `bughunter (crawl) exited ${code}:\n${stdout}`).toBe(0);
+    expect(runId, `Could not parse run ID:\n${stdout}`).toBeDefined();
+
+    const summaryFile = path.join(crawlFixtureDir, '.bughunter', 'runs', runId!, 'summary.json');
+    const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf-8')) as Record<string, unknown>;
+    expect(
+      summary['testsPlanned'],
+      `Expected testsPlanned > 0. summary: ${JSON.stringify(summary)}\nstdout: ${stdout.slice(0, 800)}`
+    ).toBeGreaterThan(0);
+  }, 180_000);
+
+  it('all four routes appear in discovery (case 21)', async () => {
+    if (!browserAvailable) {
+      process.stdout.write('[skip] camofox unavailable — crawl e2e case 21 skipped\n');
+      return;
+    }
+
+    writeBugHunterConfig(crawlFixtureDir, {
+      surfaceMcpUrl: crawlSurfaceMcpUrl,
+      appBaseUrl: crawlAppBaseUrl,
+      browserMcpUrl: CAMOFOX_URL,
+    });
+
+    const { code, stdout, runId } = await runBugHunter(crawlFixtureDir);
+    expect(code, `bughunter (crawl routes) exited ${code}:\n${stdout}`).toBe(0);
+    expect(runId, `Could not parse run ID:\n${stdout}`).toBeDefined();
+
+    const stateFile = path.join(crawlFixtureDir, '.bughunter', 'runs', runId!, 'state.json');
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8')) as { discovery?: { pages: Array<{ route: string }> } };
+    const routes = (state.discovery?.pages ?? []).map(p => p.route).sort();
+    expect(routes, `Expected 4 crawled routes. Got: ${JSON.stringify(routes)}\nstdout: ${stdout.slice(0, 800)}`).toEqual(['/', '/about', '/dashboard', '/login']);
+  }, 180_000);
+
+  it('maxPages cap respected (case 22)', async () => {
+    if (!browserAvailable) {
+      process.stdout.write('[skip] camofox unavailable — crawl e2e case 22 skipped\n');
+      return;
+    }
+
+    writeBugHunterConfig(crawlFixtureDir, {
+      surfaceMcpUrl: crawlSurfaceMcpUrl,
+      appBaseUrl: crawlAppBaseUrl,
+      browserMcpUrl: CAMOFOX_URL,
+      crawl: { maxPages: 2 },
+    });
+
+    const { code, stdout, runId } = await runBugHunter(crawlFixtureDir);
+    expect(code, `bughunter (crawl cap) exited ${code}:\n${stdout}`).toBe(0);
+    expect(runId, `Could not parse run ID:\n${stdout}`).toBeDefined();
+
+    const stateFile = path.join(crawlFixtureDir, '.bughunter', 'runs', runId!, 'state.json');
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8')) as { discovery?: { pages: Array<{ route: string }> } };
+    const pages = state.discovery?.pages ?? [];
+    expect(
+      pages.length,
+      `Expected ≤ 2 pages with maxPages=2. pages: ${JSON.stringify(pages.map(p => p.route))}\nstdout: ${stdout.slice(0, 800)}`
+    ).toBeLessThanOrEqual(2);
+  }, 180_000);
+
+  it('crawl_skipped reason present in summary when off-origin links exist (case 23)', async () => {
+    if (!browserAvailable) {
+      process.stdout.write('[skip] camofox unavailable — crawl e2e case 23 skipped\n');
+      return;
+    }
+
+    // The Landing page has an external link (https://vitejs.dev) for this assertion.
+    // If no off-origin links exist in the fixture, assert the summary skippedReasons array exists.
+    writeBugHunterConfig(crawlFixtureDir, {
+      surfaceMcpUrl: crawlSurfaceMcpUrl,
+      appBaseUrl: crawlAppBaseUrl,
+      browserMcpUrl: CAMOFOX_URL,
+    });
+
+    const { code, stdout, runId } = await runBugHunter(crawlFixtureDir);
+    expect(code, `bughunter (crawl skip) exited ${code}:\n${stdout}`).toBe(0);
+    expect(runId, `Could not parse run ID:\n${stdout}`).toBeDefined();
+
+    const summaryFile = path.join(crawlFixtureDir, '.bughunter', 'runs', runId!, 'summary.json');
+    const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf-8')) as Record<string, unknown>;
+    const skipped = summary['skippedReasons'] as Array<{ reason: string; count: number }> | undefined;
+
+    // The fixture Landing page has https://vitejs.dev — an off-origin link that
+    // should appear in skippedReasons as crawl_skipped: off_origin_or_unsupported.
+    expect(
+      skipped?.some(s => s.reason.startsWith('crawl_skipped:')),
+      `Expected a crawl_skipped: entry in skippedReasons. skippedReasons: ${JSON.stringify(skipped)}\nstdout: ${stdout.slice(0, 800)}`
+    ).toBe(true);
+  }, 180_000);
 });

@@ -142,3 +142,58 @@ describe('discoverPages — fallback when surface_describe_self unavailable', ()
     expect(pages.length).toBeGreaterThan(0);
   });
 });
+
+// Case 15: stack vite with seed page — source propagated through discoverPages
+describe('discoverPages — source: crawl_seed propagated (case 15)', () => {
+  it('returns one entry with source: crawl_seed', async () => {
+    const seedPage: SurfaceListPagesResult = {
+      revision: 1,
+      pages: [{
+        route: '/',
+        sourceFile: '<unresolved>',
+        lazy: false,
+        dynamicParams: [],
+        declaredAt: { file: '<crawl-seed>', line: 0 },
+        source: 'crawl_seed',
+      }],
+    };
+    const adapter = makeAdapter({
+      surface_describe_self: vi.fn().mockResolvedValue(
+        describeResult({ stack: 'vite', capabilities: { listPages: true, crawlSeed: true } })
+      ),
+      surface_list_pages: vi.fn().mockResolvedValue(seedPage),
+    });
+
+    const pages = await discoverPages('/tmp/project', adapter);
+    expect(pages.length).toBe(1);
+    expect(pages[0]!.source).toBe('crawl_seed');
+    expect(pages[0]!.route).toBe('/');
+    expect(pages[0]!.sourceFile).toBeUndefined(); // '<unresolved>' maps to undefined
+  });
+});
+
+// Case 16: source field is preserved on the returned DiscoveredPageMeta
+describe('discoverPages — source field preserved (case 16)', () => {
+  it('source: static is preserved when present', async () => {
+    const staticPage: SurfaceListPagesResult = {
+      revision: 1,
+      pages: [{
+        route: '/about',
+        sourceFile: 'src/About.tsx',
+        lazy: false,
+        dynamicParams: [],
+        declaredAt: { file: 'src/App.tsx', line: 5 },
+        source: 'static',
+      }],
+    };
+    const adapter = makeAdapter({
+      surface_describe_self: vi.fn().mockResolvedValue(
+        describeResult({ stack: 'vite', capabilities: { listPages: true } })
+      ),
+      surface_list_pages: vi.fn().mockResolvedValue(staticPage),
+    });
+
+    const pages = await discoverPages('/tmp/project', adapter);
+    expect(pages[0]!.source).toBe('static');
+  });
+});

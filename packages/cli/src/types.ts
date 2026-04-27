@@ -337,6 +337,27 @@ export type RunState = {
   partialEmit: boolean;
 };
 
+export type CrawlConfig = {
+  /**
+   * Auto-derived from SurfaceMCP source: 'crawl_seed'. Set to false to disable
+   * crawl entirely (e.g. for projects where the seed is wrong). Default: undefined (auto).
+   */
+  enabled?: boolean;
+  /** Max distinct pages to visit (including the seed). Default: 50. */
+  maxPages?: number;
+  /** Max link-follow depth from the seed. Seed is depth 0. Default: 3. */
+  maxDepth?: number;
+  /**
+   * If true, query strings are kept as part of the dedup/visit key.
+   * If false (default), query strings are stripped before dedup.
+   */
+  followQueryParams?: boolean;
+  /** Per-page DOM-walk timeout ms. Default: 30000. */
+  walkTimeoutMs?: number;
+  /** Same-origin only. Default: true. */
+  sameOriginOnly?: boolean;
+};
+
 export type BugHunterConfig = {
   projectName: string;
   surfaceMcpUrl: string;
@@ -376,6 +397,8 @@ export type BugHunterConfig = {
    * Applies only to API direct-call tests on the 'happy' palette.
    */
   bodyFixtures?: Record<string, Record<string, Record<string, unknown>>>;
+  /** Crawl config — auto-enabled when SurfaceMCP returns a crawl_seed page. */
+  crawl?: CrawlConfig;
 };
 
 export type RunSummary = {

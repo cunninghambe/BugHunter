@@ -6,6 +6,7 @@ import type { BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, Skippe
 import { isDynamicRoute, expandDynamicRoute } from '../discovery/filesystem-pages.js';
 import { discoverPages } from '../discovery/pages.js';
 import { walkDom } from '../discovery/dom-walker.js';
+import { crawlFromSeeds } from '../discovery/crawler.js';
 import { crossRefForms } from '../discovery/form-cross-ref.js';
 import { collapseElements } from '../discovery/element-collapse.js';
 import { log } from '../log.js';
@@ -31,8 +32,42 @@ export async function runDiscover(
   const rawPages = await discoverPages(projectDir, surface);
   log.info(`Discovered ${rawPages.length} pages`);
 
-  // Adapt to the shape used by the rest of this function
-  const fsPages = rawPages.map(p => ({
+  // Split seed entries from static entries
+  const seedEntries = rawPages.filter(p => p.source === 'crawl_seed');
+  const staticEntries = rawPages.filter(p => p.source !== 'crawl_seed');
+
+  // Crawl-based discovery: triggered by seed pages
+  const crawledPages: DiscoveredPage[] = [];
+  if (seedEntries.length > 0 && browser && config.crawl?.enabled !== false) {
+    const seedRoutes = seedEntries.map(s => s.route);
+    const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
+    log.info(`crawl: starting from ${seedRoutes.length} seed(s): ${seedRoutes.join(', ')}`);
+    const result = await crawlFromSeeds(browser, {
+      baseUrl,
+      seedRoutes,
+      maxPages: config.crawl?.maxPages ?? 50,
+      maxDepth: config.crawl?.maxDepth ?? 3,
+      followQueryParams: config.crawl?.followQueryParams ?? false,
+      walkTimeoutMs: config.crawl?.walkTimeoutMs ?? 30_000,
+      sameOriginOnly: config.crawl?.sameOriginOnly ?? true,
+      runId,
+      extraHeaders: config.extraHeaders,
+    });
+    log.info(
+      `crawl: visited ${result.pages.length} pages` +
+      (result.hitMaxPages ? ' (max-pages cap hit)' : '') +
+      (result.hitMaxDepth ? ' (max-depth cap hit)' : '')
+    );
+    crawledPages.push(...result.pages);
+    for (const s of result.skipped) {
+      skipList.push({ route: s.url, reason: `crawl_skipped: ${s.reason}` });
+    }
+  } else if (seedEntries.length > 0 && !browser) {
+    log.warn('crawl: seed pages detected but no browser available; crawl skipped');
+  }
+
+  // Adapt static entries to the shape used by the rest of this function
+  const fsPages = staticEntries.map(p => ({
     route: p.route,
     sourceFile: p.sourceFile ?? '',
   }));
@@ -121,6 +156,17 @@ export async function runDiscover(
     }
 
     pages.push(pageElements);
+  }
+
+  // Merge crawled pages: apply routeAliases dedup and excludedRoutes filter
+  if (crawledPages.length > 0) {
+    for (const p of crawledPages) {
+      const canonical = config.routeAliases?.[p.route] ?? p.route;
+      if (seen.has(canonical)) continue;
+      seen.add(canonical);
+      if ((config.excludedRoutes?.length ?? 0) > 0 && micromatch([p.route], config.excludedRoutes!).length > 0) continue;
+      pages.push(p);
+    }
   }
 
   // Filter external tools

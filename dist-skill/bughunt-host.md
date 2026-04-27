@@ -130,6 +130,36 @@ bughunter retest <runId> <clusterId> --base <baseBranch> --branch <branch>
 bughunter fix-summary <runId>
 ```
 
+# Crawl mode — SPA runtime discovery (v0.2.1+)
+
+BugHunter automatically switches to crawl mode when SurfaceMCP returns a `source: 'crawl_seed'` page (emitted when static route extraction yields nothing, e.g. hand-rolled routing with no `react-router-dom`). The crawler does BFS from `/`, follows every same-origin `<a href>` link, and walks the DOM on each discovered page.
+
+**Requirements for crawl mode:** `browserMcpUrl` must be configured (camofox is required to navigate real pages) and SurfaceMCP must be v0.2.1+ with `stack: vite`.
+
+## Crawl config
+
+```json
+{
+  "crawl": {
+    "maxPages": 50,
+    "maxDepth": 3,
+    "followQueryParams": false,
+    "walkTimeoutMs": 30000,
+    "sameOriginOnly": true,
+    "enabled": true
+  }
+}
+```
+
+All fields are optional (defaults shown). Set `enabled: false` to disable crawl even when SurfaceMCP emits a seed.
+
+## Precautions
+
+- **Protect destructive routes**: add `/logout`, `/signout`, `/admin/reset`, etc. to `excludedRoutes`. The crawler follows ALL `<a href>` links blindly.
+- **Auth-walled pages**: the crawl runs with the browser's current (anonymous) session. Pages behind login redirects may only show the login page.
+- **Slow apps**: lower `maxPages` and `walkTimeoutMs`. Worst case: `maxPages × walkTimeoutMs` ms.
+- **No form fills or clicks**: the crawler is read-only — only `<a href>` links are followed.
+
 # Common gotchas
 
 - **`/mcp/mcp` URL bug**: older configs put `surfaceMcpUrl: "http://.../mcp"` and the adapter then appended `/mcp` again. New configs use the bare base; the adapter strips trailing `/mcp` for backward-compat. Same convention applies to `browserMcpUrl`.

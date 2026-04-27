@@ -30,6 +30,15 @@ export function startNextDev(fixtureDir: string, port: number): ChildProcess {
   });
 }
 
+/** Starts a Vite dev server using `npm run dev` with a custom port via CLI arg. */
+export function startViteDev(fixtureDir: string, port: number): ChildProcess {
+  return spawn('npm', ['run', 'dev', '--', '--port', String(port)], {
+    cwd: fixtureDir,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
 /** Starts the SurfaceMCP HTTP server against the fixture dir. Returns the child process. */
 export function startSurfaceMcp(fixtureDir: string): ChildProcess {
   return spawn('node', [SURFACEMCP_BIN, 'serve'], {

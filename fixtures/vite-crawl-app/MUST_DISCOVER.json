@@ -1,0 +1,8 @@
+{
+  "pages": [
+    { "route": "/" },
+    { "route": "/about" },
+    { "route": "/login" },
+    { "route": "/dashboard" }
+  ]
+}

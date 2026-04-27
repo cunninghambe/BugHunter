@@ -3,6 +3,8 @@
 
 import type { ToolMeta, JsonSchema } from '../types.js';
 
+export type PageSource = 'static' | 'crawl_seed';
+
 export type SurfacePageMeta = {
   route: string;
   sourceFile: string;
@@ -10,6 +12,8 @@ export type SurfacePageMeta = {
   lazy: boolean;
   dynamicParams: string[];
   declaredAt: { file: string; line: number };
+  /** Optional — absent on SurfaceMCP < 0.2.1; undefined ≡ 'static'. */
+  source?: PageSource;
 };
 
 export type SurfacePageSkip = {
@@ -33,6 +37,8 @@ export type SurfaceDescribeSelfResult = {
   pageRevision: number;
   capabilities: {
     listPages: boolean;
+    /** Optional — absent on SurfaceMCP < 0.2.1. Signals that seed pages may be returned. */
+    crawlSeed?: boolean;
   };
 };
 

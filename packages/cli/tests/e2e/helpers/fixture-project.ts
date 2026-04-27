@@ -4,6 +4,7 @@ import * as os from 'node:os';
 
 const FIXTURE_SOURCE = '/root/SurfaceMCP/fixtures/nextjs-app';
 const VITE_FIXTURE_SOURCE = '/root/SurfaceMCP/fixtures/vite-app';
+const VITE_CRAWL_FIXTURE_SOURCE = '/root/BugHunter/fixtures/vite-crawl-app';
 
 /**
  * Copies the SurfaceMCP fixture Next.js app into a fresh temp directory.
@@ -93,6 +94,46 @@ export function writeSurfaceMcpConfigForVite(fixtureDir: string, surfaceMcpPort:
 }
 
 /**
+ * Copies the vite-crawl-app fixture (hand-rolled tab-state routing) into a
+ * fresh temp directory. Returns the temp directory path.
+ */
+export function copyViteCrawlAppFixtureToTemp(): string {
+  const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-e2e-crawl-'));
+  fs.cpSync(VITE_CRAWL_FIXTURE_SOURCE, dest, {
+    recursive: true,
+    filter: (src) => !src.includes(`${path.sep}.bughunter`) && !src.includes(`${path.sep}node_modules`),
+  });
+  return dest;
+}
+
+/**
+ * Writes surfacemcp.config.json for the vite-crawl-app fixture, pointing at
+ * the running Vite dev server on appPort.
+ */
+export function writeSurfaceMcpConfigForViteCrawl(fixtureDir: string, appPort: number, surfaceMcpPort: number): void {
+  const config = {
+    surfaces: [
+      {
+        name: 'vite-crawl',
+        stack: 'vite',
+        root: '.',
+        baseUrl: `http://localhost:${appPort}`,
+        port: surfaceMcpPort,
+        watchPaths: ['src'],
+        watchIgnore: [],
+        auth: { kind: 'none' },
+        roles: [],
+        excludedRoutes: [],
+      },
+    ],
+  };
+  fs.writeFileSync(
+    path.join(fixtureDir, 'surfacemcp.config.json'),
+    JSON.stringify(config, null, 2) + '\n'
+  );
+}
+
+/**
  * Writes .bughunter/config.json in the given projectDir.
  * browserMcpUrl is optional — omit for API-only runs.
  */
@@ -104,6 +145,7 @@ export function writeBugHunterConfig(
     browserMcpUrl?: string;
     bodyFixtures?: Record<string, Record<string, Record<string, unknown>>>;
     discoveryFixtures?: Record<string, string[]>;
+    crawl?: { enabled?: boolean; maxPages?: number; maxDepth?: number };
   }
 ): void {
   const configDir = path.join(projectDir, '.bughunter');
@@ -118,6 +160,7 @@ export function writeBugHunterConfig(
   if (opts.browserMcpUrl) config['browserMcpUrl'] = opts.browserMcpUrl;
   if (opts.bodyFixtures) config['bodyFixtures'] = opts.bodyFixtures;
   if (opts.discoveryFixtures) config['discoveryFixtures'] = opts.discoveryFixtures;
+  if (opts.crawl) config['crawl'] = opts.crawl;
   fs.writeFileSync(
     path.join(configDir, 'config.json'),
     JSON.stringify(config, null, 2) + '\n'
