@@ -69,7 +69,7 @@ function pagesFileToRoute(file: string): string {
 }
 
 export function isDynamicRoute(route: string): boolean {
-  return /\[.+\]/.test(route);
+  return /\[.+\]/.test(route) || /:[A-Za-z_][\w]*/.test(route) || route.includes('*');
 }
 
 export function expandDynamicRoute(
@@ -79,7 +79,12 @@ export function expandDynamicRoute(
   if (!isDynamicRoute(route)) return [route];
   const ids = fixtures[route];
   if (!ids || ids.length === 0) return [];
-  return ids.map(id => route.replace(/\[([^\]]+)\]/g, id));
+  return ids.map(id => {
+    let r = route.replace(/\[([^\]]+)\]/g, id); // Next.js style [param]
+    r = r.replace(/:[A-Za-z_][\w]*/g, id);       // React Router style :param
+    r = r.replace(/\*/g, id);                    // Splat *
+    return r;
+  });
 }
 
 export function doesProjectDirExist(projectRoot: string): boolean {

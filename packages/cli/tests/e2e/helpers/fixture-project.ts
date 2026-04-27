@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 const FIXTURE_SOURCE = '/root/SurfaceMCP/fixtures/nextjs-app';
+const VITE_FIXTURE_SOURCE = '/root/SurfaceMCP/fixtures/vite-app';
 
 /**
  * Copies the SurfaceMCP fixture Next.js app into a fresh temp directory.
@@ -14,6 +15,19 @@ const FIXTURE_SOURCE = '/root/SurfaceMCP/fixtures/nextjs-app';
 export function copyFixtureToTemp(): string {
   const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-e2e-fixture-'));
   fs.cpSync(FIXTURE_SOURCE, dest, {
+    recursive: true,
+    filter: (src) => !src.includes(`${path.sep}.bughunter`),
+  });
+  return dest;
+}
+
+/**
+ * Copies the SurfaceMCP vite-app fixture into a fresh temp directory.
+ * Excludes .bughunter/ artifacts. Returns the temp directory path.
+ */
+export function copyViteAppFixtureToTemp(): string {
+  const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-e2e-vite-'));
+  fs.cpSync(VITE_FIXTURE_SOURCE, dest, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}.bughunter`),
   });
@@ -50,6 +64,35 @@ export function writeSurfaceMcpConfig(fixtureDir: string, appBaseUrl: string, su
 }
 
 /**
+ * Writes surfacemcp.config.json into a vite fixture dir.
+ * The vite surface has no live app URL for extraction (static AST scan).
+ */
+export function writeSurfaceMcpConfigForVite(fixtureDir: string, surfaceMcpPort: number): void {
+  const config = {
+    surfaces: [
+      {
+        name: 'web',
+        stack: 'vite',
+        root: '.',
+        baseUrl: 'http://localhost:5173',
+        port: surfaceMcpPort,
+        watchPaths: ['src'],
+        watchIgnore: [],
+        auth: { kind: 'none' },
+        roles: [{ name: 'anonymous', credentials: {} }],
+        excludedRoutes: [],
+        externalIntegrations: [],
+        _suggestedExternalIntegrations: [],
+      },
+    ],
+  };
+  fs.writeFileSync(
+    path.join(fixtureDir, 'surfacemcp.config.json'),
+    JSON.stringify(config, null, 2) + '\n'
+  );
+}
+
+/**
  * Writes .bughunter/config.json in the given projectDir.
  * browserMcpUrl is optional — omit for API-only runs.
  */
@@ -60,6 +103,7 @@ export function writeBugHunterConfig(
     appBaseUrl: string;
     browserMcpUrl?: string;
     bodyFixtures?: Record<string, Record<string, Record<string, unknown>>>;
+    discoveryFixtures?: Record<string, string[]>;
   }
 ): void {
   const configDir = path.join(projectDir, '.bughunter');
@@ -73,6 +117,7 @@ export function writeBugHunterConfig(
   };
   if (opts.browserMcpUrl) config['browserMcpUrl'] = opts.browserMcpUrl;
   if (opts.bodyFixtures) config['bodyFixtures'] = opts.bodyFixtures;
+  if (opts.discoveryFixtures) config['discoveryFixtures'] = opts.discoveryFixtures;
   fs.writeFileSync(
     path.join(configDir, 'config.json'),
     JSON.stringify(config, null, 2) + '\n'

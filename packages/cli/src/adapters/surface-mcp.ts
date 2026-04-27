@@ -3,6 +3,39 @@
 
 import type { ToolMeta, JsonSchema } from '../types.js';
 
+export type SurfacePageMeta = {
+  route: string;
+  sourceFile: string;
+  componentName?: string;
+  lazy: boolean;
+  dynamicParams: string[];
+  declaredAt: { file: string; line: number };
+};
+
+export type SurfacePageSkip = {
+  route: string;
+  reason: string;
+  detail?: string;
+  declaredAt?: { file: string; line: number };
+};
+
+export type SurfaceListPagesResult = {
+  revision: number;
+  pages: SurfacePageMeta[];
+  skips?: SurfacePageSkip[];
+};
+
+export type SurfaceDescribeSelfResult = {
+  name: string;
+  stack: 'nextjs' | 'express' | 'fastapi' | 'django' | 'openapi' | 'vite';
+  baseUrl: string;
+  toolRevision: number;
+  pageRevision: number;
+  capabilities: {
+    listPages: boolean;
+  };
+};
+
 export type SurfaceListToolsResult = {
   revision: number;
   tools: ToolMeta[];
@@ -75,6 +108,10 @@ export interface SurfaceMcpAdapter {
   surface_relogin(args: { role: string }): Promise<{ ok: boolean; error?: string }>;
 
   surface_routes_for_page(args: { pagePath: string }): Promise<SurfaceRoutesForPageResult>;
+
+  surface_list_pages(filter?: { pathPrefix?: string; lazy?: boolean }): Promise<SurfaceListPagesResult>;
+
+  surface_describe_self(): Promise<SurfaceDescribeSelfResult>;
 }
 
 // HTTP-based implementation targeting a live SurfaceMCP instance.
@@ -161,5 +198,13 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
 
   async surface_routes_for_page(args: { pagePath: string }): Promise<SurfaceRoutesForPageResult> {
     return this.mcpCall<SurfaceRoutesForPageResult>('surface_routes_for_page', args);
+  }
+
+  async surface_list_pages(filter?: { pathPrefix?: string; lazy?: boolean }): Promise<SurfaceListPagesResult> {
+    return this.mcpCall<SurfaceListPagesResult>('surface_list_pages', { filter });
+  }
+
+  async surface_describe_self(): Promise<SurfaceDescribeSelfResult> {
+    return this.mcpCall<SurfaceDescribeSelfResult>('surface_describe_self', {});
   }
 }

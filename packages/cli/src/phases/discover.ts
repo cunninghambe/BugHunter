@@ -3,7 +3,8 @@
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import type { BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem } from '../types.js';
-import { discoverFilesystemPages, isDynamicRoute, expandDynamicRoute } from '../discovery/filesystem-pages.js';
+import { isDynamicRoute, expandDynamicRoute } from '../discovery/filesystem-pages.js';
+import { discoverPages } from '../discovery/pages.js';
 import { walkDom } from '../discovery/dom-walker.js';
 import { crossRefForms } from '../discovery/form-cross-ref.js';
 import { collapseElements } from '../discovery/element-collapse.js';
@@ -26,9 +27,15 @@ export async function runDiscover(
   const catalog = await surface.surface_list_tools();
   const apiTools: ToolMeta[] = catalog.tools;
 
-  // Source 2: AST filesystem page scan
-  const fsPages = await discoverFilesystemPages(projectDir);
-  log.info(`Discovered ${fsPages.length} filesystem pages`);
+  // Source 2: page discovery (stack-aware via SurfaceMCP surface_describe_self)
+  const rawPages = await discoverPages(projectDir, surface);
+  log.info(`Discovered ${rawPages.length} pages`);
+
+  // Adapt to the shape used by the rest of this function
+  const fsPages = rawPages.map(p => ({
+    route: p.route,
+    sourceFile: p.sourceFile ?? '',
+  }));
 
   // Expand dynamic routes using discoveryFixtures
   const expandedRoutes: Array<{ route: string; sourceFile?: string }> = [];
