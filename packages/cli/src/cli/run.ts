@@ -12,9 +12,17 @@ import { runPlan } from '../phases/plan.js';
 import { runExecute } from '../phases/execute.js';
 import { runClassify } from '../phases/classify.js';
 import { runCluster } from '../phases/cluster.js';
-import type { PreState, PostState } from '../types.js';
+import type { PreState, PostState, SkippedItem } from '../types.js';
 import { runEmit } from '../phases/emit.js';
 import { log } from '../log.js';
+
+function aggregateDiscoverySkips(skipList: SkippedItem[]): Array<{ reason: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const item of skipList) {
+    counts.set(item.reason, (counts.get(item.reason) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([reason, count]) => ({ reason, count }));
+}
 
 export type RunOptions = {
   projectDir: string;
@@ -182,11 +190,16 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   // Phase 6: emit
   const actualRuntimeMs = Date.now() - startMs;
+
+  // Merge discovery-phase skip reasons into the execute-phase skip reasons.
+  const discoverySkipReasons = aggregateDiscoverySkips(discovery.skipList);
+  const allSkipReasons = [...discoverySkipReasons, ...skipReasons];
+
   runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
     testsPlanned: testCases.length,
     testsRan: results.length,
     testsSkipped: testCases.length - results.length,
-    skipReasons,
+    skipReasons: allSkipReasons,
   });
   runState.emitted = true;
   runState.phase = 'done';

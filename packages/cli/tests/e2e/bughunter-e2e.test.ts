@@ -341,7 +341,7 @@ let viteSurfaceMcpUrl: string;
 
 beforeAll(async () => {
   viteFfixtureDir = copyViteAppFixtureToTemp();
-  viteSurfacePort = await getFreePortInRange(3200, 3299);
+  viteSurfacePort = await getFreePortInRange(3103, 3199);
   viteSurfaceMcpUrl = `http://127.0.0.1:${viteSurfacePort}/mcp`;
 
   writeSurfaceMcpConfigForVite(viteFfixtureDir, viteSurfacePort);
