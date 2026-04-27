@@ -24,7 +24,6 @@ export function classifyDomErrorText(
   selectorClass: string
 ): BugDetection | null {
   if (!DOM_ERROR_PATTERN.test(domSnippet)) return null;
-  const match = DOM_ERROR_PATTERN.exec(domSnippet);
   return {
     kind: 'dom_error_text',
     rootCause: `Error text detected in DOM: "${domSnippet.slice(0, 80)}"`,

@@ -187,7 +187,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     return this.resolveViaEvaluate(tabId, selector, nodes);
   }
 
-  private async resolveViaEvaluate(tabId: string, selector: string, nodes: import('./browser-mcp-snapshot.js').SnapshotNode[]): Promise<string> {
+  private async resolveViaEvaluate(tabId: string, selector: string, _nodes: import('./browser-mcp-snapshot.js').SnapshotNode[]): Promise<string> {
     const safeSelector = selector.replace(/'/g, "\\'");
     const expr = `document.querySelector('${safeSelector}')?.outerHTML?.slice(0, 200) ?? null`;
     let evalResult: CamofoxEvaluateResult;
@@ -369,7 +369,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     extraHeaders: ExtraHeaders | undefined,
     fn: (scope: TabScope) => Promise<T>
   ): Promise<T> {
-    const { tabId, finalUrl, title } = await this.openTab(url, extraHeaders);
+    const { tabId } = await this.openTab(url, extraHeaders);
     const scope = this.makeTabScope(tabId);
     try {
       return await fn(scope);

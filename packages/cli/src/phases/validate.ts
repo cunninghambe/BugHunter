@@ -70,7 +70,7 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
   return { revision: catalog.revision, roles };
 }
 
-function extractRolesFromCatalog(tools: unknown[]): string[] {
+function extractRolesFromCatalog(_tools: unknown[]): string[] {
   // If no roles configured, default to ['anonymous']
   // Real role extraction would come from SurfaceMCP tool metadata
   return ['anonymous'];

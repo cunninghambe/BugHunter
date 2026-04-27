@@ -177,7 +177,7 @@ function parseVisionResponse(rawText: string, screenshotPath: string): BugDetect
 
   const rawAnomalies = (parsed as { anomalies: RawAnomaly[] }).anomalies;
 
-  let kept = rawAnomalies.slice(0, MAX_DETECTIONS_PER_CALL);
+  const kept = rawAnomalies.slice(0, MAX_DETECTIONS_PER_CALL);
   const dropped = rawAnomalies.length - kept.length;
   if (dropped > 0) {
     log.info('vision: response truncated', { kept: MAX_DETECTIONS_PER_CALL, dropped });

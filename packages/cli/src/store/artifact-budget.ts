@@ -3,7 +3,7 @@
 // Total budget capped at 4 GB; oldest full-artifact occurrences degrade to summaries.
 
 import type { Occurrence, BugCluster } from '../types.js';
-import { CLUSTER_FULL_ARTIFACT_CAP, CLUSTER_FULL_ARTIFACT_HEAD, CLUSTER_FULL_ARTIFACT_TAIL } from '../config.js';
+import { CLUSTER_FULL_ARTIFACT_CAP, CLUSTER_FULL_ARTIFACT_HEAD } from '../config.js';
 
 // Determines which occurrences in a cluster get full artifacts.
 // Full artifacts: first N + last M where cluster size <= CAP.

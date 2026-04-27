@@ -2,7 +2,7 @@
 
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
-  BugHunterConfig, DiscoveryOutput, TestCase, ToolMeta, DiscoveredPage,
+  BugHunterConfig, DiscoveryOutput, TestCase, ToolMeta,
 } from '../types.js';
 import { formTestCases, apiTestCases } from '../mutation/apply.js';
 import { formCollapseSignature } from '../discovery/element-collapse.js';

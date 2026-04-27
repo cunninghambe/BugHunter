@@ -1,10 +1,8 @@
 // bughunter inspect <occurrenceId|clusterId> — prints cluster summary + artifact paths.
 
-import { loadConfig } from '../config.js';
-import { listRunIds, runPaths, readJsonFile } from '../store/filesystem.js';
+import { listRunIds, runPaths } from '../store/filesystem.js';
 import type { BugCluster, Occurrence, OccurrenceFull } from '../types.js';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { log } from '../log.js';
 
 export function inspectCommand(projectDir: string, id: string): void {
