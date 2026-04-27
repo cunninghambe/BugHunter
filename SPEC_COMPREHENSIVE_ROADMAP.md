@@ -430,11 +430,11 @@ Recommendation: **route 2 in v0.5**. Camofox catches up later; we don't gate v0.
 
 ### 4.5 Multi-browser (`infra:multibrowser`)
 
-**Unblocks:** `safari_specific_break`, `firefox_specific_break`, `cross_browser_visual_regression`.
+**Unblocks:** `firefox_specific_break`, `cross_browser_visual_regression` (Chrome × Firefox only).
 
-**Approach:** Playwright supports Chromium / Firefox / WebKit via the same API. Reuse the parallel-Playwright path from §4.1; instantiate per browser.
+**Approach:** Playwright supports Chromium / Firefox / WebKit via the same API. Reuse the parallel-Playwright path from §4.1; instantiate per browser. **Per Q2, only Chromium + Firefox are in scope at v0.9; WebKit is deferred.**
 
-**Cost:** 3× run time at full coverage. Default off. Opt in via `browsers: ['chromium', 'webkit']`.
+**Cost:** 2× run time at full coverage. Default off. Opt in via `browsers: ['chromium', 'firefox']`.
 
 **Effort:** L.
 
@@ -444,9 +444,9 @@ Recommendation: **route 2 in v0.5**. Camofox catches up later; we don't gate v0.
 
 **Unblocks:** `idor_horizontal`, `idor_vertical_role_escalate`, `auth_bypass_via_unauthed_route`, `stale_state_from_old_session`.
 
-**Approach:** Today, BugHunter logs in as each role independently. The cross-user matrix runs an additional pass: for each role A, capture the resource IDs owned by A; for each other role B, replay A's GETs/PUTs/DELETEs as B; expect 403/404, flag 200.
+**Approach:** Today, BugHunter logs in as each role independently. The cross-user matrix runs an additional pass: for each role A, capture the resource IDs owned by A; for each other role B, replay A's GETs/PUTs/DELETEs as B; expect 403/404, flag 200. **Per Q7, ID extraction is layered:** response-body extractor (default) → `discoveryFixtures` user override → cross-user replay → synthetic-id fallback for routes where no ID was captured.
 
-**Implementation:** New `phases/cross-user.ts` running after `execute`. Lightweight HTTP via SurfaceMCP; no browser needed. Outputs to `classify` like every other phase.
+**Implementation:** New `phases/cross-user.ts` running after `execute` and before `classify`. Lightweight HTTP via the SurfaceMCP adapter; no browser needed. Outputs `BugDetection[]` to be consumed by `classify` like every other phase.
 
 **Effort:** L (planning the resource-ID extraction + the per-role replay).
 
@@ -486,9 +486,9 @@ Recommendation: **route 2 in v0.5**. Camofox catches up later; we don't gate v0.
 
 **Unblocks:** `auth_bypass_via_unauthed_route`, `default_creds`, `weak_password_accepted`, `password_reset_token_reuse`, `no_rate_limit_on_login`.
 
-**Approach:** A small extension that builds anonymous and synthetic-credential variants of role-pinned calls. SurfaceMCP exposes which routes require auth; BugHunter knows which routes are public. The cross-product is the test set.
+**Approach:** A small extension that builds anonymous and synthetic-credential variants of role-pinned calls. SurfaceMCP exposes which routes require auth; BugHunter knows which routes are public. The cross-product is the test set. **Per Q5, the auth-probe pre-flight discovers the app's actual rate-limit headers** (`RateLimit-*` / `X-RateLimit-*` / `Retry-After`) and adapts concurrency + delay to fit; falls back to 8 attempts at 200 ms if no headers are present. Auth probes themselves remain opt-in via `--enable-auth-probes`.
 
-**Effort:** S (mostly config + a planner branch).
+**Effort:** S (mostly config + a planner branch + the rate-limit pre-flight).
 
 **Order:** v0.5.
 
@@ -605,41 +605,48 @@ Each phase is one or more focused implementation specs. Each phase is independen
 
 ### v0.5 — "Security & Surface Hygiene"
 
-**Theme:** Catch the bugs vibe-coded apps reliably ship with. High S/N security and code-hygiene wins. Foundations for HAR and static-analysis.
+**Theme:** Catch the bugs vibe-coded apps reliably ship with. High S/N security and code-hygiene wins. Foundations for HAR and static-analysis. Implementation spec: `SPEC_V05_SECURITY_HYGIENE.md`.
 
-**New BugKinds:**
-- `idor_horizontal`, `idor_vertical_role_escalate`, `auth_bypass_via_unauthed_route`
+**New BugKinds (18):**
+- `idor_horizontal`, `idor_vertical_role_escalate`, `auth_bypass_via_unauthed_route` (Q7 layered ID extraction; cross-user probe matrix)
 - `open_redirect`
 - `missing_csp_header`, `permissive_cors`, `cookie_security_flags`
 - `csrf_missing_on_mutating_route`
-- `no_rate_limit_on_login`
-- `vulnerable_dependency`
+- `no_rate_limit_on_login` (Q5 dynamic rate-limit discovery; opt-in via `--enable-auth-probes`)
+- `vulnerable_dependency_high` (high+critical only at v0.5; medium gated to v0.7)
 - `hardcoded_credentials_in_source`
 - `swallowed_error_empty_catch`
 - `stack_trace_leak_in_response`
 - `sensitive_data_in_url`
-- `non_ascii_broken` (palette extension; no new kind)
 - `optimistic_update_divergence`
 - `race_double_submit`
 - `hallucinated_route`
 - `hydration_mismatch` (promote from `react_error`)
 
+(`non_ascii_broken` is a palette extension, not a new kind; rolls in alongside.)
+
 **New infrastructure:**
 - `infra:har` — real HAR capture via parallel Playwright CDP.
-- `infra:static` framework + first wraps (`gitleaks`, `npm audit`, `semgrep` secrets ruleset, eslint `no-empty`).
-- `infra:cross-user` + `infra:resource-ids` — IDOR primitives.
-- `infra:headers` — CSP/CORS/cookie probe.
-- `infra:auth-probes` — anonymous + synthetic-credential variants.
+- `infra:static` framework + first wraps (`gitleaks`, `npm audit`, `semgrep --config=p/owasp-top-ten`, `eslint no-empty`). **Q1: OSS rule sets only**; custom YAML rule directory at `packages/cli/src/static/semgrep-rules/` is the escape hatch.
+- `infra:cross-user` + `infra:resource-ids` — IDOR primitives. Q7 layered extractor (response-body parse → `discoveryFixtures` override → cross-user replay → synthetic fallback).
+- `infra:headers` — CSP/CORS/cookie probe. Q3 dev-server target.
+- `infra:auth-probes` — anonymous + synthetic-credential variants; rate-limit discovery (Q5).
 - `infra:synthetic` framework + scenarios for `race_double_submit`, `no_rate_limit_on_login`, `optimistic_update_divergence`.
+- `infra:vision-auth-v2` — Claude CLI subprocess default; API key fallback (Q8). Sub-spec inside `SPEC_V05_SECURITY_HYGIENE.md`.
+- `infra:suppress` — `bughunter suppress` CLI subcommand + `.bughunter/suppressions.json` (Q10 default).
+- **Q4 re-entrancy discipline:** all new phases must hold zero global mutable state and read RunState exclusively from `runs/<runId>/`. Reviewed at spec gate.
+
+**Sqlmap wrapper skeleton ships in v0.5 (Q6); actual sqlmap invocation lands in v0.7 with `sql_injection_suspected`.**
 
 **Effort:** ~6-8 weeks.
 
-**Killer demo:** Run BugHunter against TraiderJo. Find:
-1. An IDOR (one user can read another's trade entries).
-2. A missing CSP header.
-3. A `console.log("user data:", ...)` left in a route handler.
-4. A `setTimeout(() => location.reload(), 1000)` in a "save successful" handler that masks an actual API failure (`optimistic_update_divergence`).
-5. A `npm audit` high-severity in a transitive dep.
+**Killer demo:** Run BugHunter against TraiderJo. Five concrete findings, each grounded in current TraiderJo source (`/tmp/TraiderJo/server/src/index.js` references):
+
+1. **`idor_horizontal`** — `GET /api/trades/:tradeId/mistakes` (route at line 5004) gates on `getAccountAccess(req.userId, trade.accountId)`. With `discoveryFixtures` providing user A's trade IDs, replay as user B with no shared-account relation; expect 200 (current behavior in shared-account scenarios may pass-through too liberally) or 403.
+2. **`missing_csp_header`** *or* permissive CSP variant — Today TraiderJo emits a CSP at line 397 with `script-src 'self' 'unsafe-inline'`. v0.5's CSP probe flags `'unsafe-inline'` as `cspWeakness: 'inline_scripts_allowed'` (informational subkind, does not gate the demo).
+3. **`stack_trace_leak_in_response`** — TraiderJo's 5xx envelope occasionally surfaces stack frames in dev. The probe scans `network_5xx` response bodies for filesystem-path patterns (`at /tmp/TraiderJo/`, `at Object.<anonymous>`). High-confidence finding when present.
+4. **`optimistic_update_divergence`** — A "save successful" toast renders while the underlying `POST` returned 4xx. The synthetic scenario triggers a known-failing input on a save-shaped form; vision sees success copy; HAR shows non-2xx.
+5. **`vulnerable_dependency_high`** — `npm audit --json --audit-level=high` against TraiderJo's lockfile reliably surfaces at least one transitive high-severity (any mid-sized Node project's lockfile has this).
 
 That single demo more than doubles the value of v0.4.
 
@@ -671,11 +678,11 @@ That single demo more than doubles the value of v0.4.
 
 ### v0.7 — "Static Analysis & Code Hygiene"
 
-**Theme:** The code itself is the source of bugs. Static-analysis pipeline matures; LLM-era checks ship.
+**Theme:** The code itself is the source of bugs. Static-analysis pipeline matures; LLM-era checks ship. Per Q3, all v0.7 dynamic checks continue to target the dev server by default; the per-check `mode: 'build'` opt-in lands here for `sourcemaps_in_prod`, `exposed_dotfiles`, `debug_mode_in_prod`. Per Q1, all `semgrep` invocations stay on OSS rule sets (`p/owasp-top-ten`, `p/javascript`, `p/typescript`, `p/secrets`) plus our custom-YAML escape hatch from v0.5; commercial Semgrep packs are out.
 
 **New BugKinds:**
 - `console_log_in_prod`, `eval_or_new_function`, `unused_dependencies`, `dead_code_paths`
-- `xss_reflected`, `xss_stored`, `sql_injection_probe` (sqlmap wrap)
+- `xss_reflected`, `xss_stored`, `sql_injection_suspected` (sqlmap wrap completes the v0.5 skeleton; Q6 scoped pre-filter + bounded args)
 - `weak_password_accepted`, `default_creds`
 - `debug_mode_in_prod`, `exposed_dotfiles`, `subresource_integrity_missing`, `sourcemaps_in_prod`
 - `missing_health_endpoint`, `metrics_publicly_exposed`
@@ -727,12 +734,13 @@ That single demo more than doubles the value of v0.4.
 
 **Killer demo:** Run BugHunter against TraiderJo at mobile viewport: find 7 touch targets <44px on the trades list; find raw template strings rendering on a settings page; find an `aria-live` missing on a toast region that auto-renders on save.
 
-### v0.9 — "Multi-Browser, Calibration, and the User-Supplied Edge"
+### v0.9 — "Multi-Browser (Chrome + Firefox), Calibration, and the User-Supplied Edge"
 
-**Theme:** Final coverage push — multi-browser, the noisiest detectors gated behind opt-in calibration.
+**Theme:** Final coverage push — multi-browser, the noisiest detectors gated behind opt-in calibration. Per Q2, scope is **Chromium + Firefox only**. Safari/WebKit is deferred indefinitely (no cost-justification yet from real users). Calibration framework upgrades the v0.5 `bughunter suppress` mechanism to support time-bound suppressions and severity-only downgrades (Q10 forward-compat).
 
 **New BugKinds:**
-- `safari_specific_break`, `firefox_specific_break`, `cross_browser_visual_regression`
+- `firefox_specific_break`, `cross_browser_visual_regression` (Chrome × Firefox only)
+- `safari_specific_break` — **deferred** (was P3; now flagged as out-of-scope for v0.9 per Q2)
 - `excessive_rerender`
 - `tracking_pixel_undisclosed`
 - `sort_filter_state_corruption`
@@ -785,72 +793,103 @@ These are stated explicitly so future-us doesn't waste effort. To bring any of t
 
 ---
 
-## 8. Open questions (for the user)
+## 8. Open questions — resolutions
 
-These are real strategic decisions the architect cannot make alone. Each blocks a specific phase or class.
+The user resolved Q1–Q8 on 2026-04-27 (re-numbered from the original draft order; see commit history for the original numbering). Q9 and Q10 are unresolved; the spec defaults below apply until the user confirms. Each resolution is now reflected in §§ 4–6 below.
 
-### Q1 — Auth-probe blast radius
+### Q1 — Static-analysis tool licensing — RESOLVED: OSS only
 
-`no_rate_limit_on_login` involves making 50+ login attempts. Even in dev, this can lock accounts on apps with account-lockout features. Should the auth-probe phase be **opt-in by default** (require `--enable-auth-probes`)? Recommended yes; user confirms.
+**Decision:** Stick to OSS rule sets only. **Do not** purchase commercial Semgrep. If checks beyond `p/owasp-top-ten` / `p/secrets` / `p/javascript` are needed, BugHunter authors them as **custom YAML rules** in `packages/cli/src/static/semgrep-rules/` and ships them with the binary. This keeps the project zero-license-dependency and gives us an escape hatch when the OSS rule set has a real gap.
 
-### Q2 — sqlmap integration depth
+**Phase impact:** v0.5 (`hardcoded_credentials_in_source`, `swallowed_error_empty_catch`) and v0.7+ static checks all run against OSS-only rule sets. Custom-YAML extensibility is a v0.5 deliverable.
 
-`sqlmap` is the gold standard for SQLi but is **slow** (minutes per endpoint) and **noisy**. Options:
+### Q2 — Multi-browser priority — RESOLVED: Chrome + Firefox committed; Safari deferred
 
-- (a) Run on every text-input field on every form. Slow.
-- (b) Run only on fields where the v0.4 search-edge-cases detector got a 500 with DB-trace text in the response. Cheap, high-precision, misses some.
-- (c) Don't ship sqlmap; rely on internal canary + 500-pattern detection.
+**Decision:** v0.9 ships Chromium **and** Firefox via Playwright. Safari/WebKit is **deferred** indefinitely (the cost is XL relative to the marginal user-base). The §3.12 `safari_specific_break` BugKind moves to "defer" until a paying user asks. `firefox_specific_break` remains in v0.9 and is promoted from P3 to P2 inside the §3.12 table; the §6.v0.9 phase explicitly lists "Chromium + Firefox engineering scope" as the deliverable.
 
-Recommended (b). User confirms.
+**Phase impact:** §6.v0.9 scope shrinks (one less browser); engineering risk drops. Multi-viewport (§4.4) is unaffected.
 
-### Q3 — IDOR resource-id extraction scope
+### Q3 — Dev vs build probing — RESOLVED: dev server scan
 
-For IDOR, BugHunter scrapes resource IDs from API responses owned by role A and replays them as role B. This requires knowing **which fields are IDs**. Options:
+**Decision:** Probe the **dev server**, not a `npm run build && npm start` artifact. Rationale: BugHunter's loop already targets dev; introducing a build step doubles run time and produces findings about deploy hygiene rather than code. The minority of probes that legitimately want a prod build (`sourcemaps_in_prod`, `debug_mode_in_prod`) are gated behind a per-check `mode: 'dev' | 'build'` knob with `dev` as default; users opt into `build` per check. `mode: 'build'` is documented as a v0.7 deliverable, not v0.5.
 
-- (a) Heuristic: any field named `id`, `uuid`, `slug`, ending in `Id` / `_id`.
-- (b) SurfaceMCP-aware: SurfaceMCP knows the response schema; use the type information.
-- (c) Hybrid.
+**Phase impact:** v0.5 ships header / CSP / CORS / cookie probes against the dev server only. v0.7's `sourcemaps_in_prod`, `exposed_dotfiles`, `debug_mode_in_prod` get the optional `build` mode. v0.5 keeps any check that legitimately is "deploy-hygiene-only" at "informational" severity to avoid noisy false positives during local work.
 
-Recommended (b) for accuracy + (a) as fallback. User confirms.
+### Q4 — Continuous-mode for the future — RESOLVED: design for both batch and continuous
 
-### Q4 — Static-analysis tool licensing
+**Decision:** v0.5+ ships **batch mode** (current behavior — explicit on-demand runs). Architecture must not preclude **continuous / watch mode** as a v0.7+ extension. Concretely:
 
-`semgrep` is open core but its better rule-packs are paid. `gitleaks` is fully OSS. Acceptable to require paid Semgrep for some checks, or stick to OSS rule sets only? Recommended: OSS only by default; document `semgrep --config=p/owasp-top-ten` (free pack) and mark paid-pack-dependent checks as opt-in.
+- All phases must remain re-entrant (no global mutable state across runs in one process).
+- Run state lives entirely under `runs/<runId>/`; one process can hold N runs.
+- Detector outputs are pure-functional given (input fixtures, RunState); a watch loop can re-execute one detector against new state without re-running others.
+- A future `bughunter watch --on-change <files>` flag selects the affected detector subset and re-runs only those.
 
-### Q5 — Vision budget escalation across phases
+**Phase impact:** No new BugKinds; design discipline only. v0.5 spec reviews check the re-entrancy and isolation rules.
 
-Today vision is `maxCalls: 100` per run, default off. v0.7's LLM-of-source / LLM-of-response will reuse the same Anthropic key. Should the budget be **shared** across all LLM passes, or **per-pass**? Recommended **shared** with per-pass concurrency caps. User confirms.
+### Q5 — Auth-probe blast radius — RESOLVED: dynamic discovery
 
-### Q6 — User-supplied invariants — language
+**Decision:** Discover the app's actual rate limits at runtime and adapt. Procedure:
 
-The `infra:invariants` block takes user functions. These need a runtime to execute. Options:
+1. Pick a sacrificial endpoint (default: `GET /api/health`, fallback: the lowest-side-effect SurfaceMCP-cataloged GET).
+2. Send 5 sequential requests; observe `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `Retry-After`, and `X-RateLimit-*` headers (RFC 9248 + the older Express convention).
+3. If headers are present, set `authProbe.concurrency = max(1, floor(limit / 4))` and `authProbe.delayBetweenAttemptsMs = ceil((reset_ms / limit) * 4)`.
+4. If headers are absent, default to **8 attempts at 200 ms intervals**, well below typical naive rate limits.
+5. Cap at the user's configured `authProbe.maxAttempts` (default 50) regardless of discovery output.
 
-- (a) Plain TS — user writes functions in their own project; BugHunter imports them.
-- (b) DSL — BugHunter defines a tiny invariant DSL; less flexible but auditable.
+This stops auth probes from being either too cautious (missing `no_rate_limit_on_login` because we sent 8 attempts when 50 was needed) or too aggressive (locking accounts on apps with `RateLimit-Limit: 5`).
 
-Recommended (a). User confirms.
+**Phase impact:** §4.10 (`infra:auth-probes`) gains a **rate-limit discovery sub-phase**. Default-on. Auth probes themselves remain opt-in via `--enable-auth-probes` flag.
 
-### Q7 — Per-app calibration UX
+### Q6 — sqlmap integration depth — RESOLVED: scoped + bounded wrap
 
-"Mark this finding as 'expected behavior'" needs a place to live. Options:
+**Decision:** Pre-filter via heuristics (POST endpoints with string params; GET endpoints with `search` / `filter` / `q` / `order_by` / `sort` query params). Run sqlmap with `--batch --crawl=0 --level=1 --risk=1 --timeout=60 --threads=1 --random-agent`. Findings emit as `sql_injection_suspected` (note: the kind name is renamed from the §3.5 draft `sql_injection_probe` to "suspected" — that matches the OSS tool's actual confidence at `--level=1 --risk=1`).
 
-- (a) `.bughunter/baseline.json` — user marks ignored cluster signatures; subsequent runs filter.
-- (b) Inline `data-bughunter-ignore="reason"` HTML attributes.
-- (c) Both.
+**Phase impact:** v0.7 deliverable for the actual sqlmap invocation. v0.5 ships the **wrapper framework** (`packages/cli/src/static/sqlmap-runner.ts` skeleton) and the heuristic pre-filter so that v0.7 only adds the spawn + parse logic. `sql_injection_suspected` is appended to v0.7's BugKind list.
 
-Recommended (a) primary, (b) for dev-time DOM-element-specific suppressions. User confirms.
+### Q7 — IDOR resource-id extraction scope — RESOLVED: layered
 
-### Q8 — Multi-browser priority
+**Decision:** Four sources, in priority order:
 
-Multi-browser is XL effort and the user-base for "vibe-coded SaaS" is heavily Chromium-dominant. Is v0.9's multi-browser actually a P1 user need, or a "nice to have" we should keep as P2/defer? Honest read: P2. User decides.
+1. **Response-body extractor (default):** parse JSON responses owned by role A; harvest fields named `id`, `uuid`, `slug`, ending in `Id` / `_id`. Persist per role to `runState.discoveredIds: Map<role, Map<string, Set<string>>>` keyed by `(field, value)`.
+2. **`discoveryFixtures` config:** existing config block already accepts user-supplied resource IDs; the cross-user phase reads from there as an override for stubborn cases.
+3. **Cross-user probe matrix:** for each (sourceRole A, targetRole B) pair, replay A's GETs/PUTs/DELETEs as B. **200 = `idor_horizontal` finding; 403 / 404 = correct gate; 401 = correct gate** (also a finding for `auth_bypass_via_unauthed_route` if the original called as anonymous was 200).
+4. **Synthetic-id fallback (existing v0.4 behavior):** for routes where neither response-body extraction nor fixtures yielded a usable ID, use the existing synthetic id generator.
 
-### Q9 — Production-style probing of dev environments
+This kills the dependency on SurfaceMCP knowing every response schema (the original recommendation was over-confident — SurfaceMCP's response-schema coverage is partial).
 
-Several v0.5 probes (CSP/CORS/exposed-dotfiles/sourcemaps-in-prod) detect things that **should** matter in production but **don't** matter in dev. Should we probe the **build output** rather than the dev server? That changes the loop — BugHunter would need to spawn `next build && next start` (or equivalent) and probe that. Effort: M-L; signal goes from medium to high. User decides.
+**Phase impact:** §4.6 (`infra:cross-user`) and §4.12 (`infra:resource-ids`) both v0.5 deliverables; Q7 details how the IDs flow between them.
 
-### Q10 — Continuous-mode for the future
+### Q8 — Vision auth — RESOLVED: Claude CLI subprocess default, API key fallback
 
-Long-term, would the user want BugHunter to run on every commit (CI mode), nightly (cron mode), or only on-demand (current)? Affects the test-budget strategy: CI mode wants fast (subset, smoke); nightly wants comprehensive. v1.0 may add a `--profile fast|deep` flag. Surface this now so the phased plan keeps the option open. User decides.
+**Decision:** The vision adapter detects the local environment at startup. Resolution order:
+
+1. If `claude` binary is on `PATH` and `claude --version` succeeds: use **subprocess mode**. `spawn('claude', ['--print', '--input-format', 'text', '--output-format', 'json'])`, pipe a prompt that references the screenshot path on disk (Claude CLI handles its own auth). Parse the JSON response.
+2. Else if `ANTHROPIC_API_KEY` is set: use **API-key mode** (current v0.4 behavior, unchanged).
+3. Else: vision is disabled with a clear error: "Vision needs either the `claude` CLI on PATH or `ANTHROPIC_API_KEY` set."
+
+**`CLAUDE_CODE_OAUTH_TOKEN` is explicitly not a supported path.** The Messages API rejects OAuth tokens directly (`401 OAuth authentication is currently not supported`; see commit 6eb2d8f revert). The subprocess wrapper is the only mechanism for piggy-backing on Claude Code auth.
+
+**Phase impact:** v0.5 ships the new `VisionAuth` discriminated union (`'apiKey' | 'claudeCli'`). Vision callers are unchanged. Sub-spec lives in `SPEC_V05_SECURITY_HYGIENE.md` § "Vision auth refactor."
+
+### Q9 — User-supplied invariants — language — UNRESOLVED (default applied)
+
+**User-confirmable later. Spec default for v0.5 → v0.9:** support natural-language invariants the user pastes into the project's `bughunter.config.ts`. Each invariant is `{ id, description, scope: 'page' | 'global', natural: string }`. The LLM-of-text pipeline (v0.7) runs the natural-language predicate over the relevant page state and emits `invariant_violation` on failure. DSL and JS-predicate variants are flagged as v1.0 candidates.
+
+**Phase impact:** v0.5 reserves the BugKind name; no v0.5 implementation. v1.0 still owns the full invariants block; v0.7+ provides the natural-language pipeline as a forward-compatible foundation.
+
+### Q10 — Per-app calibration UX — UNRESOLVED (default applied)
+
+**User-confirmable later. Spec default for v0.5+:** ship a `bughunter suppress <clusterId> --reason "<text>"` CLI subcommand. It writes to `.bughunter/suppressions.json` (per project, checked into git):
+
+```json
+{ "version": 1, "entries": [
+  { "clusterSignature": "...", "reason": "expected; this is intentional", "addedAt": "...", "addedBy": "user" }
+] }
+```
+
+Subsequent runs filter clusters whose signature matches a suppressed entry, noting the count in `RunSummary.suppressedClusters`. v0.9's calibration framework upgrades this to a richer feedback loop (optional severity downgrade, time-bound suppressions). Inline DOM `data-bughunter-ignore` is **not** in scope at any phase — it leaks tooling into product code.
+
+**Phase impact:** v0.5 ships `bughunter suppress` + the `.bughunter/suppressions.json` reader; the cluster phase filters before emit.
 
 ---
 
@@ -900,14 +939,14 @@ The scanner fulfills the user's vision when **all of the following are true**:
 
 | Phase | New BugKinds | New infra | Effort | Headline class |
 |---|---|---|---|---|
-| v0.5 | 16 | HAR + static-pipeline + cross-user + headers + auth-probes + synthetic | 6-8w | IDOR + open redirect + CSP/CORS + npm audit + secrets + IDOR-related |
+| v0.5 | 18 | HAR + static-pipeline + cross-user + headers + auth-probes + synthetic + suppress + vision-auth-v2 | 6-8w | IDOR + open redirect + CSP/CORS + npm audit + secrets + Claude-CLI vision |
 | v0.6 | 12 | CDP + Lighthouse wrap | 4-6w | Web Vitals + N+1 + bundle size + SEO basics |
 | v0.7 | 22 | LLM-text + extensive wrap suite | 6-8w | XSS/SQLi + schema drift + multi-step form + i18n |
 | v0.8 | 18 | Multi-viewport + Prisma parser | 6-8w | Mobile + LLM-of-source + locale-formatting + memory |
 | v0.9 | 9 | Multi-browser + calibration | 6-8w | Cross-browser + opt-in noisy detectors |
 | v1.0 | 1 | Invariants block | 3-4w | Domain-specific via user functions |
 
-**Total new BugKinds across roadmap: ~78. Plus 11 existing = ~89 distinct kinds at v1.0.** Comfortably exceeds the §9.1 target of 60.
+**Total new BugKinds across roadmap: ~80. Plus 11 existing = ~91 distinct kinds at v1.0.** Comfortably exceeds the §9.1 target of 60.
 
 ---
 
