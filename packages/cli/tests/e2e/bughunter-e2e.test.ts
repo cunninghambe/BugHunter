@@ -25,7 +25,9 @@ import * as path from 'node:path';
 import { getFreePort, getFreePortInRange } from './helpers/free-port.js';
 import {
   copyFixtureToTemp,
+  copyViteAppFixtureToTemp,
   writeSurfaceMcpConfig,
+  writeSurfaceMcpConfigForVite,
   writeBugHunterConfig,
 } from './helpers/fixture-project.js';
 import {
@@ -35,6 +37,9 @@ import {
   runBugHunter,
   kill,
 } from './helpers/spawn.js';
+import { discoverFilesystemPages } from '../../src/discovery/filesystem-pages.js';
+import { discoverPages } from '../../src/discovery/pages.js';
+import { HttpSurfaceMcpAdapter } from '../../src/adapters/surface-mcp.js';
 import type { BugCluster, OccurrenceFull } from '../../src/types.js';
 import type { ChildProcess } from 'node:child_process';
 
@@ -147,6 +152,15 @@ describe('BugHunter e2e — API-only', () => {
     const failedCluster = apiRunClusters.find(c => c.kind === 'surface_call_failed');
     expect(failedCluster, 'Expected at least one surface_call_failed cluster').toBeDefined();
   });
+
+  it('discoverPages dispatch returns identical pages for the Next.js fixture (§ 6.5)', async () => {
+    const adapter = new HttpSurfaceMcpAdapter(surfaceMcpUrl);
+    const before = await discoverFilesystemPages(fixtureDir);
+    const after = await discoverPages(fixtureDir, adapter);
+    const beforeSet = new Set(before.map(p => p.route));
+    const afterSet = new Set(after.map(p => p.route));
+    expect([...afterSet].sort()).toEqual([...beforeSet].sort());
+  }, 30_000);
 
   it('relatedClusterIds links 404_for_linked_route ↔ surface_call_failed (Gap 1.A)', () => {
     const cluster404 = apiRunClusters.find(c => c.kind === '404_for_linked_route');
@@ -313,5 +327,92 @@ describe('BugHunter e2e — bodyFixtures suppression', () => {
       `Expected network_5xx for tool ${journalToolId} (journal-entries) to be suppressed by bodyFixtures.\n` +
       `stdout: ${stdout.slice(0, 800)}`
     ).toBeUndefined();
+  }, 90_000);
+});
+
+// ---------------------------------------------------------------------------
+// BugHunter e2e — Vite SPA (spec § 6.4)
+// ---------------------------------------------------------------------------
+
+let viteFfixtureDir: string;
+let viteSurfaceProc: ChildProcess | null = null;
+let viteSurfacePort: number;
+let viteSurfaceMcpUrl: string;
+
+beforeAll(async () => {
+  viteFfixtureDir = copyViteAppFixtureToTemp();
+  viteSurfacePort = await getFreePortInRange(3103, 3199);
+  viteSurfaceMcpUrl = `http://127.0.0.1:${viteSurfacePort}/mcp`;
+
+  writeSurfaceMcpConfigForVite(viteFfixtureDir, viteSurfacePort);
+  viteSurfaceProc = startSurfaceMcp(viteFfixtureDir);
+
+  const ready = await waitForUrl(`http://127.0.0.1:${viteSurfacePort}/health`, 30_000);
+  if (!ready) throw new Error(`SurfaceMCP (vite) did not start on port ${viteSurfacePort}`);
+}, 60_000);
+
+afterAll(async () => {
+  if (viteSurfaceProc) await kill(viteSurfaceProc);
+  try { if (viteFfixtureDir) fs.rmSync(viteFfixtureDir, { recursive: true, force: true }); } catch {}
+}, 30_000);
+
+describe('BugHunter e2e — Vite SPA', () => {
+  it('surface_describe_self reports stack: vite and capabilities.listPages: true', async () => {
+    const adapter = new HttpSurfaceMcpAdapter(viteSurfaceMcpUrl);
+    const info = await adapter.surface_describe_self();
+    expect(info.stack).toBe('vite');
+    expect(info.capabilities.listPages).toBe(true);
+  }, 15_000);
+
+  it('surface_list_pages returns exactly the 6 MUST_DISCOVER pages', async () => {
+    const adapter = new HttpSurfaceMcpAdapter(viteSurfaceMcpUrl);
+    const result = await adapter.surface_list_pages();
+    const routes = result.pages.map(p => p.route).sort();
+    const expected = ['/', '/about', '/admin', '/admin/settings', '/admin/users', '/users/:id'];
+    expect(routes).toEqual(expected);
+  }, 15_000);
+
+  it('bughunter run plans non-zero UI tests against the Vite fixture', async () => {
+    // appBaseUrl points at a non-existent Vite server — that is fine because
+    // no browser is configured, so no DOM walk will be attempted. The pages are
+    // discovered statically via surface_list_pages.
+    const appBaseUrl = `http://127.0.0.1:5199`; // unused placeholder
+    writeBugHunterConfig(viteFfixtureDir, {
+      surfaceMcpUrl: viteSurfaceMcpUrl,
+      appBaseUrl,
+      discoveryFixtures: { '/users/:id': ['42'] },
+    });
+
+    const { code, stdout, runId } = await runBugHunter(viteFfixtureDir);
+    expect(code, `bughunter (vite) exited ${code}:\n${stdout}`).toBe(0);
+    expect(runId, `Could not parse run ID:\n${stdout}`).toBeDefined();
+
+    const summaryFile = path.join(viteFfixtureDir, '.bughunter', 'runs', runId!, 'summary.json');
+    const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf-8')) as Record<string, unknown>;
+    expect(
+      summary['testsPlanned'],
+      `Expected testsPlanned > 0. summary: ${JSON.stringify(summary)}\nstdout: ${stdout.slice(0, 800)}`
+    ).toBeGreaterThan(0);
+  }, 90_000);
+
+  it('/users/:id is skipped without discoveryFixtures', async () => {
+    const appBaseUrl = `http://127.0.0.1:5199`;
+    writeBugHunterConfig(viteFfixtureDir, {
+      surfaceMcpUrl: viteSurfaceMcpUrl,
+      appBaseUrl,
+      // no discoveryFixtures
+    });
+
+    const { code, stdout, runId } = await runBugHunter(viteFfixtureDir);
+    expect(code, `bughunter (vite no-fixture) exited ${code}:\n${stdout}`).toBe(0);
+    expect(runId).toBeDefined();
+
+    const summaryFile = path.join(viteFfixtureDir, '.bughunter', 'runs', runId!, 'summary.json');
+    const summary = JSON.parse(fs.readFileSync(summaryFile, 'utf-8')) as Record<string, unknown>;
+    const skipped = summary['skippedReasons'] as Array<{ reason: string; count: number }>;
+    expect(
+      skipped?.some(s => s.reason.includes('missing_fixture')),
+      `Expected a missing_fixture skip entry. skippedReasons: ${JSON.stringify(skipped)}`
+    ).toBe(true);
   }, 90_000);
 });
