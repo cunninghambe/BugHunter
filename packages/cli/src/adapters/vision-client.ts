@@ -30,15 +30,21 @@ export class VisionApiError extends Error {
   }
 }
 
+export type VisionAuth =
+  | { kind: 'apiKey'; apiKey: string }
+  | { kind: 'oauth'; authToken: string };
+
 export class AnthropicVisionClient implements VisionClientInterface {
   constructor(
-    private readonly apiKey: string,
+    private readonly auth: VisionAuth,
     private readonly model: string,
     private readonly timeoutMs: number
   ) {}
 
   async classify(req: VisionRequest): Promise<VisionResponse> {
-    const client = new Anthropic({ apiKey: this.apiKey });
+    const client = this.auth.kind === 'apiKey'
+      ? new Anthropic({ apiKey: this.auth.apiKey })
+      : new Anthropic({ authToken: this.auth.authToken });
     const imageBytes = fs.readFileSync(req.imagePath);
     const imageB64 = imageBytes.toString('base64');
     const mediaType = path.extname(req.imagePath).toLowerCase() === '.jpg'

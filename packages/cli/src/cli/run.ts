@@ -60,18 +60,24 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
   const browser = resolved.browserMcpUrl ? new CamofoxBrowserMcpAdapter(resolved.browserMcpUrl) : undefined;
 
-  // Resolve vision API key and construct client/budget
+  // Resolve vision auth (API key OR Claude Code OAuth token) and construct client/budget
   const visionEnabled = resolved.vision?.enabled ?? false;
-  let visionApiKey: string | undefined;
+  let visionAuth: import('../adapters/vision-client.js').VisionAuth | undefined;
   if (visionEnabled) {
-    visionApiKey =
+    const apiKey =
       resolved.vision?.apiKey ??
       process.env['ANTHROPIC_API_KEY'] ??
       process.env['CLAUDE_API_KEY'];
-    if (!visionApiKey) {
+    const oauthToken = process.env['CLAUDE_CODE_OAUTH_TOKEN'];
+    if (apiKey) {
+      visionAuth = { kind: 'apiKey', apiKey };
+    } else if (oauthToken) {
+      visionAuth = { kind: 'oauth', authToken: oauthToken };
+      log.info('vision: using CLAUDE_CODE_OAUTH_TOKEN (Claude Code session auth)');
+    } else {
       throw new Error(
-        'vision.enabled is true but no Anthropic API key was found. ' +
-        'Set ANTHROPIC_API_KEY or vision.apiKey.'
+        'vision.enabled is true but no Anthropic credentials were found. ' +
+        'Set ANTHROPIC_API_KEY, vision.apiKey, or run inside a Claude Code session that exposes CLAUDE_CODE_OAUTH_TOKEN.'
       );
     }
   }
@@ -92,10 +98,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const roles = opts.role ? [opts.role] : undefined;
 
   // Construct vision budget + client (one per run; shared by discover + execute)
-  const resolvedVision = resolveVisionConfig(resolved.vision, visionApiKey ?? '');
+  const resolvedVision = resolveVisionConfig(resolved.vision, visionAuth ? '__present__' : '');
   const visionBudget = visionEnabled ? makeVisionBudget(resolvedVision.maxCalls) : undefined;
-  const visionClient = visionEnabled && visionApiKey
-    ? new AnthropicVisionClient(visionApiKey, resolvedVision.model, 30_000)
+  const visionClient = visionEnabled && visionAuth
+    ? new AnthropicVisionClient(visionAuth, resolvedVision.model, 30_000)
     : undefined;
 
   // Phase 0: validate
