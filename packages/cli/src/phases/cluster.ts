@@ -161,37 +161,21 @@ function annotateRelatedClusters(clusters: BugCluster[]): void {
   }
 }
 
+/**
+ * Compute a route key for cluster linking. Option C: prefer `toolId` from the
+ * first occurrence's action (present on both API-path 404s and surface_call_failed).
+ * Falls back to path extraction from rootCause for UI-walker-only 404s that carry
+ * no toolId (pure anchor-click navigation without an API call).
+ */
 function routeKeyOf(cluster: BugCluster): string | null {
-  if (cluster.kind === '404_for_linked_route') {
-    // targetPath from first occurrence's detection — stored in rootCause
-    // We reconstruct from the rootCause heuristic or use the detection's targetPath.
-    // The cluster doesn't store targetPath directly; extract from the first occ's action
-    // or from the rootCause string "Page links to <path> which returned 404".
-    const match = /links to (\S+) which returned/.exec(cluster.rootCause);
-    if (match?.[1]) return normalizePath(match[1]);
-    return null;
-  }
-  if (cluster.kind === 'surface_call_failed') {
-    // endpoint is "METHOD /normalized/path" or bare toolId (no slash)
-    const parts = cluster.occurrences[0]
-      ? extractEndpointFromFixHints(cluster)
-      : null;
-    return parts;
-  }
-  return null;
-}
+  const toolId = cluster.occurrences[0]?.action.toolId;
+  if (toolId) return `tool:${toolId}`;
 
-function extractEndpointFromFixHints(cluster: BugCluster): string | null {
-  // Fix hint format: "surface_call failed for tool METHOD /path. Check..."
-  // or "surface_call failed for tool <toolId>. Check..." (bare toolId, no path)
-  for (const hint of cluster.fixHints) {
-    // Match "METHOD /path" pattern in the hint
-    const methodPathMatch = /\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[^\s.]+)/.exec(hint);
-    if (methodPathMatch?.[2]) return normalizePath(methodPathMatch[2]);
-    // Match bare /path pattern
-    const pathMatch = /\s(\/[^\s.]+)/.exec(hint);
-    if (pathMatch?.[1]) return normalizePath(pathMatch[1]);
+  if (cluster.kind === '404_for_linked_route') {
+    const match = /links to (\S+) which returned/.exec(cluster.rootCause);
+    if (match?.[1]) return `path:${normalizePath(match[1])}`;
   }
+
   return null;
 }
 

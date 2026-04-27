@@ -129,6 +129,93 @@ describe('runCluster — annotateRelatedClusters (§7)', () => {
     }
   });
 
+  it('links via toolId regardless of rootCause/endpoint shape (smoke shapes verbatim)', () => {
+    // Exact shapes from the qhh5qba24hjqgrtvay27hcdh smoke run:
+    // cluster qb0cldg1... kind=404_for_linked_route, rootCause has bare toolId "0928801337a9"
+    // cluster cw6rx3ri... kind=surface_call_failed, rootCause has bare toolId "0928801337a9"
+    // Both occurrences carry action.toolId = '0928801337a9' → Option C links them.
+    const runId = 'smoke-test-run';
+    const toolId = '0928801337a9';
+    const tc = makeTestCase(runId, toolId);
+
+    const det404: BugDetection = {
+      kind: '404_for_linked_route',
+      rootCause: `Page links to ${toolId} which returned 404`,
+      targetPath: toolId,
+    };
+    const detFailed: BugDetection = {
+      kind: 'surface_call_failed',
+      rootCause: `surface_call failed with status 404 for tool ${toolId}`,
+      endpoint: toolId, // bare toolId — no METHOD or path prefix
+      status: 404,
+    };
+
+    const { clusters } = runCluster(makeOpts(
+      [
+        { testId: tc.id, detection: det404 },
+        { testId: tc.id, detection: detFailed },
+      ],
+      [tc]
+    ));
+
+    expect(clusters.length).toBe(2);
+    const cluster404 = clusters.find(c => c.kind === '404_for_linked_route');
+    const clusterFailed = clusters.find(c => c.kind === 'surface_call_failed');
+
+    expect(cluster404?.relatedClusterIds).toContain(clusterFailed?.id);
+    expect(clusterFailed?.relatedClusterIds).toContain(cluster404?.id);
+  });
+
+  it('UI-only 404 without toolId on occurrence falls back to path extraction', () => {
+    const runId = 'test-run';
+    // This TC has a toolId 'tool-xyz' but the detection has no direct toolId
+    // The 404 occurrence's action won't have toolId in the cluster (UI walker generates a synthetic toolId-less action)
+    const tc: TestCase = {
+      id: createId(),
+      runId,
+      role: 'anonymous',
+      page: '/products',
+      action: {
+        kind: 'navigate',
+        via: 'ui',
+        expectedOutcome: 'unknown',
+        palette: 'happy',
+        // No toolId — UI walker path
+      },
+      expectedOutcome: 'unknown',
+      palette: 'happy',
+    };
+
+    const det404: BugDetection = {
+      kind: '404_for_linked_route',
+      rootCause: 'Page links to /api/x/:id which returned 404',
+      targetPath: '/api/x/123',
+    };
+    const detFailed: BugDetection = {
+      kind: 'surface_call_failed',
+      rootCause: 'surface_call failed with status 404 for tool tool-xyz',
+      endpoint: 'POST /api/x/:id',
+      status: 404,
+    };
+
+    // The 404 has no toolId on action (UI-walker) → falls back to path key
+    // The surface_call_failed has NO occurrence toolId either (tc.action.toolId is undefined)
+    // → also falls back — but extractEndpointFromFixHints is deleted so it returns null
+    // Under Option C: surface_call_failed with no toolId returns null → no link
+    const { clusters } = runCluster(makeOpts(
+      [
+        { testId: tc.id, detection: det404 },
+        { testId: tc.id, detection: detFailed },
+      ],
+      [tc]
+    ));
+
+    expect(clusters.length).toBe(2);
+    // No link: 404 has path key but surface_call_failed has null key (no toolId, extractEndpointFromFixHints deleted)
+    const cluster404 = clusters.find(c => c.kind === '404_for_linked_route');
+    expect(cluster404?.relatedClusterIds).toBeUndefined();
+  });
+
   it('multiple clusters sharing a path get mutual links across all of them', () => {
     const runId = 'test-run';
     const tc = makeTestCase(runId, 'tool-z');
