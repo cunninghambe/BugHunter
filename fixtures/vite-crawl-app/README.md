@@ -1,0 +1,1 @@
+A minimal Vite + React SPA using hand-rolled tab-state routing (no react-router-dom). SurfaceMCP cannot statically extract routes and instead emits a single crawl_seed page at '/'. BugHunter then follows `<a href>` links to discover all four pages: /, /about, /login, /dashboard. Used as the e2e gate for the BugHunter crawler (SPEC_CRAWLER § 5.7).

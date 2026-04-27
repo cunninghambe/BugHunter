@@ -252,3 +252,74 @@ When a cluster shows `verdict: "touched_forbidden_path"`, explain to the user:
 If any sub-agent fails or returns an error, record `{ "clusterId": "{{clusterId}}", "verdict": "not_fixed", "detail": "<error summary>" }` and continue to the next cluster. Do not abort the entire run for a single cluster failure.
 
 If `bughunter forbidden-path-gate` or `bughunter retest` exits non-zero, treat it as an infrastructure problem and record `not_fixed` with a detail note.
+
+---
+
+# Crawl mode — SPA runtime discovery
+
+BugHunter v0.2.1 adds link-following crawl for SPAs that use hand-rolled or non-standard routing (no `react-router-dom`). When SurfaceMCP cannot extract static routes, it returns a single `source: 'crawl_seed'` page at `/`. BugHunter then walks the DOM from that seed and follows every same-origin `<a href>` link until `maxPages` or `maxDepth` is reached.
+
+Crawl runs automatically when:
+1. SurfaceMCP returns a `crawl_seed` page (requires SurfaceMCP v0.2.1 or later with `stack: vite`)
+2. A `browserMcpUrl` is configured (camofox is required to navigate real pages)
+3. `crawl.enabled` is not explicitly `false`
+
+## Crawl config knobs
+
+Add under `.bughunter/config.json`:
+
+```json
+{
+  "crawl": {
+    "enabled": true,
+    "maxPages": 50,
+    "maxDepth": 3,
+    "followQueryParams": false,
+    "walkTimeoutMs": 30000,
+    "sameOriginOnly": true
+  }
+}
+```
+
+| Field | Default | Notes |
+|---|---|---|
+| `enabled` | auto | Set `false` to skip crawl even when seed is detected |
+| `maxPages` | 50 | Max distinct pages to visit. 50 × ~2s = ~100s budget |
+| `maxDepth` | 3 | Max BFS depth from seed. Seed is depth 0 |
+| `followQueryParams` | false | If true, `?id=1` and `?id=2` are treated as different pages |
+| `walkTimeoutMs` | 30000 | Per-page DOM-walk timeout in ms |
+| `sameOriginOnly` | true | If false, off-site links are also followed (rarely useful) |
+
+## Important precautions
+
+**Protect destructive routes.** The crawler follows ALL `<a href>` links, including `/logout`, `/admin/reset`, `/delete-account`. Add these to `excludedRoutes` to prevent accidental navigation:
+
+```json
+{
+  "excludedRoutes": ["/logout", "/signout", "/admin/destructive-*"]
+}
+```
+
+**Auth-walled pages.** The crawl uses the browser's current session state. Without auth, pages behind a login redirect may appear as the login page. The crawl discovers only what an anonymous session can reach.
+
+**Slow apps.** If the app is slow, lower `maxPages` and `walkTimeoutMs`. The theoretical worst case is `maxPages × walkTimeoutMs` ms total.
+
+**No form submission.** The crawler is read-only. It follows `<a href>` links only — no clicks, no form fills. Pages reachable only via button-click navigation will not be discovered in v0.2.1.
+
+## Crawl progress in logs
+
+Each page visit logs:
+```
+crawl: visiting 1/50 depth=0 queue=3 /
+crawl: visiting 2/50 depth=1 queue=2 /about
+```
+
+At end of crawl:
+```
+crawl: visited 4 pages
+```
+
+If the cap is hit:
+```
+crawl: visited 50 pages (max-pages cap hit)
+```

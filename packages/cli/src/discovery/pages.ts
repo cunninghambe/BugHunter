@@ -8,13 +8,15 @@
 // (SurfaceMCP < 0.2) for backward-compat.
 
 import * as path from 'node:path';
-import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
+import type { SurfaceMcpAdapter, PageSource } from '../adapters/surface-mcp.js';
 import { discoverFilesystemPages } from './filesystem-pages.js';
 import { log } from '../log.js';
 
 export type DiscoveredPageMeta = {
   route: string;
   sourceFile?: string;  // absolute path; undefined when SurfaceMCP returned '<unresolved>'
+  /** Propagated from SurfaceMCP. Absent/undefined ≡ 'static'. */
+  source?: PageSource;
 };
 
 export async function discoverPages(
@@ -51,6 +53,7 @@ export async function discoverPages(
     return result.pages.map(p => ({
       route: p.route,
       sourceFile: p.sourceFile === '<unresolved>' ? undefined : path.join(projectDir, p.sourceFile),
+      source: p.source,
     }));
   }
 
