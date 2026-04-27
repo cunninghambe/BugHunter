@@ -1,6 +1,6 @@
 // Phase 5: cluster — group by stable signature; cap full-artifact occurrences (§ 3.6, 3.7).
 
-import type { BugDetection, BugCluster, Occurrence, OccurrenceFull, OccurrenceSummary, TestCase } from '../types.js';
+import type { BugDetection, BugCluster, Occurrence, OccurrenceFull, OccurrenceSummary, TestCase, PreState, PostState } from '../types.js';
 import { clusterSignature, extractNormalizedFields } from '../cluster/signature.js';
 import { computeFullArtifactSet } from '../store/artifact-budget.js';
 import { normalizePath } from '../classify/network.js';
@@ -17,6 +17,9 @@ export type ClusterOptions = {
   consoleDir: string;
   networkDir: string;
   maxClusters: number;
+  /** Per-test pre/post observation captured by the executor. When absent, OccurrenceFull
+   * falls back to an empty PostState (preserves backward-compat for unit tests). */
+  stateByTestId?: Map<string, { preState: PreState; postState: PostState }>;
 };
 
 export type ClusterResult = {
@@ -69,6 +72,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
     // Determine if this occurrence gets full artifacts (computed after all are added)
     const summaryOcc: OccurrenceSummary = {
       occurrenceId: occId,
+      testId,
       role: tc?.role ?? 'unknown',
       page: tc?.page ?? detection.pageRoute ?? '',
       action: tc?.action ?? { kind: 'click', via: 'ui', expectedOutcome: 'unknown', palette: 'happy' },
@@ -99,21 +103,27 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
 }
 
 function upgradeToFull(occ: Occurrence, opts: ClusterOptions): OccurrenceFull {
-  const { runId, actionLogsDir, screenshotsDir, domDir, consoleDir, networkDir } = opts;
+  const { actionLogsDir, screenshotsDir, domDir, consoleDir, networkDir, stateByTestId } = opts;
+  const captured = occ.testId ? stateByTestId?.get(occ.testId) : undefined;
+
+  const preState: PreState = captured?.preState ?? { url: occ.page, title: '', consoleErrorCount: 0 };
+  const postState: PostState = captured?.postState ?? {
+    url: occ.page,
+    title: '',
+    consoleErrors: [],
+    networkRequests: [],
+    domErrorTextDetected: false,
+    mutationObserverWindowMs: 0,
+  };
+
   return {
     occurrenceId: occ.occurrenceId,
+    testId: occ.testId,
     role: occ.role,
     page: occ.page,
     action: occ.action,
-    preState: { url: occ.page, title: '', consoleErrorCount: 0 },
-    postState: {
-      url: occ.page,
-      title: '',
-      consoleErrors: [],
-      networkRequests: [],
-      domErrorTextDetected: false,
-      mutationObserverWindowMs: 0,
-    },
+    preState,
+    postState,
     fullArtifacts: true,
     screenshotPath: `${screenshotsDir}/${occ.occurrenceId}.png`,
     domSnapshotPath: `${domDir}/${occ.occurrenceId}.html`,

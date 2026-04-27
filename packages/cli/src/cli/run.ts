@@ -12,6 +12,7 @@ import { runPlan } from '../phases/plan.js';
 import { runExecute } from '../phases/execute.js';
 import { runClassify } from '../phases/classify.js';
 import { runCluster } from '../phases/cluster.js';
+import type { PreState, PostState } from '../types.js';
 import { runEmit } from '../phases/emit.js';
 import { log } from '../log.js';
 
@@ -146,6 +147,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   // Phase 5: cluster
   const paths = runPaths(opts.projectDir, runId);
+  const stateByTestId = new Map<string, { preState: PreState; postState: PostState }>(
+    results
+      .filter(r => r.postState !== undefined)
+      .map(r => [r.testId, { preState: r.preState!, postState: r.postState! }])
+  );
   const { clusters } = runCluster({
     detections: bugs,
     testCases,
@@ -157,6 +163,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     consoleDir: paths.consoleDir,
     networkDir: paths.networkDir,
     maxClusters: resolved.maxBugs!,
+    stateByTestId,
   });
 
   runState.clusters = clusters;

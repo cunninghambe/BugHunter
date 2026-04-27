@@ -82,6 +82,8 @@ export type PostState = {
 
 export type OccurrenceSummary = {
   occurrenceId: string;
+  /** testId of the TestResult that produced this occurrence. Optional for backward-compat with old JSONL artifacts. */
+  testId?: string;
   role: string;
   page: string;
   action: Action;
@@ -97,6 +99,8 @@ export type SecondaryObservation = {
 
 export type OccurrenceFull = {
   occurrenceId: string;
+  /** testId of the TestResult that produced this occurrence. Optional for backward-compat with old JSONL artifacts. */
+  testId?: string;
   role: string;
   page: string;
   action: Action;
@@ -267,6 +271,10 @@ export type TestResult = {
   bugs: BugDetection[];
   infrastructureFailure?: InfrastructureFailure;
   durationMs: number;
+  /** Captured by executeUiTest; undefined for API tests. */
+  preState?: PreState;
+  /** Captured by executeUiTest; undefined for API tests. */
+  postState?: PostState;
 };
 
 export type BugDetection = {

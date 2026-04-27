@@ -170,7 +170,11 @@ async function executeUiTest(
   const preSnapshot = await browser.snapshot().catch(() => null);
 
   // Start MutationObserver
-  await browser.evaluate(MUTATION_OBSERVER_START_SCRIPT).catch(() => {});
+  try {
+    await browser.evaluate(MUTATION_OBSERVER_START_SCRIPT);
+  } catch (err) {
+    log.warn('MutationObserver start failed; mutWindowMs will be 0', { err: String(err), tcId: tc.id });
+  }
 
   // Execute action
   const actionLog = {
@@ -323,6 +327,8 @@ async function executeUiTest(
     passed: bugs.length === 0,
     bugs,
     durationMs: Date.now() - start,
+    preState,
+    postState,
   };
 }
 

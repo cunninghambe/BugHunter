@@ -33,22 +33,28 @@ export function classifyMissingStateChange(
 }
 
 // Script injected to set up a MutationObserver and capture state changes.
-// Returns a script that when evaluated starts observation.
+// Must be a single expression (IIFE) so Playwright's page.evaluate(string) accepts it
+// unambiguously — multi-statement scripts can fail silently on the CDP evaluate path.
+// Mirrors the STOP script pattern. Returns {ok, startedAt} (unused; side effects matter).
 export const MUTATION_OBSERVER_START_SCRIPT = `
-window.__bhMutations = [];
-window.__bhObserver = new MutationObserver(function(mutations) {
-  mutations.forEach(function(m) {
-    window.__bhMutations.push({
-      type: m.type,
-      target: m.target ? m.target.nodeName : null,
-      addedCount: m.addedNodes.length,
-      removedCount: m.removedNodes.length,
+(function() {
+  window.__bhMutations = [];
+  window.__bhObserver = new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      window.__bhMutations.push({
+        type: m.type,
+        target: m.target ? m.target.nodeName : null,
+        addedCount: m.addedNodes.length,
+        removedCount: m.removedNodes.length,
+      });
     });
   });
-});
-window.__bhObserver.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
-window.__bhObserverStart = Date.now();
-true;
+  window.__bhObserver.observe(document.body, {
+    childList: true, subtree: true, attributes: true, characterData: true,
+  });
+  window.__bhObserverStart = Date.now();
+  return { ok: true, startedAt: window.__bhObserverStart };
+})()
 `;
 
 export const MUTATION_OBSERVER_STOP_SCRIPT = `
