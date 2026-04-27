@@ -73,6 +73,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     forceResume: opts.forceResume,
   });
 
+  // Clear any stale tabs from previous processes to prevent tab leakage in the camofox session.
+  if (browser) {
+    await closeAllExistingTabs(browser);
+  }
+
   const effectiveRoles = roles ?? discoveredRoles;
 
   // Run resetCommand if --reset or per-run policy
@@ -182,4 +187,18 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   runState.emitted = true;
   runState.phase = 'done';
   saveRunState(runState);
+}
+
+async function closeAllExistingTabs(browser: CamofoxBrowserMcpAdapter): Promise<void> {
+  try {
+    const { tabs } = await browser.listTabs();
+    for (const tab of tabs) {
+      await browser.closeTabExplicit(tab.id).catch(() => { /* best-effort */ });
+    }
+    if (tabs.length > 0) {
+      log.info(`Closed ${tabs.length} stale tab(s) from previous session`);
+    }
+  } catch {
+    // If listTabs fails, proceed — camofox may be starting up
+  }
 }

@@ -40,6 +40,18 @@ export type ListTabsResult = { tabs: Array<{ id: string; url: string; title: str
 export type CloseTabResult = { closed: boolean };
 export type ExtraHeaders = Record<string, string>;
 
+/** Per-test tab scope — all methods carry the bound tabId; safe to use concurrently. */
+export type TabScope = {
+  tabId: string;
+  navigate(url: string, extraHeaders?: ExtraHeaders): Promise<NavigateResult>;
+  click(selector: string | StructuredSelector): Promise<ClickResult>;
+  type(selector: string | StructuredSelector, text: string): Promise<TypeResult>;
+  scroll(selector: string, direction: 'up' | 'down', distance?: number): Promise<ScrollResult>;
+  snapshot(): Promise<SnapshotResult>;
+  screenshot(outputPath?: string): Promise<ScreenshotResult>;
+  evaluate(script: string): Promise<EvaluateResult>;
+};
+
 export interface BrowserMcpAdapter {
   navigate(url: string, extraHeaders?: ExtraHeaders): Promise<NavigateResult>;
   /** Preferred: pass structured {role, name?, nth?} for unambiguous resolution. */
@@ -51,6 +63,15 @@ export interface BrowserMcpAdapter {
   evaluate(script: string): Promise<EvaluateResult>;
   listTabs(): Promise<ListTabsResult>;
   closeTab(tabId: string): Promise<CloseTabResult>;
+  /** Open a new tab unconditionally; does not mutate currentTabId. */
+  openTab(url: string, extraHeaders?: ExtraHeaders): Promise<{ tabId: string; finalUrl: string; title?: string }>;
+  /** Close a specific tab by id; does not mutate currentTabId. */
+  closeTabExplicit(tabId: string): Promise<void>;
+  /**
+   * Open a new isolated tab, call fn with a bound TabScope, then close the tab.
+   * Closing happens even if fn throws (scope is always released).
+   */
+  withTab<T>(url: string, extraHeaders: ExtraHeaders | undefined, fn: (scope: TabScope) => Promise<T>): Promise<T>;
 }
 
 // Raw camofox result shapes.
@@ -296,6 +317,82 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     await this.mcpCall<{ ok: boolean }>('close_tab', { tabId });
     if (tabId === this.currentTabId) this.currentTabId = undefined;
     return { closed: true };
+  }
+
+  /** Create a new tab unconditionally. Does NOT mutate currentTabId. */
+  async openTab(url: string, _extraHeaders?: ExtraHeaders): Promise<{ tabId: string; finalUrl: string; title?: string }> {
+    // extraHeaders silently dropped — camofox v0.1 has no per-tab header support
+    const result = await this.mcpCall<CamofoxNavigateResult>('navigate', { url });
+    if (result.ok === false) {
+      throw new BrowserMcpError('navigation_failed', `openTab navigate returned ok:false for ${url}`);
+    }
+    return {
+      tabId: result.tabId,
+      finalUrl: result.finalUrl ?? result.url ?? url,
+      title: result.title,
+    };
+  }
+
+  /** Close a specific tab by id. Does NOT mutate currentTabId. */
+  async closeTabExplicit(tabId: string): Promise<void> {
+    await this.mcpCall<{ ok: boolean }>('close_tab', { tabId });
+  }
+
+  /**
+   * Open an isolated tab, call fn with a bound TabScope, then close the tab.
+   * The tab is closed even if fn throws, ensuring no tab leakage per test.
+   */
+  async withTab<T>(
+    url: string,
+    extraHeaders: ExtraHeaders | undefined,
+    fn: (scope: TabScope) => Promise<T>
+  ): Promise<T> {
+    const { tabId, finalUrl, title } = await this.openTab(url, extraHeaders);
+    const scope = this.makeTabScope(tabId);
+    try {
+      return await fn(scope);
+    } finally {
+      await this.closeTabExplicit(tabId).catch(() => { /* best-effort close */ });
+    }
+  }
+
+  private makeTabScope(tabId: string): TabScope {
+    return {
+      tabId,
+      navigate: (url, _extraHeaders?) =>
+        this.mcpCall<CamofoxNavigateResult>('navigate', { tabId, url }).then(r => ({
+          url: r.finalUrl ?? r.url ?? url,
+          title: r.title,
+        })),
+      click: (selector) => this.resolveRef(tabId, selector).then(ref =>
+        this.mcpCall<{ tabId: string; ok: boolean }>('click', { tabId, ref }).then(() => ({ clicked: true }))
+      ),
+      type: (selector, text) => this.resolveRef(tabId, selector).then(ref =>
+        this.mcpCall<{ tabId: string; ok: boolean }>('type', { tabId, ref, text, submit: false }).then(() => ({ typed: true }))
+      ),
+      scroll: (_selector, direction, distance?) =>
+        this.mcpCall<{ tabId: string; ok: boolean }>('scroll', {
+          tabId,
+          direction: toCamofoxScrollDirection(direction),
+          amount: distance ?? 500,
+        }).then(() => ({ scrolled: true })),
+      snapshot: () =>
+        this.mcpCall<CamofoxSnapshotResult>('snapshot', { tabId }).then(r => ({ snapshot: r.snapshot })),
+      screenshot: (outputPath?) =>
+        this.mcpCall<CamofoxScreenshotResult>('screenshot', { tabId, fullPage: false }, 'image').then(r => {
+          const base64 = r.dataUrl ?? '';
+          if (outputPath) {
+            const pngData = base64.replace(/^data:image\/\w+;base64,/, '');
+            fs.writeFileSync(outputPath, Buffer.from(pngData, 'base64'));
+            return { path: outputPath, data: base64 };
+          }
+          return { path: '', data: base64 };
+        }),
+      evaluate: (script) =>
+        this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: script }).then(r => ({
+          value: r.result ?? r.value,
+        })),
+    };
   }
 }
 
