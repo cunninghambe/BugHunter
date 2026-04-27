@@ -84,4 +84,40 @@ describe('classify — priority hierarchy (§ 3.5.1)', () => {
     const { bugs } = runClassify([result]);
     expect(bugs).toHaveLength(0);
   });
+
+  it('case 10.4.1: visual_anomaly + missing_state_change → canonical is visual_anomaly; secondary contains missing_state_change', () => {
+    const detections: BugDetection[] = [
+      makeBug('missing_state_change', 'click did nothing'),
+      makeBug('visual_anomaly', 'broken sidebar in main area'),
+    ];
+    const { bugs } = runClassify([makeTestResult(detections)]);
+    expect(bugs).toHaveLength(1);
+    expect(bugs[0]!.detection.kind).toBe('visual_anomaly');
+    const secondary = bugs[0]!.detection.secondaryObservations ?? [];
+    expect(secondary.map(s => s.kind)).toContain('missing_state_change');
+  });
+
+  it('case 10.4.2: dom_error_text + visual_anomaly → canonical is dom_error_text; secondary contains visual_anomaly', () => {
+    const detections: BugDetection[] = [
+      makeBug('visual_anomaly', 'blank container'),
+      makeBug('dom_error_text', 'Error in DOM'),
+    ];
+    const { bugs } = runClassify([makeTestResult(detections)]);
+    expect(bugs).toHaveLength(1);
+    expect(bugs[0]!.detection.kind).toBe('dom_error_text');
+    const secondary = bugs[0]!.detection.secondaryObservations ?? [];
+    expect(secondary.map(s => s.kind)).toContain('visual_anomaly');
+  });
+
+  it('case 10.4.3: react_error + visual_anomaly → canonical is react_error; secondary contains visual_anomaly', () => {
+    const detections: BugDetection[] = [
+      makeBug('visual_anomaly', 'broken modal layout'),
+      makeBug('react_error', 'Cannot read property of undefined'),
+    ];
+    const { bugs } = runClassify([makeTestResult(detections)]);
+    expect(bugs).toHaveLength(1);
+    expect(bugs[0]!.detection.kind).toBe('react_error');
+    const secondary = bugs[0]!.detection.secondaryObservations ?? [];
+    expect(secondary.map(s => s.kind)).toContain('visual_anomaly');
+  });
 });

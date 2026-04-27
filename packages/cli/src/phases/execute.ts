@@ -1,6 +1,7 @@
 // Phase 3: execute — bounded-parallel dispatch (§ 3.8).
 
 import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import type { BrowserMcpAdapter, TabScope } from '../adapters/browser-mcp.js';
 import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
@@ -13,6 +14,10 @@ import { classifyConsoleErrors } from '../classify/console.js';
 import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
 import { classifyDomErrorText } from '../classify/dom-error-text.js';
+import { classifyVisualAnomalies } from '../classify/vision.js';
+import type { VisionClientInterface } from '../adapters/vision-client.js';
+import type { VisionBudget } from '../classify/vision-budget.js';
+import type { VisionConfig } from '../types.js';
 import { writeActionLog } from '../repro/action-log.js';
 import { hashSchema } from '../util/hash.js';
 import { runPaths, type RunPaths } from '../store/filesystem.js';
@@ -41,6 +46,11 @@ export type ExecuteOptions = {
    * the browser path to work when tc.page is a relative route.
    */
   appBaseUrl?: string;
+  /** Vision options — all three must be set together for vision to run. */
+  visionEnabled?: boolean;
+  visionConfig?: VisionConfig;
+  visionClient?: VisionClientInterface;
+  visionBudget?: VisionBudget;
 };
 
 export type ExecuteResult = {
@@ -50,7 +60,7 @@ export type ExecuteResult = {
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
@@ -85,7 +95,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     const syntheticOccurrenceId = createId();
     try {
       const result = tc.action.via === 'ui'
-        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl)
+        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget)
         : await executeApiTest(tc, surface, runState.runId, paths, toolMap);
       return result;
     } catch (err) {
@@ -194,6 +204,10 @@ async function executeUiTestInner(
   appBaseUrl: string | undefined,
   artifactPaths: ArtifactPaths,
   actionLog: Parameters<typeof writeActionLog>[1],
+  visionEnabled?: boolean,
+  visionConfig?: VisionConfig,
+  visionClient?: VisionClientInterface,
+  visionBudget?: VisionBudget,
 ): Promise<TestResult> {
   const bugs: BugDetection[] = [];
   const preConsoleErrors: ConsoleError[] = [];
@@ -309,6 +323,33 @@ async function executeUiTestInner(
 
   await persistUiArtifacts(scope, occurrenceId, postSnapshot, postConsoleErrors, artifactPaths);
 
+  // Per-occurrence vision pass: only when missing_state_change fired and vision is active.
+  if (missingChange && visionEnabled && visionClient && visionBudget?.tryConsume()) {
+    const screenshotPath = path.join(artifactPaths.screenshotsDir, `${occurrenceId}.png`);
+    let hashOk = true;
+    try {
+      const buf = fs.readFileSync(screenshotPath);
+      const hash = crypto.createHash('sha256').update(buf).digest('hex');
+      hashOk = visionBudget.tryConsumeHash(hash);
+    } catch {
+      // screenshot missing — still try vision (will fail gracefully inside classify)
+    }
+    if (hashOk) {
+      const visualDetections = await classifyVisualAnomalies({
+        screenshotPath,
+        url: tc.page,
+        action: tc.action,
+        role: tc.role,
+        config: visionConfig,
+        client: visionClient,
+      }).catch(err => {
+        log.warn('vision: classification failed', { occurrenceId, err: String(err) });
+        return [] as BugDetection[];
+      });
+      bugs.push(...visualDetections);
+    }
+  }
+
   return {
     testId: tc.id,
     occurrenceId,
@@ -327,7 +368,11 @@ async function executeUiTest(
   runId: string,
   paths: ArtifactPaths,
   extraHeaders?: Record<string, string>,
-  appBaseUrl?: string
+  appBaseUrl?: string,
+  visionEnabled?: boolean,
+  visionConfig?: VisionConfig,
+  visionClient?: VisionClientInterface,
+  visionBudget?: VisionBudget,
 ): Promise<TestResult> {
   const start = Date.now();
   const occurrenceId = createId();
@@ -358,7 +403,7 @@ async function executeUiTest(
   let result: TestResult;
   try {
     result = await browser.withTab(pageUrl, headers, (scope) =>
-      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog)
+      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget)
     );
   } catch (err) {
     // withTab itself failed (openTab or closeTab threw, or fn re-threw after unexpected error)

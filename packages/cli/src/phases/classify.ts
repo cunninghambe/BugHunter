@@ -18,6 +18,7 @@ const KIND_PRIORITY: BugKind[] = [
   'network_4xx_unexpected',
   '404_for_linked_route',
   'dom_error_text',
+  'visual_anomaly',
   'missing_state_change',
   'console_error',
   'accessibility_critical',

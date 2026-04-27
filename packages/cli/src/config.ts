@@ -71,6 +71,14 @@ export const ConfigSchema = z.object({
     verifyTimeoutMs: z.number().int().positive().optional(),
     verifyPollMs: z.number().int().positive().optional(),
   }).optional(),
+  vision: z.object({
+    enabled: z.boolean().optional(),
+    model: z.string().min(1).optional(),
+    apiKey: z.string().min(1).optional(),
+    maxCalls: z.number().int().positive().optional(),
+    concurrency: z.number().int().positive().optional(),
+    severityThreshold: z.enum(['minor', 'major', 'critical']).optional(),
+  }).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

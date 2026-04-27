@@ -6,13 +6,16 @@ import { initRunState, saveRunState, loadRunState } from '../store/run-state.js'
 import { runPaths } from '../store/filesystem.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
+import { AnthropicVisionClient } from '../adapters/vision-client.js';
 import { runValidate } from '../phases/validate.js';
 import { runDiscover } from '../phases/discover.js';
 import { runPlan } from '../phases/plan.js';
 import { runExecute } from '../phases/execute.js';
 import { runClassify } from '../phases/classify.js';
 import { runCluster } from '../phases/cluster.js';
-import type { PreState, PostState, SkippedItem } from '../types.js';
+import { makeVisionBudget } from '../classify/vision-budget.js';
+import { resolveVisionConfig } from '../classify/vision.js';
+import type { PreState, PostState, SkippedItem, TestCase, TestResult, BugDetection, VisualBaselineEntry } from '../types.js';
 import { runEmit } from '../phases/emit.js';
 import { log } from '../log.js';
 
@@ -57,6 +60,22 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
   const browser = resolved.browserMcpUrl ? new CamofoxBrowserMcpAdapter(resolved.browserMcpUrl) : undefined;
 
+  // Resolve vision API key and construct client/budget
+  const visionEnabled = resolved.vision?.enabled ?? false;
+  let visionApiKey: string | undefined;
+  if (visionEnabled) {
+    visionApiKey =
+      resolved.vision?.apiKey ??
+      process.env['ANTHROPIC_API_KEY'] ??
+      process.env['CLAUDE_API_KEY'];
+    if (!visionApiKey) {
+      throw new Error(
+        'vision.enabled is true but no Anthropic API key was found. ' +
+        'Set ANTHROPIC_API_KEY or vision.apiKey.'
+      );
+    }
+  }
+
   // Resume or new run
   let runId: string;
   let resumeState = undefined;
@@ -71,6 +90,13 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   const startMs = Date.now();
   const roles = opts.role ? [opts.role] : undefined;
+
+  // Construct vision budget + client (one per run; shared by discover + execute)
+  const resolvedVision = resolveVisionConfig(resolved.vision, visionApiKey ?? '');
+  const visionBudget = visionEnabled ? makeVisionBudget(resolvedVision.maxCalls) : undefined;
+  const visionClient = visionEnabled && visionApiKey
+    ? new AnthropicVisionClient(visionApiKey, resolvedVision.model, 30_000)
+    : undefined;
 
   // Phase 0: validate
   const { revision, roles: discoveredRoles } = await runValidate({
@@ -108,7 +134,9 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     runId,
     surface,
     browser,
-    opts.route
+    opts.route,
+    visionClient,
+    visionBudget,
   );
   runState.discovery = discovery;
   runState.phase = 'plan';
@@ -141,6 +169,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     extraHeaders: resolved.extraHeaders,
     enableA11y: resolved.enableA11y,
     appBaseUrl: resolved.appBaseUrl,
+    visionEnabled,
+    visionConfig: resolved.vision,
+    visionClient,
+    visionBudget,
   });
 
   if (abortReason) {
@@ -153,24 +185,32 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   runState.phase = 'classify';
   saveRunState(runState);
 
+  // Synthesise visual baseline test cases + results (Option a from § 4.3.1).
+  // These bypass execute and are merged directly into classify + cluster inputs.
+  const { baselineTestCases, baselineResults } = synthesiseVisualBaselineCases(
+    runId, discovery.visualBaselineDetections ?? []
+  );
+
   // Phase 4: classify
-  const { bugs, infraFailures } = runClassify(results);
+  const allResults = [...results, ...baselineResults];
+  const { bugs, infraFailures } = runClassify(allResults);
   runState.phase = 'cluster';
   saveRunState(runState);
 
   // Phase 5: cluster
   const paths = runPaths(opts.projectDir, runId);
+  const allTestCases = [...testCases, ...baselineTestCases];
   const stateByTestId = new Map<string, { preState: PreState; postState: PostState }>(
     results
       .filter(r => r.postState !== undefined)
       .map(r => [r.testId, { preState: r.preState!, postState: r.postState! }])
   );
   const occurrenceIdByTestId = new Map<string, string>(
-    results.map(r => [r.testId, r.occurrenceId]),
+    allResults.map(r => [r.testId, r.occurrenceId]),
   );
   const { clusters } = runCluster({
     detections: bugs,
-    testCases,
+    testCases: allTestCases,
     runId,
     projectDir: opts.projectDir,
     actionLogsDir: paths.actionLogsDir,
@@ -195,15 +235,64 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const discoverySkipReasons = aggregateDiscoverySkips(discovery.skipList);
   const allSkipReasons = [...discoverySkipReasons, ...skipReasons];
 
+  const visionSummary = visionBudget ? {
+    enabled: true,
+    called: visionBudget.consumed,
+    succeeded: visionBudget.consumed,
+    anomaliesFound: clusters.filter(c => c.kind === 'visual_anomaly').length,
+    abortReason: visionBudget.abortReason,
+  } : undefined;
+
   runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
     testsPlanned: testCases.length,
     testsRan: results.length,
     testsSkipped: testCases.length - results.length,
     skipReasons: allSkipReasons,
+    vision: visionSummary,
   });
   runState.emitted = true;
   runState.phase = 'done';
   saveRunState(runState);
+}
+
+/**
+ * Synthesise TestCase + TestResult pairs from visual baseline detections.
+ * These are pre-baked results that bypass the executor entirely (§ 4.3.1 Option a).
+ */
+function synthesiseVisualBaselineCases(
+  runId: string,
+  entries: VisualBaselineEntry[]
+): { baselineTestCases: TestCase[]; baselineResults: TestResult[] } {
+  const baselineTestCases: TestCase[] = [];
+  const baselineResults: TestResult[] = [];
+
+  for (const { page, detection } of entries) {
+    const testId = createId();
+    const occurrenceId = createId();
+
+    const tc: TestCase = {
+      id: testId,
+      runId,
+      role: 'anonymous',
+      page: page.route,
+      action: { kind: 'render', via: 'ui', expectedOutcome: 'success', palette: 'happy' },
+      expectedOutcome: 'success',
+      palette: 'happy',
+    };
+
+    const result: TestResult = {
+      testId,
+      occurrenceId,
+      passed: false,
+      bugs: [detection],
+      durationMs: 0,
+    };
+
+    baselineTestCases.push(tc);
+    baselineResults.push(result);
+  }
+
+  return { baselineTestCases, baselineResults };
 }
 
 async function closeAllExistingTabs(browser: CamofoxBrowserMcpAdapter): Promise<void> {

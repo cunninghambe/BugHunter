@@ -30,7 +30,8 @@ export type BugKind =
   | 'unhandled_exception'
   | 'accessibility_critical'
   | 'dom_error_text'
-  | 'surface_call_failed';
+  | 'surface_call_failed'
+  | 'visual_anomaly';
 
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
 export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
@@ -241,10 +242,42 @@ export type DiscoveredPage = {
   links: string[];
 };
 
+export type VisionSeverity = 'minor' | 'major' | 'critical';
+export type VisionCategory = 'layout' | 'content' | 'state' | 'error' | 'a11y' | 'other';
+
+export type VisionConfig = {
+  /** Master switch. Default: false (opt-in). */
+  enabled?: boolean;
+  /** Anthropic model id. Default: 'claude-haiku-4-5-20251001'. */
+  model?: string;
+  /**
+   * Anthropic API key. PREFERRED location is the ANTHROPIC_API_KEY env var.
+   * Use this field only if env var is unavailable; do not commit the key.
+   */
+  apiKey?: string;
+  /** Per-run cap on API calls. Default: 100. Hard ceiling; calls beyond skip. */
+  maxCalls?: number;
+  /** Concurrency cap for vision calls (independent of browser concurrency). Default: 4. */
+  concurrency?: number;
+  /**
+   * Severity below this is filtered out and never becomes a BugDetection.
+   * Default: 'major'. 'minor' is intentionally not exposed as a default —
+   * minor anomalies are noisy by construction. 'critical' is for ultra-strict runs.
+   */
+  severityThreshold?: VisionSeverity;
+};
+
+export type VisualBaselineEntry = {
+  page: DiscoveredPage;
+  detection: BugDetection;
+  screenshotPath: string;
+};
+
 export type DiscoveryOutput = {
   pages: DiscoveredPage[];
   apiTools: ToolMeta[];
   skipList: SkippedItem[];
+  visualBaselineDetections?: VisualBaselineEntry[];
 };
 
 export type SkippedItem = {
@@ -305,6 +338,12 @@ export type BugDetection = {
   targetPath?: string;
   a11yViolations?: unknown[];
   secondaryObservations?: SecondaryObservation[];
+  // visual_anomaly only:
+  visualCategory?: VisionCategory;
+  visualSeverity?: VisionSeverity;
+  visualSuggestedFix?: string;
+  /** Path to the screenshot that produced this detection. Always set when kind === 'visual_anomaly'. */
+  screenshotPath?: string;
 };
 
 export type RunPhase =
@@ -414,6 +453,8 @@ export type BugHunterConfig = {
   crawl?: CrawlConfig;
   /** Browser-side login config — runs at the head of the discover phase. Default: auto-enabled. */
   browserLogin?: BrowserLoginConfig;
+  /** Vision-based visual anomaly detection. Default: disabled. */
+  vision?: VisionConfig;
 };
 
 export type RunSummary = {
@@ -435,4 +476,11 @@ export type RunSummary = {
   testsRan: number;
   testsSkipped: number;
   skippedReasons: Array<{ reason: string; count: number }>;
+  vision?: {
+    enabled: boolean;
+    called: number;
+    succeeded: number;
+    anomaliesFound: number;
+    abortReason?: 'auth' | 'transport';
+  };
 };
