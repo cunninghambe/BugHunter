@@ -3,7 +3,6 @@
 import * as readline from 'node:readline/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { z } from 'zod';
 import { saveConfig, ConfigSchema } from '../config.js';
 import type { BugHunterConfig } from '../types.js';
 import { log } from '../log.js';
@@ -34,7 +33,7 @@ export async function initCommand(projectDir: string, opts?: InitOptions): Promi
   process.stdout.write(`\nNext steps:\n  bughunter run\n  # For auto-fix, open a Claude Code session and invoke /bughunt fix\n`);
 }
 
-async function resolveInteractive(projectDir: string): Promise<BugHunterConfig> {
+async function resolveInteractive(_projectDir: string): Promise<BugHunterConfig> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   const projectName = await rl.question('Project name: ');

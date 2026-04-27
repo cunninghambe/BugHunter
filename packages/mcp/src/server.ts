@@ -21,7 +21,7 @@ export function createApp(): express.Express {
     try {
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body as unknown);
-    } catch (err) {
+    } catch {
       if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
     } finally {
       await server.close().catch(() => {});

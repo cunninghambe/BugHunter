@@ -7,7 +7,6 @@ import { readActionLog } from '../repro/action-log.js';
 import { replayActionLog } from '../repro/replay.js';
 import { listRunIds, runPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
-import * as path from 'node:path';
 
 export async function replayCommand(projectDir: string, occurrenceId: string): Promise<void> {
   const config = resolvedConfig(loadConfig(projectDir));

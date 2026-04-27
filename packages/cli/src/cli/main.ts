@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // BugHunter CLI entry point.
 
-import * as path from 'node:path';
 import { initCommand } from './init.js';
 import type { InitOptions } from './init.js';
 import { runCommand } from './run.js';

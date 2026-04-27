@@ -15,7 +15,7 @@ import { runClassify } from '../phases/classify.js';
 import { runCluster } from '../phases/cluster.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { PreState, PostState, SkippedItem, TestCase, TestResult, BugDetection, VisualBaselineEntry } from '../types.js';
+import type { PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry } from '../types.js';
 import { runEmit } from '../phases/emit.js';
 import { log } from '../log.js';
 
@@ -124,7 +124,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     execSync(resolved.resetCommand, { cwd: opts.projectDir, stdio: 'inherit' });
   }
 
-  let runState = resumeState ?? initRunState(opts.projectDir, runId, resolved);
+  const runState = resumeState ?? initRunState(opts.projectDir, runId, resolved);
   runState.surfaceRevision = revision;
   runState.phase = 'discover';
   saveRunState(runState);

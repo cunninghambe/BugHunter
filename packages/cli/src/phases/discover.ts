@@ -164,7 +164,6 @@ export async function runDiscover(
 
     if (browser) {
       // Walk DOM as first role (read-only discovery; auth state from SurfaceMCP)
-      const role = roles[0] ?? 'anonymous';
       try {
         const domResult = await walkDom(browser, baseUrl + route, runId, config.extraHeaders);
         const collapsed = collapseElements(domResult.elements.filter(e => !e.disabled));
