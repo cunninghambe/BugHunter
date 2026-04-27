@@ -96,7 +96,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   // Construct vision budget + client (one per run; shared by discover + execute)
   const resolvedVision = resolveVisionConfig(resolved.vision, visionAuth ? '__present__' : '');
-  const visionBudget = visionEnabled ? makeVisionBudget(resolvedVision.maxCalls) : undefined;
+  const visionBudget = visionEnabled ? makeVisionBudget(resolvedVision.maxCalls, resolvedVision.maxCostUsd) : undefined;
   const visionClient = visionEnabled && visionAuth
     ? new AnthropicVisionClient(visionAuth, resolvedVision.model, 30_000)
     : undefined;
@@ -244,6 +244,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     succeeded: visionBudget.consumed,
     anomaliesFound: clusters.filter(c => c.kind === 'visual_anomaly').length,
     abortReason: visionBudget.abortReason,
+    costUsd: Math.round(visionBudget.costUsd * 10000) / 10000,
+    costCapUsd: visionBudget.costCapUsd,
   } : undefined;
 
   runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {

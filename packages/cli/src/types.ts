@@ -257,6 +257,8 @@ export type VisionConfig = {
   apiKey?: string;
   /** Per-run cap on API calls. Default: 100. Hard ceiling; calls beyond skip. */
   maxCalls?: number;
+  /** Per-run cost ceiling in USD. Default: 20. Halts vision when cumulative estimated cost exceeds this. */
+  maxCostUsd?: number;
   /** Concurrency cap for vision calls (independent of browser concurrency). Default: 4. */
   concurrency?: number;
   /**
@@ -481,6 +483,8 @@ export type RunSummary = {
     called: number;
     succeeded: number;
     anomaliesFound: number;
-    abortReason?: 'auth' | 'transport';
+    abortReason?: 'auth' | 'transport' | 'cost_cap';
+    costUsd?: number;
+    costCapUsd?: number;
   };
 };
