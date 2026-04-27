@@ -337,6 +337,19 @@ export type RunState = {
   partialEmit: boolean;
 };
 
+export type BrowserLoginConfig = {
+  /** When false, skip browser-login entirely (anonymous-only discovery). Default: true. */
+  enabled?: boolean;
+  /**
+   * Which role to log in as. Defaults to the first credentialed role from `roles[]`.
+   */
+  role?: string;
+  /** Max wait after submit-click for successCheck to be satisfied. Default: 10000ms. */
+  verifyTimeoutMs?: number;
+  /** Polling interval for cookie-jar / URL checks during verification. Default: 500ms. */
+  verifyPollMs?: number;
+};
+
 export type CrawlConfig = {
   /**
    * Auto-derived from SurfaceMCP source: 'crawl_seed'. Set to false to disable
@@ -399,6 +412,8 @@ export type BugHunterConfig = {
   bodyFixtures?: Record<string, Record<string, Record<string, unknown>>>;
   /** Crawl config — auto-enabled when SurfaceMCP returns a crawl_seed page. */
   crawl?: CrawlConfig;
+  /** Browser-side login config — runs at the head of the discover phase. Default: auto-enabled. */
+  browserLogin?: BrowserLoginConfig;
 };
 
 export type RunSummary = {

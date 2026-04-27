@@ -93,6 +93,37 @@ export type SurfaceRoutesForPageResult = {
 
 export type ToolDescription = ToolMeta & { rawHandlerSnippet?: string };
 
+export type SuccessCheck =
+  | { kind: 'redirect'; to: string }
+  | { kind: 'cookie'; name: string }
+  | { kind: 'status'; code: number };
+
+export type DescribeAuthResult =
+  | { authKind: 'none'; reason: 'no_auth_configured' }
+  | { authKind: 'bearer'; reason: 'programmatic_only'; detail: string }
+  | { authKind: 'api_key'; reason: 'programmatic_only'; detail: string }
+  | { authKind: 'anonymous'; reason: 'role_has_no_credentials' }
+  | {
+      authKind: 'form';
+      uiLoginPath: string;
+      uiTriggerSelector?: string;
+      uiSubmitSelector?: string;
+      fields: Record<string, string>;
+      values: Record<string, string>;
+      successCheck: SuccessCheck;
+      cookieName?: string;
+    }
+  | {
+      authKind: 'nextauth';
+      uiLoginPath: string;
+      uiTriggerSelector?: string;
+      uiSubmitSelector?: string;
+      fields: Record<string, string>;
+      values: Record<string, string>;
+      successCheck: SuccessCheck;
+      cookieName: string;
+    };
+
 export interface SurfaceMcpAdapter {
   surface_list_tools(filter?: {
     method?: string;
@@ -118,6 +149,8 @@ export interface SurfaceMcpAdapter {
   surface_list_pages(filter?: { pathPrefix?: string; lazy?: boolean }): Promise<SurfaceListPagesResult>;
 
   surface_describe_self(): Promise<SurfaceDescribeSelfResult>;
+
+  surface_describe_auth(args: { role: string }): Promise<DescribeAuthResult>;
 }
 
 // HTTP-based implementation targeting a live SurfaceMCP instance.
@@ -212,5 +245,9 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
 
   async surface_describe_self(): Promise<SurfaceDescribeSelfResult> {
     return this.mcpCall<SurfaceDescribeSelfResult>('surface_describe_self', {});
+  }
+
+  async surface_describe_auth(args: { role: string }): Promise<DescribeAuthResult> {
+    return this.mcpCall<DescribeAuthResult>('surface_describe_auth', args);
   }
 }

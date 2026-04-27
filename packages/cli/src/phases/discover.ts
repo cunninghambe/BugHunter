@@ -7,6 +7,7 @@ import { isDynamicRoute, expandDynamicRoute } from '../discovery/filesystem-page
 import { discoverPages } from '../discovery/pages.js';
 import { walkDom } from '../discovery/dom-walker.js';
 import { crawlFromSeeds } from '../discovery/crawler.js';
+import { loginInBrowser } from '../discovery/browser-login.js';
 import { crossRefForms } from '../discovery/form-cross-ref.js';
 import { collapseElements } from '../discovery/element-collapse.js';
 import { log } from '../log.js';
@@ -23,6 +24,33 @@ export async function runDiscover(
   routePattern?: string
 ): Promise<DiscoveryOutput> {
   const skipList: SkippedItem[] = [];
+
+  // Browser-side login — runs once per discover phase, before page discovery.
+  const loginCfg = config.browserLogin;
+  const browserLoginEnabled = (loginCfg?.enabled ?? true) && !!browser;
+
+  if (browserLoginEnabled && browser) {
+    const loginRole = loginCfg?.role ?? roles[0];
+    if (!loginRole) {
+      log.info('browser_login: no roles configured; skipping');
+    } else {
+      const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
+      const result = await loginInBrowser(browser, surface, {
+        role: loginRole,
+        baseUrl,
+        verifyTimeoutMs: loginCfg?.verifyTimeoutMs ?? 10_000,
+        verifyPollMs: loginCfg?.verifyPollMs ?? 500,
+      });
+      if (result.ok) {
+        log.info(`browser_login: success (role=${loginRole}, cookies=${result.cookies.length}, url=${result.finalUrl})`);
+      } else {
+        log.warn(`browser_login: skipped (role=${loginRole}, reason=${result.reason}): ${result.detail}`);
+        skipList.push({ route: '<login>', reason: `browser_login_${result.reason}` });
+      }
+    }
+  } else if (!browser) {
+    log.info('browser_login: skipped (no browser adapter)');
+  }
 
   // Source 1: SurfaceMCP catalog
   const catalog = await surface.surface_list_tools();
