@@ -150,33 +150,17 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 async function executeUiTest(
   tc: TestCase,
   browser: BrowserMcpAdapter,
-  surface: SurfaceMcpAdapter,
+  _surface: SurfaceMcpAdapter,
   runId: string,
   actionLogsDir: string,
   extraHeaders?: Record<string, string>,
   appBaseUrl?: string
 ): Promise<TestResult> {
   const start = Date.now();
-  const bugs: BugDetection[] = [];
   const occurrenceId = createId();
   const headers = { 'X-BugHunter-Run': runId, ...(extraHeaders ?? {}) };
-
-  // Construct absolute URL: tc.page may be a relative route ("/products")
   const pageUrl = tc.page.startsWith('http') ? tc.page : `${appBaseUrl ?? ''}${tc.page}`;
 
-  // Pre-state capture
-  const navResult = await browser.navigate(pageUrl, headers);
-  const preConsoleErrors: ConsoleError[] = [];
-  const preSnapshot = await browser.snapshot().catch(() => null);
-
-  // Start MutationObserver
-  try {
-    await browser.evaluate(MUTATION_OBSERVER_START_SCRIPT);
-  } catch (err) {
-    log.warn('MutationObserver start failed; mutWindowMs will be 0', { err: String(err), tcId: tc.id });
-  }
-
-  // Execute action
   const actionLog = {
     occurrenceId,
     runId,
@@ -198,138 +182,152 @@ async function executeUiTest(
     createdAt: new Date().toISOString(),
   };
 
-  let postConsoleErrors: ConsoleError[] = [];
-  let postNetworkRequests: NetworkRequest[] = [];
-  let domErrorText = '';
-
   try {
-    switch (tc.action.kind) {
-      case 'click':
-        if (tc.action.selector) await browser.click(tc.action.selector);
-        break;
-      case 'submit':
-        if (tc.action.selector) await browser.click(tc.action.selector);
-        break;
-      case 'fill':
-        if (tc.action.selector) {
-          await browser.type(tc.action.selector, String(tc.action.input ?? ''));
+    return await browser.withTab(pageUrl, headers, async (scope) => {
+      const bugs: BugDetection[] = [];
+      const preConsoleErrors: ConsoleError[] = [];
+      const preSnapshot = await scope.snapshot().catch(() => null);
+
+      try {
+        await scope.evaluate(MUTATION_OBSERVER_START_SCRIPT);
+      } catch (err) {
+        log.warn('MutationObserver start failed; mutWindowMs will be 0', { err: String(err), tcId: tc.id });
+      }
+
+      try {
+        switch (tc.action.kind) {
+          case 'click':
+            if (tc.action.selector) await scope.click(tc.action.selector);
+            break;
+          case 'submit':
+            if (tc.action.selector) await scope.click(tc.action.selector);
+            break;
+          case 'fill':
+            if (tc.action.selector) {
+              await scope.type(tc.action.selector, String(tc.action.input ?? ''));
+            }
+            break;
+          case 'navigate':
+            if (tc.action.selector) {
+              const target = tc.action.selector.startsWith('http')
+                ? tc.action.selector
+                : `${appBaseUrl ?? ''}${tc.action.selector}`;
+              await scope.navigate(target, headers);
+            }
+            break;
+          case 'render':
+            break;
         }
-        break;
-      case 'navigate':
-        if (tc.action.selector) {
-          const target = tc.action.selector.startsWith('http')
-            ? tc.action.selector
-            : `${appBaseUrl ?? ''}${tc.action.selector}`;
-          await browser.navigate(target, headers);
+      } catch (err) {
+        if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
+          writeActionLog(actionLogsDir, actionLog);
+          return {
+            testId: tc.id,
+            passed: false,
+            bugs: [],
+            infrastructureFailure: {
+              id: createId(),
+              runId,
+              timestamp: new Date().toISOString(),
+              kind: 'browser_element_not_found',
+              detail: (err as BrowserMcpError).message,
+              role: tc.role,
+              page: tc.page,
+              action: tc.action,
+            } as InfrastructureFailure,
+            durationMs: Date.now() - start,
+          };
         }
-        break;
-      case 'render':
-        // Just capture post-state
-        break;
-    }
+        if (err instanceof BrowserMcpError && (err.kind === 'transport' || err.kind === 'timeout')) {
+          writeActionLog(actionLogsDir, actionLog);
+          return {
+            testId: tc.id,
+            passed: false,
+            bugs: [],
+            infrastructureFailure: {
+              id: createId(),
+              runId,
+              timestamp: new Date().toISOString(),
+              kind: 'browser_crash',
+              detail: (err as BrowserMcpError).message,
+              role: tc.role,
+              page: tc.page,
+              action: tc.action,
+            } as InfrastructureFailure,
+            durationMs: Date.now() - start,
+          };
+        }
+        throw new Error(`Browser action failed: ${String(err)}`);
+      }
+
+      const mutResult = await scope.evaluate(MUTATION_OBSERVER_STOP_SCRIPT).catch(() => null);
+      const mutWindowMs = (mutResult?.value as { durationMs?: number })?.durationMs ?? 0;
+
+      const consoleResult = await scope.evaluate(
+        '(window.__bhConsoleErrors || []).map(e => ({ level: "error", text: e.text, stack: e.stack }))'
+      ).catch(() => null);
+
+      const postConsoleErrors: ConsoleError[] = Array.isArray(consoleResult?.value)
+        ? (consoleResult.value as ConsoleError[])
+        : [];
+
+      const postSnapshot = await scope.snapshot().catch(() => null);
+
+      const preState: PreState = {
+        url: tc.page,
+        title: '',
+        consoleErrorCount: preConsoleErrors.length,
+      };
+
+      const postState: PostState = {
+        url: tc.page,
+        title: '',
+        consoleErrors: postConsoleErrors,
+        networkRequests: [],
+        domErrorTextDetected: false,
+        mutationObserverWindowMs: mutWindowMs,
+      };
+
+      bugs.push(...classifyConsoleErrors(postConsoleErrors, tc.page));
+      bugs.push(...classifyNetworkRequests([], tc.expectedOutcome, true));
+
+      const missingChange = classifyMissingStateChange(preState, postState, tc.action, tc.page);
+      if (missingChange) bugs.push(missingChange);
+
+      void preSnapshot;
+      void postSnapshot;
+
+      writeActionLog(actionLogsDir, actionLog);
+
+      return {
+        testId: tc.id,
+        passed: bugs.length === 0,
+        bugs,
+        durationMs: Date.now() - start,
+        preState,
+        postState,
+      };
+    });
   } catch (err) {
-    if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
-      // Element not found is a test pre-condition failure, not an infrastructure failure
-      const infra: InfrastructureFailure = {
-        id: createId(),
-        runId,
-        timestamp: new Date().toISOString(),
-        kind: 'browser_element_not_found',
-        detail: err.message,
-        role: tc.role,
-        page: tc.page,
-        action: tc.action,
-      };
-      return {
-        testId: tc.id,
-        passed: false,
-        bugs: [],
-        infrastructureFailure: infra,
-        durationMs: Date.now() - start,
-      };
-    }
-    if (err instanceof BrowserMcpError && (err.kind === 'transport' || err.kind === 'timeout')) {
-      // Transport/timeout failures are browser_crash infra failures
-      const infra: InfrastructureFailure = {
-        id: createId(),
-        runId,
-        timestamp: new Date().toISOString(),
-        kind: 'browser_crash',
-        detail: err.message,
-        role: tc.role,
-        page: tc.page,
-        action: tc.action,
-      };
-      return {
-        testId: tc.id,
-        passed: false,
-        bugs: [],
-        infrastructureFailure: infra,
-        durationMs: Date.now() - start,
-      };
-    }
-    throw new Error(`Browser action failed: ${String(err)}`);
+    // withTab itself failed (openTab or closeTab threw, or fn re-threw after unexpected error)
+    const infra: InfrastructureFailure = {
+      id: createId(),
+      runId,
+      timestamp: new Date().toISOString(),
+      kind: 'generic',
+      detail: String(err),
+      role: tc.role,
+      page: tc.page,
+      action: tc.action,
+    };
+    return {
+      testId: tc.id,
+      passed: false,
+      bugs: [],
+      infrastructureFailure: infra,
+      durationMs: Date.now() - start,
+    };
   }
-
-  // Stop MutationObserver and capture post-state
-  const mutResult = await browser.evaluate(MUTATION_OBSERVER_STOP_SCRIPT).catch(() => null);
-  const mutWindowMs = (mutResult?.value as { durationMs?: number })?.durationMs ?? 0;
-
-  // Capture console errors via evaluate
-  const consoleResult = await browser.evaluate(
-    '(window.__bhConsoleErrors || []).map(e => ({ level: "error", text: e.text, stack: e.stack }))'
-  ).catch(() => null);
-
-  if (Array.isArray(consoleResult?.value)) {
-    postConsoleErrors = consoleResult.value as ConsoleError[];
-  }
-
-  // Get post-snapshot
-  const postSnapshot = await browser.snapshot().catch(() => null);
-  const postNav = await browser.navigate('', {}).catch(() => ({ url: tc.page, title: '' })) as { url?: string; title?: string };
-
-  const preState: PreState = {
-    url: tc.page,
-    title: navResult.title ?? '',
-    consoleErrorCount: preConsoleErrors.length,
-  };
-
-  const postState: PostState = {
-    url: postNav.url ?? tc.page,
-    title: postNav.title ?? '',
-    consoleErrors: postConsoleErrors,
-    networkRequests: postNetworkRequests,
-    domErrorTextDetected: !!domErrorText,
-    mutationObserverWindowMs: mutWindowMs,
-  };
-
-  // Classify
-  bugs.push(...classifyConsoleErrors(postConsoleErrors, tc.page));
-  bugs.push(...classifyNetworkRequests(postNetworkRequests, tc.expectedOutcome, true));
-
-  const missingChange = classifyMissingStateChange(preState, postState, tc.action, tc.page);
-  if (missingChange) bugs.push(missingChange);
-
-  if (domErrorText) {
-    const domBug = classifyDomErrorText(domErrorText, tc.page, tc.action.selector ?? '');
-    if (domBug) bugs.push(domBug);
-  }
-
-  // Suppress unused variable warnings — snapshots captured for future use
-  void preSnapshot;
-  void postSnapshot;
-
-  // Write action log
-  writeActionLog(actionLogsDir, actionLog);
-
-  return {
-    testId: tc.id,
-    passed: bugs.length === 0,
-    bugs,
-    durationMs: Date.now() - start,
-    preState,
-    postState,
-  };
 }
 
 async function executeApiTest(

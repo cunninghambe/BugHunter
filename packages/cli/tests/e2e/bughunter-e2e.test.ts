@@ -152,17 +152,20 @@ describe('BugHunter e2e — API-only', () => {
     const cluster404 = apiRunClusters.find(c => c.kind === '404_for_linked_route');
     const clusterFailed = apiRunClusters.find(c => c.kind === 'surface_call_failed');
 
-    if (!cluster404 || !clusterFailed) {
-      // 404_for_linked_route requires UI walker to crawl pages with broken links.
-      // In API-only mode without browser, this may not be produced.
-      process.stdout.write('[info] No 404_for_linked_route in API-only run — relatedClusterIds check skipped\n');
-      return;
-    }
+    const kindsSeen = apiRunClusters.map(c => c.kind).join(', ') || '(none)';
+    expect(
+      cluster404,
+      `Expected a 404_for_linked_route cluster. Kinds seen: ${kindsSeen}`
+    ).toBeDefined();
+    expect(
+      clusterFailed,
+      `Expected a surface_call_failed cluster. Kinds seen: ${kindsSeen}`
+    ).toBeDefined();
 
     const hasLink =
-      cluster404.relatedClusterIds?.includes(clusterFailed.id) ||
-      clusterFailed.relatedClusterIds?.includes(cluster404.id);
-    expect(hasLink, 'Expected mutual relatedClusterIds link').toBe(true);
+      cluster404!.relatedClusterIds?.includes(clusterFailed!.id) ||
+      clusterFailed!.relatedClusterIds?.includes(cluster404!.id);
+    expect(hasLink, 'Expected mutual relatedClusterIds link between 404_for_linked_route and surface_call_failed').toBe(true);
   });
 });
 
@@ -186,20 +189,12 @@ describe('BugHunter e2e — browser (conditional on camofox)', () => {
 
     const bugs = readBugsForRun(runId!);
 
-    // Check if any UI test cluster exists (via: 'ui' action). If all UI tests produced
-    // infra failures (camofox instability), there will be no UI-based clusters to assert on.
-    const hasUiCluster = bugs.some(c => c.occurrences.some(o => o.action.via === 'ui'));
-
-    if (!hasUiCluster) {
-      // All browser tests produced infra failures (camofox context crash). The Gap 1.B
-      // fix is verified by the unit tests (cluster.test.ts); this e2e assertion skips
-      // gracefully when camofox is too unstable to produce UI clusters.
-      process.stdout.write(
-        `[skip] No UI clusters produced in browser run (camofox instability) — ` +
-        `Gap 1.B unit test in cluster.test.ts provides the regression gate\n`
-      );
-      return;
-    }
+    expect(
+      bugs.some(c => c.occurrences.some(o => o.action.via === 'ui')),
+      `Expected at least one UI cluster. Total clusters: ${bugs.length}. ` +
+      `Kinds: ${bugs.map(c => c.kind).join(', ') || '(none)'}.\n` +
+      `stdout: ${stdout.slice(0, 800)}`
+    ).toBe(true);
 
     let maxMutMs = 0;
     for (const cluster of bugs) {
@@ -260,10 +255,11 @@ describe('BugHunter e2e — bodyFixtures suppression', () => {
       // SurfaceMCP query failed; fall back to skipping
     }
 
-    if (!journalToolId) {
-      process.stdout.write('[skip] Could not resolve journal-entries toolId — bodyFixtures suppression test skipped\n');
-      return;
-    }
+    expect(
+      journalToolId,
+      'Could not resolve journal-entries toolId from SurfaceMCP surface_list_tools'
+    ).toBeDefined();
+    if (!journalToolId) return; // unreachable — expect above would have thrown
 
     writeBugHunterConfig(fixtureDir, {
       surfaceMcpUrl,
@@ -296,10 +292,12 @@ describe('BugHunter e2e — bodyFixtures suppression', () => {
         await new Promise(r => setTimeout(r, 2_000));
       }
       if (!journalOk) {
-        process.stdout.write(`[skip] journal-entries endpoint did not stabilise (last: ${lastStatus} ${lastBody.slice(0, 200)}) — fixture unstable, suppression test skipped\n`);
+        expect.fail(
+          `journal-entries endpoint did not stabilise within 20 s. ` +
+          `Last response: ${lastStatus} ${lastBody.slice(0, 200)}`
+        );
       }
     }
-    if (!journalOk) return;
 
     const { code, stdout, runId } = await runBugHunter(fixtureDir);
     expect(code, `bughunter (suppress) exited ${code}:\n${stdout}`).toBe(0);
