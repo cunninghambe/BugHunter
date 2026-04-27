@@ -37,6 +37,7 @@ export type ExecuteOptions = {
 export type ExecuteResult = {
   results: TestResult[];
   abortReason?: 'budget' | 'max_clusters' | 'max_infra_failures' | 'timeout';
+  skipReasons: Array<{ reason: string; count: number }>;
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
@@ -50,6 +51,23 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   const results: TestResult[] = [];
   let abortReason: ExecuteResult['abortReason'];
   let consecutiveInfraFailures = runState.consecutiveInfraFailures;
+
+  // Compute skip reasons and emit pre-execution banner
+  const skipReasons: Array<{ reason: string; count: number }> = [];
+  if (!browser && uiQueue.length > 0) {
+    skipReasons.push({ reason: 'no browserMcpUrl configured', count: uiQueue.length });
+  }
+
+  const willRun = apiQueue.length + (browser ? uiQueue.length : 0);
+  const willSkip = uiQueue.length - (browser ? uiQueue.length : 0);
+  const apiLabel = `${apiQueue.length} api`;
+  const uiLabel = browser ? `, ${uiQueue.length} ui` : '';
+  const skipLabel = willSkip > 0
+    ? `, ${willSkip} skipped (${skipReasons.map(r => r.reason).join(', ')})`
+    : '';
+  process.stdout.write(
+    `Executing ${testCases.length} planned tests: ${willRun} will run (${apiLabel}${uiLabel})${skipLabel}\n`
+  );
 
   async function runTest(tc: TestCase): Promise<TestResult> {
     const start = Date.now();
@@ -119,7 +137,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     drainQueue(apiQueue, apiConcurrency),
   ]);
 
-  return { results, abortReason };
+  return { results, abortReason, skipReasons };
 }
 
 async function executeUiTest(

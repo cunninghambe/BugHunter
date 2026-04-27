@@ -113,7 +113,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   saveRunState(runState);
 
   // Phase 3: execute
-  const { results, abortReason } = await runExecute({
+  const { results, abortReason, skipReasons } = await runExecute({
     testCases,
     runState,
     browser,
@@ -132,6 +132,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     log.warn(`Run stopped: ${abortReason}`);
     runState.partialEmit = true;
   }
+  runState.skipReasons = skipReasons;
 
   runState.testResults = results;
   runState.phase = 'classify';
@@ -164,7 +165,12 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   // Phase 6: emit
   const actualRuntimeMs = Date.now() - startMs;
-  runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs);
+  runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
+    testsPlanned: testCases.length,
+    testsRan: results.length,
+    testsSkipped: testCases.length - results.length,
+    skipReasons,
+  });
   runState.emitted = true;
   runState.phase = 'done';
   saveRunState(runState);

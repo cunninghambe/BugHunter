@@ -307,6 +307,7 @@ export type RunState = {
   testResults?: TestResult[];
   clusters?: BugCluster[];
   clusterCount: number;
+  skipReasons?: Array<{ reason: string; count: number }>;
   infraFailureCount: number;
   consecutiveInfraFailures: number;
   emitted: boolean;
@@ -354,4 +355,8 @@ export type RunSummary = {
   byRole: Record<string, number>;
   projectedRuntimeMs?: number;
   actualRuntimeMs: number;
+  testsPlanned: number;
+  testsRan: number;
+  testsSkipped: number;
+  skippedReasons: Array<{ reason: string; count: number }>;
 };
