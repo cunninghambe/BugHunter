@@ -31,7 +31,7 @@ export const CLUSTER_FULL_ARTIFACT_CAP = 50; // clusters larger than this use bo
 export const CLUSTER_FULL_ARTIFACT_HEAD = 3;
 export const CLUSTER_FULL_ARTIFACT_TAIL = 1;
 
-const ConfigSchema = z.object({
+export const ConfigSchema = z.object({
   projectName: z.string().min(1),
   surfaceMcpUrl: z.string().url(),
   browserMcpUrl: z.string().url().optional(),
@@ -55,6 +55,8 @@ const ConfigSchema = z.object({
   forbiddenPaths: z.array(z.string()).optional(),
   extraHeaders: z.record(z.string()).optional(),
   artifactBudgetBytes: z.number().int().positive().optional(),
+  appBaseUrl: z.string().url().optional(),
+  bodyFixtures: z.record(z.record(z.record(z.unknown()))).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

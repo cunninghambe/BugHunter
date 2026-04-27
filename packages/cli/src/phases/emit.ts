@@ -4,26 +4,31 @@ import type { BugCluster, InfrastructureFailure, RunState } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { log } from '../log.js';
 
+export type TestCounters = {
+  testsPlanned: number;
+  testsRan: number;
+  testsSkipped: number;
+  skipReasons: Array<{ reason: string; count: number }>;
+};
+
 export function runEmit(
   clusters: BugCluster[],
   infraFailures: InfrastructureFailure[],
   runState: RunState,
   projectedRuntimeMs: number,
-  actualRuntimeMs: number
+  actualRuntimeMs: number,
+  counters?: TestCounters
 ): void {
   const paths = runPaths(runState.projectDir, runState.runId);
 
-  // Write bugs.jsonl
   for (const cluster of clusters) {
     appendJsonl(paths.bugsFile, cluster);
   }
 
-  // Write infrastructure.jsonl
   for (const failure of infraFailures) {
     appendJsonl(paths.infraFile, failure);
   }
 
-  // Build summary
   const byKind: Record<string, number> = {};
   const byRole: Record<string, number> = {};
 
@@ -33,6 +38,11 @@ export function runEmit(
       byRole[occ.role] = (byRole[occ.role] ?? 0) + 1;
     }
   }
+
+  const testsPlanned = counters?.testsPlanned ?? 0;
+  const testsRan = counters?.testsRan ?? 0;
+  const testsSkipped = counters?.testsSkipped ?? 0;
+  const skipReasons = counters?.skipReasons ?? [];
 
   const summary = {
     runId: runState.runId,
@@ -47,16 +57,23 @@ export function runEmit(
     byRole,
     projectedRuntimeMs,
     actualRuntimeMs,
+    testsPlanned,
+    testsRan,
+    testsSkipped,
+    skippedReasons: skipReasons,
   };
 
   writeJsonFile(paths.summaryFile, summary);
 
-  // Human-readable stdout summary
+  const skipLines = skipReasons.map(r => `Skipped: ${r.reason} (${r.count})`);
+
   const lines = [
     `\n=== BugHunter Run ${runState.runId} ===`,
     `Total clusters: ${clusters.length}`,
     `Infrastructure failures: ${infraFailures.length}`,
     `Actual runtime: ${Math.round(actualRuntimeMs / 1000)}s`,
+    `Tests: ${testsPlanned} planned, ${testsRan} ran, ${testsSkipped} skipped`,
+    ...skipLines,
     '',
     'By kind:',
     ...Object.entries(byKind).map(([k, v]) => `  ${k}: ${v}`),

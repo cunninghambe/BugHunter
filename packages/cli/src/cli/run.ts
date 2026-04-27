@@ -12,6 +12,7 @@ import { runPlan } from '../phases/plan.js';
 import { runExecute } from '../phases/execute.js';
 import { runClassify } from '../phases/classify.js';
 import { runCluster } from '../phases/cluster.js';
+import type { PreState, PostState } from '../types.js';
 import { runEmit } from '../phases/emit.js';
 import { log } from '../log.js';
 
@@ -113,7 +114,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   saveRunState(runState);
 
   // Phase 3: execute
-  const { results, abortReason } = await runExecute({
+  const { results, abortReason, skipReasons } = await runExecute({
     testCases,
     runState,
     browser,
@@ -126,12 +127,14 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     onClusterFound: () => runState.clusterCount,
     extraHeaders: resolved.extraHeaders,
     enableA11y: resolved.enableA11y,
+    appBaseUrl: resolved.appBaseUrl,
   });
 
   if (abortReason) {
     log.warn(`Run stopped: ${abortReason}`);
     runState.partialEmit = true;
   }
+  runState.skipReasons = skipReasons;
 
   runState.testResults = results;
   runState.phase = 'classify';
@@ -144,6 +147,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   // Phase 5: cluster
   const paths = runPaths(opts.projectDir, runId);
+  const stateByTestId = new Map<string, { preState: PreState; postState: PostState }>(
+    results
+      .filter(r => r.postState !== undefined)
+      .map(r => [r.testId, { preState: r.preState!, postState: r.postState! }])
+  );
   const { clusters } = runCluster({
     detections: bugs,
     testCases,
@@ -155,6 +163,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     consoleDir: paths.consoleDir,
     networkDir: paths.networkDir,
     maxClusters: resolved.maxBugs!,
+    stateByTestId,
   });
 
   runState.clusters = clusters;
@@ -164,7 +173,12 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   // Phase 6: emit
   const actualRuntimeMs = Date.now() - startMs;
-  runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs);
+  runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
+    testsPlanned: testCases.length,
+    testsRan: results.length,
+    testsSkipped: testCases.length - results.length,
+    skipReasons,
+  });
   runState.emitted = true;
   runState.phase = 'done';
   saveRunState(runState);

@@ -146,7 +146,10 @@ Per (role, page):
 
 Before generating test cases:
 - For every tool with `inputSchemaConfidence: 'unknown'`: call `surface_probe`. If recovered, the tool is treated as `inferred` for this run. If not, log and downgrade per above.
+- For every tool with `inputSchemaConfidence: 'partial'` (SurfaceMCP detected partial manual validation): skip re-probe — it already ran. Treat like `'unknown'` in test planning: one happy-path call only.
 - For every tool: call `surface_sample_inputs` to seed `happy`-palette values. If the result is empty, generate values from the schema (boundary-aware via `format`, `enum`, `minLength`, etc.).
+
+Where probe recovery is incomplete (e.g. routes using manual, non-Zod validation), users can supplement happy-palette bodies via `BugHunterConfig.bodyFixtures` (keyed by `toolId` then `roleName`). The fixture is shallow-merged over the synthesized happy body before the call. A `"*"` role key acts as a wildcard. Other palette variants (`null`, `edge`, `out_of_bounds`) ignore fixtures by design.
 
 #### 3.4.2 Mutation palette per input type
 
@@ -187,9 +190,11 @@ Set --max-runtime to a higher value or pass --budget <ms> to time-box this run.
 
 The user can abort, refine, or proceed.
 
-### 3.4.5 `surfaceMcpUrl` convention
+### 3.4.5 `surfaceMcpUrl` and `browserMcpUrl` convention
 
 `BugHunterConfig.surfaceMcpUrl` is the **base URL** of the SurfaceMCP HTTP server (e.g. `http://127.0.0.1:3102`), without the `/mcp` path. The adapter appends `/mcp` internally on every call. The `init` wizard's prompt and default both use the base URL form. Configurations that include a trailing `/mcp` are accepted (the adapter strips one trailing `/mcp` if present) for backward compatibility, but the documented form is base-URL-only.
+
+`BugHunterConfig.browserMcpUrl` follows the same convention as `surfaceMcpUrl`: base URL of the camofox MCP HTTP server (e.g. `http://127.0.0.1:3100`), without the `/mcp` path. The adapter appends `/mcp` internally and strips one trailing `/mcp` (with optional trailing slash) for backward compatibility. The `init` wizard's prompt and default both use the base URL form.
 
 ### 3.5 What counts as a bug (classification)
 
@@ -242,6 +247,9 @@ Cluster signature per kind:
 | `network_5xx` / `network_4xx_unexpected` | `endpoint` (method + normalized path) + `status` + `responseBodyShape` |
 | `missing_state_change` / `dom_error_text` | `pageRoute` + `selectorClass` + (for state-change) `triggeringAction.kind` |
 | `404_for_linked_route` | `targetPath` |
+| `surface_call_failed` | `endpoint` (method + normalized path) |
+
+**Cross-kind co-occurrence (additive, not collapse).** After clustering, BugHunter walks the cluster set and links clusters that share a normalized route across pair-eligible kinds: `404_for_linked_route` ↔ `surface_call_failed`. Linked clusters reference each other via `relatedClusterIds`. Canonical signatures and cluster ids are unchanged. Use case: a missing `discoveryFixtures` entry for a dynamic route trips both kinds; the link tells the user "these are the same root cause."
 
 **`errorMessageNormalized`**: first 80 chars of the error message, lowercased, with: numeric ids stripped (`/\b\d{4,}\b/` → `<num>`), quoted string literals stripped (`/"[^"]*"/` → `<str>`, `/'[^']*'/` → `<str>`), `Hex SHA1`/`UUIDs` stripped to `<id>`.
 
@@ -328,11 +336,14 @@ Two occurrences cluster if their signatures are equal. Each cluster keeps every 
     "products.map call at ProductList.tsx — products may be undefined when API errors. Add a guard or default to []",
     "API returned 500; check the underlying handler"
   ],
-  "thirdPartyOrGenerated": false
+  "thirdPartyOrGenerated": false,
+  "relatedClusterIds": ["other-cluster-cuid"]
 }
 ```
 
 `thirdPartyOrGenerated: true` if any `suspectedFiles` are in `node_modules/**`, `.next/**`, `dist/**`, or `<root>/build/**`. These clusters are flagged `bugs_skipped: { reason: "third_party_or_generated" }` in auto-fix.
+
+`relatedClusterIds` (optional): cluster ids that share a normalized route via a different bug kind. Currently only `404_for_linked_route` ↔ `surface_call_failed` pairs are linked. Omitted when empty.
 
 In-flight tests after the 200-cluster cap: occurrences append to existing clusters; never create a 201st cluster.
 
@@ -559,11 +570,14 @@ Default: `per-page`. User can set in `.bughunter/config.json`.
 ### 4.1 CLI
 
 ```
-bughunter init
-  Walks project; writes .bughunter/config.json template. Prompts for:
+bughunter init [--no-interactive] [--project-name <name>] [--surface-mcp-url <url>]
+               [--browser-mcp-url <url>] [--reset-command <cmd>] [--reset-policy <policy>]
+  Walks project; writes .bughunter/config.json template. Without --no-interactive, prompts for:
     SurfaceMCP URL (base form, e.g. http://127.0.0.1:3102), browser MCP URL,
     discoveryFixtures for known dynamic routes,
     resetPolicy + resetCommand, forbiddenPaths additions.
+  With --no-interactive: skips readline entirely; resolves each field by precedence:
+    flag > BUGHUNTER_<FIELD> env var > default. Fails loudly via Zod on invalid input.
 
 bughunter run [options]
   --route <pattern>       Limit to routes matching a glob
@@ -807,8 +821,8 @@ BugHunter/
 ```ts
 type BugHunterConfig = {
   projectName: string;
-  surfaceMcpUrl: string;                // http://127.0.0.1:3102/mcp
-  browserMcpUrl?: string;
+  surfaceMcpUrl: string;                // http://127.0.0.1:3102  (base form, /mcp appended internally)
+  browserMcpUrl?: string;               // http://127.0.0.1:3100  (base form, /mcp appended internally)
   // claudeMcpUrl removed in v0.1: auto-fix is now skill-driven via Claude
   // Code's Agent tool, not ClaudeMCP. May return as v0.2 option.
   roles?: string[];                     // default: all roles from SurfaceMCP
@@ -832,6 +846,9 @@ type BugHunterConfig = {
   forbiddenPaths?: string[];            // user-extensible; defaults baked in
   extraHeaders?: Record<string, string>;  // e.g. { "X-Test-Mode": "true" } added to UI calls
   artifactBudgetBytes?: number;         // default 4 GB; oldest full artifacts degrade to summaries
+  bodyFixtures?: Record<string, Record<string, Record<string, unknown>>>;
+  // toolId → roleName ("*" wildcard supported) → partial body merged onto happy
+  // palette synthesized input. Other palettes (null/edge/out_of_bounds) are unaffected.
 };
 ```
 

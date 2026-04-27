@@ -34,6 +34,10 @@ export function inspectCommand(projectDir: string, id: string): void {
 }
 
 function printCluster(cluster: BugCluster, focusOcc: Occurrence | null): void {
+  const relatedLine = cluster.relatedClusterIds?.length
+    ? [`Related clusters: ${cluster.relatedClusterIds.join(', ')}`]
+    : [];
+
   const lines = [
     `\n=== Bug Cluster ${cluster.id} ===`,
     `Kind: ${cluster.kind}`,
@@ -43,6 +47,7 @@ function printCluster(cluster: BugCluster, focusOcc: Occurrence | null): void {
     `Last Seen: ${cluster.lastSeenAt}`,
     `Suspected Files: ${cluster.suspectedFiles.join(', ') || '(none)'}`,
     `Third Party: ${cluster.thirdPartyOrGenerated}`,
+    ...relatedLine,
     '',
     'Fix Hints:',
     ...cluster.fixHints.map(h => `  - ${h}`),

@@ -11,6 +11,7 @@
     "typecheck": "../../node_modules/.bin/tsc -p tsconfig.json --noEmit",
     "test": "../../node_modules/.bin/vitest run",
     "test:watch": "../../node_modules/.bin/vitest",
+    "test:e2e": "../../node_modules/.bin/vitest run --config vitest.e2e.config.ts",
     "dev": "../../node_modules/.bin/tsx watch src/cli/main.ts"
   },
   "dependencies": {

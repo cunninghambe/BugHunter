@@ -33,7 +33,7 @@ export type BugKind =
   | 'surface_call_failed';
 
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
-export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown';
+export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
 export type ResetPolicy = 'transactional' | 'per-test' | 'per-page' | 'per-run';
 
 export type ExpectedOutcome = 'success' | 'expected_failure' | 'unknown';
@@ -82,6 +82,8 @@ export type PostState = {
 
 export type OccurrenceSummary = {
   occurrenceId: string;
+  /** testId of the TestResult that produced this occurrence. Optional for backward-compat with old JSONL artifacts. */
+  testId?: string;
   role: string;
   page: string;
   action: Action;
@@ -97,6 +99,8 @@ export type SecondaryObservation = {
 
 export type OccurrenceFull = {
   occurrenceId: string;
+  /** testId of the TestResult that produced this occurrence. Optional for backward-compat with old JSONL artifacts. */
+  testId?: string;
   role: string;
   page: string;
   action: Action;
@@ -130,6 +134,8 @@ export type BugCluster = {
   fixHints: string[];
   thirdPartyOrGenerated: boolean;
   verdict?: ClusterVerdict;
+  /** Cluster ids that share a normalized route via a different kind (e.g. 404 ↔ surface_call_failed). */
+  relatedClusterIds?: string[];
 };
 
 export type ClusterVerdict =
@@ -155,7 +161,7 @@ export type InfrastructureFailure = {
   id: string;
   runId: string;
   timestamp: string;
-  kind: 'timeout' | 'browser_crash' | 'surface_unreachable' | 'revision_changed' | 'generic';
+  kind: 'timeout' | 'browser_crash' | 'surface_unreachable' | 'revision_changed' | 'browser_element_not_found' | 'generic';
   detail: string;
   role?: string;
   page?: string;
@@ -265,6 +271,10 @@ export type TestResult = {
   bugs: BugDetection[];
   infrastructureFailure?: InfrastructureFailure;
   durationMs: number;
+  /** Captured by executeUiTest; undefined for API tests. */
+  preState?: PreState;
+  /** Captured by executeUiTest; undefined for API tests. */
+  postState?: PostState;
 };
 
 export type BugDetection = {
@@ -307,6 +317,7 @@ export type RunState = {
   testResults?: TestResult[];
   clusters?: BugCluster[];
   clusterCount: number;
+  skipReasons?: Array<{ reason: string; count: number }>;
   infraFailureCount: number;
   consecutiveInfraFailures: number;
   emitted: boolean;
@@ -337,6 +348,21 @@ export type BugHunterConfig = {
   forbiddenPaths?: string[];
   extraHeaders?: Record<string, string>;
   artifactBudgetBytes?: number;
+  /**
+   * Base URL of the application under test (e.g. "http://localhost:3002").
+   * Used by the browser path to construct absolute URLs from relative page routes
+   * ("/products" → "http://localhost:3002/products"). When unset, falls back to
+   * the origin of surfaceMcpUrl (legacy behaviour, only correct when the app and
+   * SurfaceMCP share the same origin, which is unusual).
+   */
+  appBaseUrl?: string;
+  /**
+   * Per-tool body fixtures for the happy palette.
+   * Outer key: toolId. Middle key: roleName or "*" wildcard. Inner: partial body
+   * shallow-merged onto the synthesized happy-palette body.
+   * Applies only to API direct-call tests on the 'happy' palette.
+   */
+  bodyFixtures?: Record<string, Record<string, Record<string, unknown>>>;
 };
 
 export type RunSummary = {
@@ -354,4 +380,8 @@ export type RunSummary = {
   byRole: Record<string, number>;
   projectedRuntimeMs?: number;
   actualRuntimeMs: number;
+  testsPlanned: number;
+  testsRan: number;
+  testsSkipped: number;
+  skippedReasons: Array<{ reason: string; count: number }>;
 };

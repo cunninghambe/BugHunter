@@ -107,21 +107,22 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
     }
     const contentType = res.headers.get('content-type') ?? '';
     if (contentType.includes('text/event-stream')) {
-      // Parse SSE stream — collect all data lines, last result wins
       const text = await res.text();
       const dataLines = text.split('\n').filter(l => l.startsWith('data: '));
       if (dataLines.length === 0) throw new Error('Empty SSE stream from SurfaceMCP');
       const last = dataLines[dataLines.length - 1].slice(6);
-      const parsed = JSON.parse(last) as { result?: { content?: Array<{ text?: string }> }; error?: unknown };
+      const parsed = JSON.parse(last) as { result?: { content?: Array<{ text?: string }>; isError?: boolean }; error?: unknown };
       if (parsed.error) throw new Error(`SurfaceMCP error: ${JSON.stringify(parsed.error)}`);
       const content = parsed.result?.content?.[0]?.text;
       if (!content) throw new Error('No content in SurfaceMCP response');
+      if (parsed.result?.isError) throw new Error(`SurfaceMCP tool error (${tool}): ${content}`);
       return JSON.parse(content) as T;
     }
-    const json = await res.json() as { result?: { content?: Array<{ text?: string }> }; error?: unknown };
+    const json = await res.json() as { result?: { content?: Array<{ text?: string }>; isError?: boolean }; error?: unknown };
     if (json.error) throw new Error(`SurfaceMCP error: ${JSON.stringify(json.error)}`);
     const content = json.result?.content?.[0]?.text;
     if (!content) throw new Error('No content in SurfaceMCP response');
+    if (json.result?.isError) throw new Error(`SurfaceMCP tool error (${tool}): ${content}`);
     return JSON.parse(content) as T;
   }
 

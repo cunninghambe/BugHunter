@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { clusterSignature } from '../src/cluster/signature.js';
 import { normalizeErrorMessage, fingerprintStackTrace } from '../src/cluster/normalize.js';
-import type { BugDetection } from '../src/types.js';
+import { runCluster } from '../src/phases/cluster.js';
+import type { BugDetection, TestCase, PreState, PostState } from '../src/types.js';
 import stackFixture from '../../../fixtures/stack-trace-clustering/stacks.json' with { type: 'json' };
+import { createId } from '@paralleldrive/cuid2';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 describe('normalizeErrorMessage', () => {
   it('lowercases and strips numeric ids (4+ digits)', () => {
@@ -114,6 +118,108 @@ describe('cluster signature — 10 known stacks → 3 clusters', () => {
 
     // Should produce exactly 3 distinct signatures
     expect(groups.size).toBe(stackFixture.expectedClusterCount);
+  });
+});
+
+describe('postState plumbing — mutationObserverWindowMs flows into OccurrenceFull', () => {
+  it('uses stateByTestId to populate postState on upgraded occurrences', () => {
+    const tmpDir = os.tmpdir();
+    const runId = 'test-run';
+    const testId = createId();
+
+    const tc: TestCase = {
+      id: testId,
+      runId,
+      role: 'owner',
+      page: '/dom-test',
+      action: { kind: 'click', via: 'ui', expectedOutcome: 'success', palette: 'happy', selector: '[data-testid="toggle"]' },
+      expectedOutcome: 'success',
+      palette: 'happy',
+    };
+
+    const detection: BugDetection = {
+      kind: 'missing_state_change',
+      rootCause: "Action 'click' on '[data-testid=\"toggle\"]' produced no observable state change",
+      pageRoute: '/dom-test',
+    };
+
+    const preState: PreState = { url: '/dom-test', title: 'DOM Test', consoleErrorCount: 0 };
+    const postState: PostState = {
+      url: '/dom-test',
+      title: 'DOM Test',
+      consoleErrors: [],
+      networkRequests: [],
+      domErrorTextDetected: false,
+      mutationObserverWindowMs: 1234,
+    };
+
+    const stateByTestId = new Map([[testId, { preState, postState }]]);
+
+    const { clusters } = runCluster({
+      detections: [{ testId, detection }],
+      testCases: [tc],
+      runId,
+      projectDir: tmpDir,
+      actionLogsDir: path.join(tmpDir, 'action-logs'),
+      screenshotsDir: path.join(tmpDir, 'screenshots'),
+      domDir: path.join(tmpDir, 'dom'),
+      consoleDir: path.join(tmpDir, 'console'),
+      networkDir: path.join(tmpDir, 'network'),
+      maxClusters: 200,
+      stateByTestId,
+    });
+
+    expect(clusters.length).toBe(1);
+    const occ = clusters[0]!.occurrences[0]!;
+    // First occurrence always gets full artifacts
+    expect(occ.fullArtifacts).toBe(true);
+    if (occ.fullArtifacts) {
+      expect(occ.postState.mutationObserverWindowMs).toBe(1234);
+      expect(occ.testId).toBe(testId);
+    }
+  });
+
+  it('falls back to empty PostState when stateByTestId is absent (backward-compat)', () => {
+    const tmpDir = os.tmpdir();
+    const runId = 'test-run';
+    const testId = createId();
+
+    const tc: TestCase = {
+      id: testId,
+      runId,
+      role: 'owner',
+      page: '/page',
+      action: { kind: 'click', via: 'ui', expectedOutcome: 'success', palette: 'happy' },
+      expectedOutcome: 'success',
+      palette: 'happy',
+    };
+
+    const detection: BugDetection = {
+      kind: 'console_error',
+      rootCause: 'Something broke',
+      pageRoute: '/page',
+    };
+
+    const { clusters } = runCluster({
+      detections: [{ testId, detection }],
+      testCases: [tc],
+      runId,
+      projectDir: tmpDir,
+      actionLogsDir: path.join(tmpDir, 'action-logs'),
+      screenshotsDir: path.join(tmpDir, 'screenshots'),
+      domDir: path.join(tmpDir, 'dom'),
+      consoleDir: path.join(tmpDir, 'console'),
+      networkDir: path.join(tmpDir, 'network'),
+      maxClusters: 200,
+      // stateByTestId intentionally omitted
+    });
+
+    expect(clusters.length).toBe(1);
+    const occ = clusters[0]!.occurrences[0]!;
+    expect(occ.fullArtifacts).toBe(true);
+    if (occ.fullArtifacts) {
+      expect(occ.postState.mutationObserverWindowMs).toBe(0);
+    }
   });
 });
 

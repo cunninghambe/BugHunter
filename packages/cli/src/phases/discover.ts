@@ -9,6 +9,7 @@ import { crossRefForms } from '../discovery/form-cross-ref.js';
 import { collapseElements } from '../discovery/element-collapse.js';
 import { log } from '../log.js';
 import micromatch from 'micromatch';
+import path from 'node:path';
 
 export async function runDiscover(
   projectDir: string,
@@ -68,7 +69,9 @@ export async function runDiscover(
 
   // Source 3: DOM walk per role per page
   const pages: DiscoveredPage[] = [];
-  const baseUrl = new URL(config.surfaceMcpUrl).origin;
+  // appBaseUrl is the base URL of the app under test (e.g. "http://localhost:3002").
+  // Falls back to surfaceMcpUrl origin only when appBaseUrl is not configured.
+  const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
 
   for (const { route, sourceFile } of filteredRoutes) {
     const pageElements: DiscoveredPage = {
@@ -85,7 +88,10 @@ export async function runDiscover(
       try {
         const domResult = await walkDom(browser, baseUrl + route, runId, config.extraHeaders);
         const collapsed = collapseElements(domResult.elements.filter(e => !e.disabled));
-        const crossRefed = await crossRefForms(domResult.forms, route, surface);
+        const pagePathForSurface = sourceFile
+          ? path.relative(projectDir, sourceFile)
+          : route;
+        const crossRefed = await crossRefForms(domResult.forms, pagePathForSurface, surface);
         // Filter external-side-effect forms/buttons
         const safeApiToolIds = new Set(
           apiTools
