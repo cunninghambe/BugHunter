@@ -8,7 +8,7 @@ import type {
   ConsoleError, NetworkRequest, RunState, ToolMeta
 } from '../types.js';
 import { classifyConsoleErrors } from '../classify/console.js';
-import { classifyNetworkRequests } from '../classify/network.js';
+import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
 import { classifyDomErrorText } from '../classify/dom-error-text.js';
 import { writeActionLog } from '../repro/action-log.js';
@@ -337,10 +337,17 @@ async function executeApiTest(
   if (!result.ok && tc.action.palette === 'happy') {
     const status = result.status ?? 0;
     if (status >= 400 && status < 500) {
+      const meta = toolMap?.get(tc.action.toolId);
+      const endpoint = meta
+        ? `${meta.method} ${normalizePath(meta.path)}`
+        : tc.action.toolId;
+      if (!meta) {
+        log.debug(`toolMap miss for toolId ${tc.action.toolId}; using bare id as endpoint`);
+      }
       bugs.push({
         kind: 'surface_call_failed',
         rootCause: `surface_call failed with status ${status} for tool ${tc.action.toolId}`,
-        endpoint: tc.action.toolId,
+        endpoint,
         status,
         responseBodyShape: result.error?.message,
       });

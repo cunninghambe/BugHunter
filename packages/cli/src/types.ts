@@ -130,6 +130,8 @@ export type BugCluster = {
   fixHints: string[];
   thirdPartyOrGenerated: boolean;
   verdict?: ClusterVerdict;
+  /** Cluster ids that share a normalized route via a different kind (e.g. 404 ↔ surface_call_failed). */
+  relatedClusterIds?: string[];
 };
 
 export type ClusterVerdict =

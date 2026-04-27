@@ -49,8 +49,8 @@ export function classifyNetworkRequests(
   return bugs;
 }
 
-// Normalize dynamic path segments: /api/products/123 -> /api/products/:id
-function normalizePath(p: string): string {
+/** Normalize dynamic path segments: /api/products/123 -> /api/products/:id */
+export function normalizePath(p: string): string {
   return p.replace(/\/[0-9a-f]{8,}(?=\/|$)/gi, '/:id')
     .replace(/\/\d+(?=\/|$)/g, '/:id');
 }

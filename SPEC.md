@@ -247,6 +247,9 @@ Cluster signature per kind:
 | `network_5xx` / `network_4xx_unexpected` | `endpoint` (method + normalized path) + `status` + `responseBodyShape` |
 | `missing_state_change` / `dom_error_text` | `pageRoute` + `selectorClass` + (for state-change) `triggeringAction.kind` |
 | `404_for_linked_route` | `targetPath` |
+| `surface_call_failed` | `endpoint` (method + normalized path) |
+
+**Cross-kind co-occurrence (additive, not collapse).** After clustering, BugHunter walks the cluster set and links clusters that share a normalized route across pair-eligible kinds: `404_for_linked_route` ↔ `surface_call_failed`. Linked clusters reference each other via `relatedClusterIds`. Canonical signatures and cluster ids are unchanged. Use case: a missing `discoveryFixtures` entry for a dynamic route trips both kinds; the link tells the user "these are the same root cause."
 
 **`errorMessageNormalized`**: first 80 chars of the error message, lowercased, with: numeric ids stripped (`/\b\d{4,}\b/` → `<num>`), quoted string literals stripped (`/"[^"]*"/` → `<str>`, `/'[^']*'/` → `<str>`), `Hex SHA1`/`UUIDs` stripped to `<id>`.
 
@@ -333,11 +336,14 @@ Two occurrences cluster if their signatures are equal. Each cluster keeps every 
     "products.map call at ProductList.tsx — products may be undefined when API errors. Add a guard or default to []",
     "API returned 500; check the underlying handler"
   ],
-  "thirdPartyOrGenerated": false
+  "thirdPartyOrGenerated": false,
+  "relatedClusterIds": ["other-cluster-cuid"]
 }
 ```
 
 `thirdPartyOrGenerated: true` if any `suspectedFiles` are in `node_modules/**`, `.next/**`, `dist/**`, or `<root>/build/**`. These clusters are flagged `bugs_skipped: { reason: "third_party_or_generated" }` in auto-fix.
+
+`relatedClusterIds` (optional): cluster ids that share a normalized route via a different bug kind. Currently only `404_for_linked_route` ↔ `surface_call_failed` pairs are linked. Omitted when empty.
 
 In-flight tests after the 200-cluster cap: occurrences append to existing clusters; never create a 201st cluster.
 

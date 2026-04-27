@@ -3,6 +3,7 @@
 import type { BugDetection, BugCluster, Occurrence, OccurrenceFull, OccurrenceSummary, TestCase } from '../types.js';
 import { clusterSignature, extractNormalizedFields } from '../cluster/signature.js';
 import { computeFullArtifactSet } from '../store/artifact-budget.js';
+import { normalizePath } from '../classify/network.js';
 import { createId } from '@paralleldrive/cuid2';
 
 export type ClusterOptions = {
@@ -91,10 +92,10 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
     );
   }
 
-  return {
-    clusters: Array.from(clusterMap.values()),
-    capped,
-  };
+  const clusters = Array.from(clusterMap.values());
+  annotateRelatedClusters(clusters);
+
+  return { clusters, capped };
 }
 
 function upgradeToFull(occ: Occurrence, opts: ClusterOptions): OccurrenceFull {
@@ -126,6 +127,76 @@ function upgradeToFull(occ: Occurrence, opts: ClusterOptions): OccurrenceFull {
     ],
     replayCommand: `bughunter replay ${occ.occurrenceId}`,
   };
+}
+
+/**
+ * Post-cluster annotation pass: link 404_for_linked_route ↔ surface_call_failed clusters
+ * that share a normalized route. Mutual link via relatedClusterIds. In-place.
+ */
+function annotateRelatedClusters(clusters: BugCluster[]): void {
+  const linked = new Set<string>(); // cluster pair keys already linked
+
+  for (let i = 0; i < clusters.length; i++) {
+    for (let j = i + 1; j < clusters.length; j++) {
+      const a = clusters[i]!;
+      const b = clusters[j]!;
+
+      const eligible =
+        (a.kind === '404_for_linked_route' && b.kind === 'surface_call_failed') ||
+        (a.kind === 'surface_call_failed' && b.kind === '404_for_linked_route');
+
+      if (!eligible) continue;
+
+      const keyA = routeKeyOf(a);
+      const keyB = routeKeyOf(b);
+      if (!keyA || !keyB || keyA !== keyB) continue;
+
+      const pairKey = [a.id, b.id].sort().join(':');
+      if (linked.has(pairKey)) continue;
+      linked.add(pairKey);
+
+      a.relatedClusterIds = dedupe([...(a.relatedClusterIds ?? []), b.id]);
+      b.relatedClusterIds = dedupe([...(b.relatedClusterIds ?? []), a.id]);
+    }
+  }
+}
+
+function routeKeyOf(cluster: BugCluster): string | null {
+  if (cluster.kind === '404_for_linked_route') {
+    // targetPath from first occurrence's detection — stored in rootCause
+    // We reconstruct from the rootCause heuristic or use the detection's targetPath.
+    // The cluster doesn't store targetPath directly; extract from the first occ's action
+    // or from the rootCause string "Page links to <path> which returned 404".
+    const match = /links to (\S+) which returned/.exec(cluster.rootCause);
+    if (match?.[1]) return normalizePath(match[1]);
+    return null;
+  }
+  if (cluster.kind === 'surface_call_failed') {
+    // endpoint is "METHOD /normalized/path" or bare toolId (no slash)
+    const parts = cluster.occurrences[0]
+      ? extractEndpointFromFixHints(cluster)
+      : null;
+    return parts;
+  }
+  return null;
+}
+
+function extractEndpointFromFixHints(cluster: BugCluster): string | null {
+  // Fix hint format: "surface_call failed for tool METHOD /path. Check..."
+  // or "surface_call failed for tool <toolId>. Check..." (bare toolId, no path)
+  for (const hint of cluster.fixHints) {
+    // Match "METHOD /path" pattern in the hint
+    const methodPathMatch = /\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[^\s.]+)/.exec(hint);
+    if (methodPathMatch?.[2]) return normalizePath(methodPathMatch[2]);
+    // Match bare /path pattern
+    const pathMatch = /\s(\/[^\s.]+)/.exec(hint);
+    if (pathMatch?.[1]) return normalizePath(pathMatch[1]);
+  }
+  return null;
+}
+
+function dedupe(arr: string[]): string[] {
+  return [...new Set(arr)];
 }
 
 function generateFixHints(detection: BugDetection): string[] {
