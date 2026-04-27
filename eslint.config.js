@@ -34,6 +34,7 @@ export default [
         clearTimeout: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+        setImmediate: 'readonly',
         URL: 'readonly',
         URLSearchParams: 'readonly',
         AbortController: 'readonly',
@@ -50,26 +51,51 @@ export default [
       '@typescript-eslint': tsPlugin,
     },
     rules: {
-      // Disable JS rules that TS already handles or that conflict with TS syntax
+      // Disable JS rules superseded by TS or that conflict with TS syntax
       'no-unused-vars': 'off',
       'no-undef': 'off',
       'no-redeclare': 'off',
       'no-dupe-class-members': 'off',
 
-      // TypeScript-aware
+      // ── Existing baseline ───────────────────────────────────────
       '@typescript-eslint/no-unused-vars': ['error', {
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',
         caughtErrorsIgnorePattern: '^_',
       }],
       '@typescript-eslint/no-explicit-any': 'warn',
-
-      // General code quality (matches the project's CLAUDE.md discipline)
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       'no-debugger': 'error',
       'eqeqeq': ['error', 'always', { null: 'ignore' }],
       'prefer-const': 'error',
       'no-var': 'error',
+
+      // ── Async / promise correctness (syntax-only) ───────────────
+      'no-throw-literal': 'error',
+      'no-return-await': 'error',
+      'no-promise-executor-return': 'error',
+      'no-async-promise-executor': 'error',
+
+      // ── Code correctness ────────────────────────────────────────
+      'no-self-compare': 'error',
+      'no-unmodified-loop-condition': 'error',
+      // require-atomic-updates intentionally omitted: too many sequential-orchestration false positives
+      '@typescript-eslint/no-non-null-assertion': 'warn', // see Option A/B in spec
+      '@typescript-eslint/consistent-type-imports': ['warn', {
+        prefer: 'type-imports',
+        fixStyle: 'separate-type-imports',
+      }],
+
+      // ── Security ────────────────────────────────────────────────
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-new-func': 'error',
+      'no-script-url': 'error',
+
+      // ── Style / clarity ─────────────────────────────────────────
+      'prefer-template': 'warn',
+      'object-shorthand': 'warn',
+      'no-useless-catch': 'error',
     },
   },
 ];

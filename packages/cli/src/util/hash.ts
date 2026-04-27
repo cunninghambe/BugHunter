@@ -19,11 +19,11 @@ function canonicalJson(value: unknown): string {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
-    return '[' + value.map(canonicalJson).join(',') + ']';
+    return `[${  value.map(canonicalJson).join(',')  }]`;
   }
   const sorted = Object.keys(value as Record<string, unknown>)
     .sort()
-    .map(k => JSON.stringify(k) + ':' + canonicalJson((value as Record<string, unknown>)[k]))
+    .map(k => `${JSON.stringify(k)  }:${  canonicalJson((value as Record<string, unknown>)[k])}`)
     .join(',');
-  return '{' + sorted + '}';
+  return `{${  sorted  }}`;
 }

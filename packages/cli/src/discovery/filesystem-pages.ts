@@ -56,7 +56,7 @@ function appFileToRoute(file: string): string {
   route = route.replace(/\([^)]+\)\//g, '');
   if (!route) return '/';
   // Normalize dynamic segments: [id] stays as [id]
-  return '/' + route;
+  return `/${  route}`;
 }
 
 // pages/admin/products/index.tsx -> /admin/products
@@ -65,7 +65,7 @@ function pagesFileToRoute(file: string): string {
   let route = file.replace(/^pages\//, '').replace(/\.[jt]sx?$/, '');
   if (route === 'index') return '/';
   route = route.replace(/\/index$/, '');
-  return '/' + route;
+  return `/${  route}`;
 }
 
 export function isDynamicRoute(route: string): boolean {

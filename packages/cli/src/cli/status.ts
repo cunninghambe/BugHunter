@@ -12,5 +12,5 @@ export function statusCommand(projectDir: string, runId: string): void {
   }
 
   const state = readJsonFile<RunState>(paths.stateFile);
-  process.stdout.write(JSON.stringify(state, null, 2) + '\n');
+  process.stdout.write(`${JSON.stringify(state, null, 2)  }\n`);
 }

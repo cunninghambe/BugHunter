@@ -1,6 +1,6 @@
 // Applies mutations to form data / API inputs.
 
-import type { FormField, TestCase, DiscoveredForm, ToolMeta, PaletteVariant } from '../types.js';
+import type { FormField, TestCase, DiscoveredForm, ToolMeta, PaletteVariant, InputType } from '../types.js';
 import { generatePaletteCases } from './palette.js';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -133,7 +133,7 @@ export function buildApiInput(
   return result;
 }
 
-function schemaToInputType(schema: { type?: string; format?: string }): import('../types.js').InputType {
+function schemaToInputType(schema: { type?: string; format?: string }): InputType {
   if (schema.format === 'email') return 'email';
   if (schema.format === 'uri' || schema.format === 'url') return 'url';
   if (schema.format === 'date' || schema.format === 'date-time') return 'date';

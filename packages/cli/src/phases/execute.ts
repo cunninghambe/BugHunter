@@ -94,6 +94,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     const syntheticOccurrenceId = createId();
     try {
       const result = tc.action.via === 'ui'
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
         ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget)
         : await executeApiTest(tc, surface, runState.runId, paths, toolMap);
       return result;
@@ -182,7 +183,7 @@ async function persistUiArtifacts(
   }
 
   const consoleContent = postConsoleErrors.length > 0
-    ? postConsoleErrors.map(e => JSON.stringify({ level: e.level, text: e.text, stack: e.stack })).join('\n') + '\n'
+    ? `${postConsoleErrors.map(e => JSON.stringify({ level: e.level, text: e.text, stack: e.stack })).join('\n')  }\n`
     : '';
   fs.writeFileSync(path.join(consoleDir, `${occurrenceId}.log`), consoleContent);
 
@@ -431,6 +432,7 @@ async function executeUiTest(
       log.warn('writeActionLog failed', { occurrenceId, err: String(writeErr) });
     }
   }
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- try+catch above always assigns result before finally
   return result!;
 }
 
@@ -544,5 +546,6 @@ async function executeApiTest(
       log.warn('writeActionLog failed', { occurrenceId, err: String(writeErr) });
     }
   }
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- try+catch above always assigns result before finally
   return result!;
 }

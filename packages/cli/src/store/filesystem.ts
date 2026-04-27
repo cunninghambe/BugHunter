@@ -49,11 +49,11 @@ export function ensureRunDirs(paths: RunPaths): void {
 }
 
 export function appendJsonl(filePath: string, record: unknown): void {
-  fs.appendFileSync(filePath, JSON.stringify(record) + '\n');
+  fs.appendFileSync(filePath, `${JSON.stringify(record)  }\n`);
 }
 
 export function writeJsonFile(filePath: string, data: unknown): void {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n');
+  fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)  }\n`);
 }
 
 export function readJsonFile<T>(filePath: string): T {

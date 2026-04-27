@@ -27,7 +27,7 @@ import {
   resolveByHtml,
   toCamofoxScrollDirection,
 } from './browser-mcp-snapshot.js';
-import type { StructuredSelector } from './browser-mcp-snapshot.js';
+import type { StructuredSelector, SnapshotNode } from './browser-mcp-snapshot.js';
 
 export type NavigateResult = { url: string; title?: string };
 export type ClickResult = { clicked: boolean };
@@ -187,7 +187,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     return this.resolveViaEvaluate(tabId, selector, nodes);
   }
 
-  private async resolveViaEvaluate(tabId: string, selector: string, _nodes: import('./browser-mcp-snapshot.js').SnapshotNode[]): Promise<string> {
+  private async resolveViaEvaluate(tabId: string, selector: string, _nodes: SnapshotNode[]): Promise<string> {
     const safeSelector = selector.replace(/'/g, "\\'");
     const expr = `document.querySelector('${safeSelector}')?.outerHTML?.slice(0, 200) ?? null`;
     let evalResult: CamofoxEvaluateResult;

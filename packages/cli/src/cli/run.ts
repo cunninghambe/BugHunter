@@ -7,6 +7,7 @@ import { runPaths } from '../store/filesystem.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import { AnthropicVisionClient } from '../adapters/vision-client.js';
+import type { VisionAuth } from '../adapters/vision-client.js';
 import { runValidate } from '../phases/validate.js';
 import { runDiscover } from '../phases/discover.js';
 import { runPlan } from '../phases/plan.js';
@@ -63,7 +64,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   // Resolve vision auth — Anthropic Messages API requires an API key.
   // CLAUDE_CODE_OAUTH_TOKEN is NOT usable here (Messages API explicitly rejects OAuth tokens).
   const visionEnabled = resolved.vision?.enabled ?? false;
-  let visionAuth: import('../adapters/vision-client.js').VisionAuth | undefined;
+  let visionAuth: VisionAuth | undefined;
   if (visionEnabled) {
     const apiKey =
       resolved.vision?.apiKey ??
@@ -163,11 +164,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     runState,
     browser,
     surface,
-    maxBugs: resolved.maxBugs!,
-    maxRuntimeMs: resolved.maxRuntimeMs!,
+    maxBugs: resolved.maxBugs,
+    maxRuntimeMs: resolved.maxRuntimeMs,
     budgetMs: resolved.budgetMs,
-    concurrency: resolved.concurrency!,
-    apiConcurrency: resolved.apiConcurrency!,
+    concurrency: resolved.concurrency,
+    apiConcurrency: resolved.apiConcurrency,
     onClusterFound: () => runState.clusterCount,
     extraHeaders: resolved.extraHeaders,
     enableA11y: resolved.enableA11y,
@@ -206,6 +207,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const stateByTestId = new Map<string, { preState: PreState; postState: PostState }>(
     results
       .filter(r => r.postState !== undefined)
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- filter above ensures postState is set; preState is always present when postState is
       .map(r => [r.testId, { preState: r.preState!, postState: r.postState! }])
   );
   const occurrenceIdByTestId = new Map<string, string>(
@@ -221,7 +223,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     domDir: paths.domDir,
     consoleDir: paths.consoleDir,
     networkDir: paths.networkDir,
-    maxClusters: resolved.maxBugs!,
+    maxClusters: resolved.maxBugs,
     occurrenceIdByTestId,
     stateByTestId,
   });

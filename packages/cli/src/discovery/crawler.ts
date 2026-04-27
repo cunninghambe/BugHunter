@@ -31,6 +31,7 @@ export function normalizeLink(href: string, currentUrl: string, opts: Pick<Crawl
   if (!href || href.startsWith('#')) return null;
   const lowered = href.toLowerCase();
   if (
+    // eslint-disable-next-line no-script-url -- defensive URL scheme filter, not a script URL value
     lowered.startsWith('javascript:') ||
     lowered.startsWith('mailto:') ||
     lowered.startsWith('tel:') ||
@@ -66,7 +67,7 @@ export function routeKey(u: URL, followQueryParams: boolean): string {
   if (key !== '/' && key.endsWith('/')) key = key.slice(0, -1);
   if (followQueryParams && u.search) {
     const params = [...u.searchParams.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    key += '?' + params.map(([k, v]) => `${k}=${v}`).join('&');
+    key += `?${  params.map(([k, v]) => `${k}=${v}`).join('&')}`;
   }
   return key;
 }
@@ -82,9 +83,9 @@ function buildPage(walk: DomWalkResult, u: URL, followQueryParams: boolean): Dis
 }
 
 function timeoutAfter(ms: number, label: string): Promise<never> {
-  return new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`${label} after ${ms}ms`)), ms)
-  );
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(`${label} after ${ms}ms`)), ms);
+  });
 }
 
 export async function crawlFromSeeds(
@@ -105,7 +106,9 @@ export async function crawlFromSeeds(
 
   while (queue.length > 0) {
     if (visited.size >= opts.maxPages) { hitMaxPages = true; break; }
-    const { url, depth } = queue.shift()!;
+    const item = queue.shift();
+    if (!item) break;
+    const { url, depth } = item;
     const parsed = new URL(url);
     const key = routeKey(parsed, opts.followQueryParams);
     if (visited.has(key)) continue;

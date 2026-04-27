@@ -45,7 +45,7 @@ export async function replayCommand(projectDir: string, occurrenceId: string): P
   );
 
   process.stdout.write('\n=== Replay Result ===\n');
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  process.stdout.write(`${JSON.stringify(result, null, 2)  }\n`);
 
   if (!result.ok) {
     process.exitCode = 1;
