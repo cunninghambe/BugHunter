@@ -40,6 +40,18 @@ export type ListTabsResult = { tabs: Array<{ id: string; url: string; title: str
 export type CloseTabResult = { closed: boolean };
 export type ExtraHeaders = Record<string, string>;
 
+export type CookieEntry = {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires: number;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: 'Strict' | 'Lax' | 'None';
+};
+export type CookiesResult = { tabId: string; cookies: CookieEntry[] };
+
 /** Per-test tab scope — all methods carry the bound tabId; safe to use concurrently. */
 export type TabScope = {
   tabId: string;
@@ -72,6 +84,9 @@ export interface BrowserMcpAdapter {
    * Closing happens even if fn throws (scope is always released).
    */
   withTab<T>(url: string, extraHeaders: ExtraHeaders | undefined, fn: (scope: TabScope) => Promise<T>): Promise<T>;
+
+  /** Read the full cookie jar for the current tab's browser context, including HttpOnly cookies. */
+  cookies(urls?: string[]): Promise<CookiesResult>;
 }
 
 // Raw camofox result shapes.
@@ -336,6 +351,13 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
   /** Close a specific tab by id. Does NOT mutate currentTabId. */
   async closeTabExplicit(tabId: string): Promise<void> {
     await this.mcpCall<{ ok: boolean }>('close_tab', { tabId });
+  }
+
+  async cookies(urls?: string[]): Promise<CookiesResult> {
+    const tabId = this.requireTab();
+    const args: Record<string, unknown> = { tabId };
+    if (urls && urls.length > 0) args.urls = urls;
+    return this.mcpCall<CookiesResult>('cookies', args);
   }
 
   /**

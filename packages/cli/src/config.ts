@@ -57,6 +57,20 @@ export const ConfigSchema = z.object({
   artifactBudgetBytes: z.number().int().positive().optional(),
   appBaseUrl: z.string().url().optional(),
   bodyFixtures: z.record(z.record(z.record(z.unknown()))).optional(),
+  crawl: z.object({
+    enabled: z.boolean().optional(),
+    maxPages: z.number().int().positive().optional(),
+    maxDepth: z.number().int().positive().optional(),
+    followQueryParams: z.boolean().optional(),
+    walkTimeoutMs: z.number().int().positive().optional(),
+    sameOriginOnly: z.boolean().optional(),
+  }).optional(),
+  browserLogin: z.object({
+    enabled: z.boolean().optional(),
+    role: z.string().optional(),
+    verifyTimeoutMs: z.number().int().positive().optional(),
+    verifyPollMs: z.number().int().positive().optional(),
+  }).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {
