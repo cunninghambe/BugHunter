@@ -53,15 +53,21 @@ export interface BrowserMcpAdapter {
   closeTab(tabId: string): Promise<CloseTabResult>;
 }
 
-// Raw camofox result shapes
-type CamofoxNavigateResult = { tabId: string; ok: boolean; finalUrl?: string; title?: string };
+// Raw camofox result shapes.
+// Note: camofox v0.1 navigate returns {tabId, url} — the SPEC.md frozen surface
+// lists {tabId, ok, finalUrl, title?} but the running daemon returns {tabId, url}.
+// We accept both shapes: ok is optional (undefined = success), url/finalUrl interchangeable.
+type CamofoxNavigateResult = { tabId: string; ok?: boolean; finalUrl?: string; url?: string; title?: string };
 type CamofoxSnapshotResult = { tabId: string; snapshot: string };
 type CamofoxScreenshotResult = { tabId: string; dataUrl?: string };
 type CamofoxEvaluateResult = { tabId: string; result?: unknown; value?: unknown };
 type CamofoxListTabsResult = { tabs: Array<{ tabId?: string; id?: string; url: string; title: string }> };
 
 type McpRpcEnvelope = {
-  result?: { content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }> };
+  result?: {
+    content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>;
+    isError?: boolean;
+  };
   error?: { message?: string; code?: unknown };
 };
 
@@ -107,6 +113,12 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
 
     if (envelope.error) {
       const msg = String(envelope.error.message ?? envelope.error);
+      throw new BrowserMcpError(classifyRpcError(msg, tool), `camofox ${tool} error: ${msg}`, undefined);
+    }
+
+    // MCP tool-level errors use result.isError = true with text content
+    if (envelope.result?.isError) {
+      const msg = envelope.result.content?.[0]?.text ?? 'Unknown MCP tool error';
       throw new BrowserMcpError(classifyRpcError(msg, tool), `camofox ${tool} error: ${msg}`, undefined);
     }
 
@@ -179,10 +191,11 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
       : { url };
     const result = await this.mcpCall<CamofoxNavigateResult>('navigate', args);
     this.currentTabId = result.tabId;
-    if (!result.ok) {
+    // Only throw if ok is explicitly false; undefined means the field is absent (real camofox shape)
+    if (result.ok === false) {
       throw new BrowserMcpError('navigation_failed', `navigate returned ok:false for ${url}`);
     }
-    return { url: result.finalUrl ?? url, title: result.title };
+    return { url: result.finalUrl ?? result.url ?? url, title: result.title };
   }
 
   /**

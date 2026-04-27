@@ -68,7 +68,9 @@ export async function runDiscover(
 
   // Source 3: DOM walk per role per page
   const pages: DiscoveredPage[] = [];
-  const baseUrl = new URL(config.surfaceMcpUrl).origin;
+  // appBaseUrl is the base URL of the app under test (e.g. "http://localhost:3002").
+  // Falls back to surfaceMcpUrl origin only when appBaseUrl is not configured.
+  const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
 
   for (const { route, sourceFile } of filteredRoutes) {
     const pageElements: DiscoveredPage = {

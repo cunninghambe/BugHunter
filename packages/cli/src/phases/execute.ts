@@ -33,6 +33,12 @@ export type ExecuteOptions = {
   enableA11y?: boolean;
   /** Tool catalog keyed by toolId; used to persist inputSchemaHash in action logs. */
   toolMap?: Map<string, ToolMeta>;
+  /**
+   * Base URL of the app under test. Used to convert relative page routes
+   * ("/products") to absolute URLs for browser.navigate(). Required for
+   * the browser path to work when tc.page is a relative route.
+   */
+  appBaseUrl?: string;
 };
 
 export type ExecuteResult = {
@@ -42,7 +48,7 @@ export type ExecuteResult = {
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
@@ -74,7 +80,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     const start = Date.now();
     try {
       const result = tc.action.via === 'ui'
-        ? await executeUiTest(tc, browser!, surface, runState.runId, paths.actionLogsDir, extraHeaders)
+        ? await executeUiTest(tc, browser!, surface, runState.runId, paths.actionLogsDir, extraHeaders, appBaseUrl)
         : await executeApiTest(tc, surface, runState.runId, paths.actionLogsDir, toolMap);
       return result;
     } catch (err) {
@@ -147,15 +153,19 @@ async function executeUiTest(
   surface: SurfaceMcpAdapter,
   runId: string,
   actionLogsDir: string,
-  extraHeaders?: Record<string, string>
+  extraHeaders?: Record<string, string>,
+  appBaseUrl?: string
 ): Promise<TestResult> {
   const start = Date.now();
   const bugs: BugDetection[] = [];
   const occurrenceId = createId();
   const headers = { 'X-BugHunter-Run': runId, ...(extraHeaders ?? {}) };
 
+  // Construct absolute URL: tc.page may be a relative route ("/products")
+  const pageUrl = tc.page.startsWith('http') ? tc.page : `${appBaseUrl ?? ''}${tc.page}`;
+
   // Pre-state capture
-  const navResult = await browser.navigate(tc.page, headers);
+  const navResult = await browser.navigate(pageUrl, headers);
   const preConsoleErrors: ConsoleError[] = [];
   const preSnapshot = await browser.snapshot().catch(() => null);
 

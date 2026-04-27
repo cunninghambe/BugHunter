@@ -126,6 +126,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     onClusterFound: () => runState.clusterCount,
     extraHeaders: resolved.extraHeaders,
     enableA11y: resolved.enableA11y,
+    appBaseUrl: resolved.appBaseUrl,
   });
 
   if (abortReason) {

@@ -341,6 +341,14 @@ export type BugHunterConfig = {
   extraHeaders?: Record<string, string>;
   artifactBudgetBytes?: number;
   /**
+   * Base URL of the application under test (e.g. "http://localhost:3002").
+   * Used by the browser path to construct absolute URLs from relative page routes
+   * ("/products" → "http://localhost:3002/products"). When unset, falls back to
+   * the origin of surfaceMcpUrl (legacy behaviour, only correct when the app and
+   * SurfaceMCP share the same origin, which is unusual).
+   */
+  appBaseUrl?: string;
+  /**
    * Per-tool body fixtures for the happy palette.
    * Outer key: toolId. Middle key: roleName or "*" wildcard. Inner: partial body
    * shallow-merged onto the synthesized happy-palette body.
