@@ -187,9 +187,11 @@ Set --max-runtime to a higher value or pass --budget <ms> to time-box this run.
 
 The user can abort, refine, or proceed.
 
-### 3.4.5 `surfaceMcpUrl` convention
+### 3.4.5 `surfaceMcpUrl` and `browserMcpUrl` convention
 
 `BugHunterConfig.surfaceMcpUrl` is the **base URL** of the SurfaceMCP HTTP server (e.g. `http://127.0.0.1:3102`), without the `/mcp` path. The adapter appends `/mcp` internally on every call. The `init` wizard's prompt and default both use the base URL form. Configurations that include a trailing `/mcp` are accepted (the adapter strips one trailing `/mcp` if present) for backward compatibility, but the documented form is base-URL-only.
+
+`BugHunterConfig.browserMcpUrl` follows the same convention as `surfaceMcpUrl`: base URL of the camofox MCP HTTP server (e.g. `http://127.0.0.1:3100`), without the `/mcp` path. The adapter appends `/mcp` internally and strips one trailing `/mcp` (with optional trailing slash) for backward compatibility. The `init` wizard's prompt and default both use the base URL form.
 
 ### 3.5 What counts as a bug (classification)
 
@@ -810,8 +812,8 @@ BugHunter/
 ```ts
 type BugHunterConfig = {
   projectName: string;
-  surfaceMcpUrl: string;                // http://127.0.0.1:3102/mcp
-  browserMcpUrl?: string;
+  surfaceMcpUrl: string;                // http://127.0.0.1:3102  (base form, /mcp appended internally)
+  browserMcpUrl?: string;               // http://127.0.0.1:3100  (base form, /mcp appended internally)
   // claudeMcpUrl removed in v0.1: auto-fix is now skill-driven via Claude
   // Code's Agent tool, not ClaudeMCP. May return as v0.2 option.
   roles?: string[];                     // default: all roles from SurfaceMCP

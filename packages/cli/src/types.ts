@@ -155,7 +155,7 @@ export type InfrastructureFailure = {
   id: string;
   runId: string;
   timestamp: string;
-  kind: 'timeout' | 'browser_crash' | 'surface_unreachable' | 'revision_changed' | 'generic';
+  kind: 'timeout' | 'browser_crash' | 'surface_unreachable' | 'revision_changed' | 'browser_element_not_found' | 'generic';
   detail: string;
   role?: string;
   page?: string;

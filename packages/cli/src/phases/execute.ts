@@ -1,6 +1,7 @@
 // Phase 3: execute — bounded-parallel dispatch (§ 3.8).
 
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
+import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   TestCase, TestResult, BugDetection, InfrastructureFailure, PreState, PostState,
@@ -208,6 +209,46 @@ async function executeUiTest(
         break;
     }
   } catch (err) {
+    if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
+      // Element not found is a test pre-condition failure, not an infrastructure failure
+      const infra: InfrastructureFailure = {
+        id: createId(),
+        runId,
+        timestamp: new Date().toISOString(),
+        kind: 'browser_element_not_found',
+        detail: err.message,
+        role: tc.role,
+        page: tc.page,
+        action: tc.action,
+      };
+      return {
+        testId: tc.id,
+        passed: false,
+        bugs: [],
+        infrastructureFailure: infra,
+        durationMs: Date.now() - start,
+      };
+    }
+    if (err instanceof BrowserMcpError && (err.kind === 'transport' || err.kind === 'timeout')) {
+      // Transport/timeout failures are browser_crash infra failures
+      const infra: InfrastructureFailure = {
+        id: createId(),
+        runId,
+        timestamp: new Date().toISOString(),
+        kind: 'browser_crash',
+        detail: err.message,
+        role: tc.role,
+        page: tc.page,
+        action: tc.action,
+      };
+      return {
+        testId: tc.id,
+        passed: false,
+        bugs: [],
+        infrastructureFailure: infra,
+        durationMs: Date.now() - start,
+      };
+    }
     throw new Error(`Browser action failed: ${String(err)}`);
   }
 
