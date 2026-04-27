@@ -30,6 +30,11 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
       return `${detection.kind}|${detection.endpoint ?? ''}`;
     case 'accessibility_critical':
       return `${detection.kind}|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+    case 'visual_anomaly': {
+      const cat = detection.visualCategory ?? 'other';
+      const descNorm = normalizeVisualDescription(detection.rootCause);
+      return `${detection.kind}|${cat}|${descNorm}`;
+    }
   }
 }
 
@@ -45,6 +50,26 @@ export function extractNormalizedFields(detection: BugDetection): {
     errorMessageNormalized: normalizeErrorMessage(detection.rootCause),
     stackTraceFingerprint: detection.stackTrace ? fingerprintStackTrace(detection.stackTrace) : undefined,
   };
+}
+
+/**
+ * Normalize a visual anomaly description for clustering:
+ * 1. Lowercase
+ * 2. Strip route paths (/word/...) and bare numbers >= 4 digits
+ * 3. Strip quoted strings (single, double, backtick)
+ * 4. Take first 8 words, joined with '-'
+ */
+export function normalizeVisualDescription(text: string): string {
+  let s = text.toLowerCase();
+  // Strip route paths (e.g. /dashboard, /trades/123)
+  s = s.replace(/\/[a-z0-9_/-]+/g, '');
+  // Strip bare numbers >= 4 digits
+  s = s.replace(/\b\d{4,}\b/g, '');
+  // Strip quoted strings
+  s = s.replace(/["'`][^"'`]*["'`]/g, '');
+  // Tokenize to words and take first 8
+  const words = s.split(/\W+/).filter(w => w.length > 0).slice(0, 8);
+  return words.join('-');
 }
 
 export { shapeResponseBody };

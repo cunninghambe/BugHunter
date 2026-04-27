@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clusterSignature } from '../src/cluster/signature.js';
+import { clusterSignature, normalizeVisualDescription } from '../src/cluster/signature.js';
 import { normalizeErrorMessage, fingerprintStackTrace } from '../src/cluster/normalize.js';
 import { runCluster } from '../src/phases/cluster.js';
 import type { BugDetection, TestCase, PreState, PostState } from '../src/types.js';
@@ -294,5 +294,161 @@ describe('cluster signature — different kinds produce different signatures', (
     const d3: BugDetection = { kind: '404_for_linked_route', rootCause: 'z', targetPath: '/other' };
     expect(clusterSignature(d1)).toBe(clusterSignature(d2));
     expect(clusterSignature(d1)).not.toBe(clusterSignature(d3));
+  });
+});
+
+describe('visual_anomaly cluster signature (§ 10.3)', () => {
+  it('case 1: two visuals with same category and same first-8-words produce equal signature', () => {
+    const d1: BugDetection = {
+      kind: 'visual_anomaly',
+      rootCause: 'sidebar rendered on top of main content completely',
+      visualCategory: 'layout',
+    };
+    const d2: BugDetection = {
+      kind: 'visual_anomaly',
+      rootCause: 'sidebar rendered on top of main content completely',
+      visualCategory: 'layout',
+    };
+    expect(clusterSignature(d1)).toBe(clusterSignature(d2));
+  });
+
+  it('case 2: route path in description stripped → same signature across pages', () => {
+    const d1: BugDetection = {
+      kind: 'visual_anomaly',
+      rootCause: 'the trades table area on /dashboard is blank',
+      visualCategory: 'state',
+    };
+    const d2: BugDetection = {
+      kind: 'visual_anomaly',
+      rootCause: 'the trades table area on /trades is blank',
+      visualCategory: 'state',
+    };
+    expect(clusterSignature(d1)).toBe(clusterSignature(d2));
+  });
+
+  it('case 3: same description but different category → distinct signatures', () => {
+    const d1: BugDetection = {
+      kind: 'visual_anomaly',
+      rootCause: 'broken layout in sidebar',
+      visualCategory: 'layout',
+    };
+    const d2: BugDetection = {
+      kind: 'visual_anomaly',
+      rootCause: 'broken layout in sidebar',
+      visualCategory: 'error',
+    };
+    expect(clusterSignature(d1)).not.toBe(clusterSignature(d2));
+  });
+
+  it('case 4: runCluster clusters 5 visual detections with same root cause into one cluster of size 5', () => {
+    const tmpDir = os.tmpdir();
+    const runId = 'vis-run';
+
+    const detections: Array<{ testId: string; detection: BugDetection }> = [];
+    const testCases: TestCase[] = [];
+    const occurrenceIdByTestId = new Map<string, string>();
+
+    for (let i = 0; i < 5; i++) {
+      const testId = createId();
+      const occId = createId();
+      testCases.push({
+        id: testId,
+        runId,
+        role: 'owner',
+        page: `/page-${i}`,
+        action: { kind: 'render', via: 'ui', expectedOutcome: 'success', palette: 'happy' },
+        expectedOutcome: 'success',
+        palette: 'happy',
+      });
+      detections.push({
+        testId,
+        detection: {
+          kind: 'visual_anomaly',
+          rootCause: `the trades table: broken sidebar in main area`,
+          visualCategory: 'layout',
+          visualSeverity: 'critical',
+        },
+      });
+      occurrenceIdByTestId.set(testId, occId);
+    }
+
+    const { clusters } = runCluster({
+      detections,
+      testCases,
+      runId,
+      projectDir: tmpDir,
+      actionLogsDir: path.join(tmpDir, 'al'),
+      screenshotsDir: path.join(tmpDir, 's'),
+      domDir: path.join(tmpDir, 'd'),
+      consoleDir: path.join(tmpDir, 'c'),
+      networkDir: path.join(tmpDir, 'n'),
+      maxClusters: 200,
+      occurrenceIdByTestId,
+    });
+
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]!.kind).toBe('visual_anomaly');
+    expect(clusters[0]!.clusterSize).toBe(5);
+  });
+
+  it('case 5: generateFixHints includes description, screenshot path, and suggestedFix', () => {
+    const tmpDir = os.tmpdir();
+    const testId = createId();
+    const occId = createId();
+
+    const detection: BugDetection = {
+      kind: 'visual_anomaly',
+      rootCause: 'Sidebar obscures content',
+      visualCategory: 'layout',
+      visualSeverity: 'critical',
+      screenshotPath: '/tmp/screenshot.png',
+      visualSuggestedFix: 'Check z-index.',
+    };
+
+    const { clusters } = runCluster({
+      detections: [{ testId, detection }],
+      testCases: [{
+        id: testId,
+        runId: 'r1',
+        role: 'owner',
+        page: '/dashboard',
+        action: { kind: 'render', via: 'ui', expectedOutcome: 'success', palette: 'happy' },
+        expectedOutcome: 'success',
+        palette: 'happy',
+      }],
+      runId: 'r1',
+      projectDir: tmpDir,
+      actionLogsDir: path.join(tmpDir, 'al'),
+      screenshotsDir: path.join(tmpDir, 's'),
+      domDir: path.join(tmpDir, 'd'),
+      consoleDir: path.join(tmpDir, 'c'),
+      networkDir: path.join(tmpDir, 'n'),
+      maxClusters: 200,
+      occurrenceIdByTestId: new Map([[testId, occId]]),
+    });
+
+    expect(clusters).toHaveLength(1);
+    const hint = clusters[0]!.fixHints[0]!;
+    expect(hint).toContain('Sidebar obscures content');
+    expect(hint).toContain('/tmp/screenshot.png');
+    expect(hint).toContain('Check z-index.');
+  });
+});
+
+describe('normalizeVisualDescription', () => {
+  it('strips route paths from description', () => {
+    const a = normalizeVisualDescription('blank area on /dashboard is empty');
+    const b = normalizeVisualDescription('blank area on /trades is empty');
+    expect(a).toBe(b);
+  });
+
+  it('takes first 8 words only', () => {
+    const result = normalizeVisualDescription('one two three four five six seven eight nine ten');
+    expect(result.split('-')).toHaveLength(8);
+  });
+
+  it('lowercases', () => {
+    const result = normalizeVisualDescription('BROKEN SIDEBAR');
+    expect(result).toBe('broken-sidebar');
   });
 });

@@ -1,8 +1,12 @@
 // Phase 1: discover — three-source discovery (§ 3.3).
 
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
-import type { BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem } from '../types.js';
+import type { BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem, VisualBaselineEntry, VisionConfig } from '../types.js';
 import { isDynamicRoute, expandDynamicRoute } from '../discovery/filesystem-pages.js';
 import { discoverPages } from '../discovery/pages.js';
 import { walkDom } from '../discovery/dom-walker.js';
@@ -10,9 +14,13 @@ import { crawlFromSeeds } from '../discovery/crawler.js';
 import { loginInBrowser } from '../discovery/browser-login.js';
 import { crossRefForms } from '../discovery/form-cross-ref.js';
 import { collapseElements } from '../discovery/element-collapse.js';
+import { classifyVisualAnomalies } from '../classify/vision.js';
+import type { VisionClientInterface } from '../adapters/vision-client.js';
+import type { VisionBudget } from '../classify/vision-budget.js';
 import { log } from '../log.js';
 import micromatch from 'micromatch';
-import path from 'node:path';
+
+const VISION_BASELINE_SETTLE_MS = 1500;
 
 export async function runDiscover(
   projectDir: string,
@@ -21,7 +29,9 @@ export async function runDiscover(
   runId: string,
   surface: SurfaceMcpAdapter,
   browser?: BrowserMcpAdapter,
-  routePattern?: string
+  routePattern?: string,
+  visionClient?: VisionClientInterface,
+  visionBudget?: VisionBudget,
 ): Promise<DiscoveryOutput> {
   const skipList: SkippedItem[] = [];
 
@@ -206,9 +216,100 @@ export async function runDiscover(
     .filter(t => t.sideEffectClass === 'external' && !config.externalIntegrationsAllowed)
     .map(t => ({ toolId: t.toolId, reason: 'external_side_effect' }));
 
+  // Per-page baseline vision pass (§ 4.3.1).
+  const visualBaselineDetections = await runVisualBaseline(pages, config, roles, browser, visionClient, visionBudget);
+
   return {
     pages,
     apiTools: filteredApiTools,
     skipList: [...skipList, ...externalSkips],
+    visualBaselineDetections,
   };
+}
+
+async function runVisualBaseline(
+  pages: DiscoveredPage[],
+  config: BugHunterConfig,
+  roles: string[],
+  browser: BrowserMcpAdapter | undefined,
+  visionClient: VisionClientInterface | undefined,
+  visionBudget: VisionBudget | undefined,
+): Promise<VisualBaselineEntry[]> {
+  if (!browser || !visionClient || !visionBudget || !config.vision?.enabled) return [];
+
+  const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
+  const role = roles[0] ?? 'anonymous';
+  const visionConfig: VisionConfig = config.vision;
+  const concurrency = visionConfig.concurrency ?? 4;
+
+  // Phase 1: take screenshots sequentially (one tab at a time).
+  const screenshotEntries: Array<{ page: DiscoveredPage; screenshotPath: string }> = [];
+
+  for (const page of pages) {
+    const routeSlug = page.route.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '') || 'root';
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-vision-'));
+    const screenshotPath = path.join(tmpDir, `vision-baseline-${routeSlug}.png`);
+
+    try {
+      await browser.withTab(`${baseUrl}${page.route}`, undefined, async scope => {
+        await new Promise<void>(r => setTimeout(r, VISION_BASELINE_SETTLE_MS));
+        await scope.screenshot(screenshotPath);
+      });
+    } catch (err) {
+      log.warn(`vision baseline: failed to open/screenshot page ${page.route}`, { err: String(err) });
+      continue;
+    }
+
+    // Dedup by screenshot hash (no API call consumed yet)
+    try {
+      const buf = fs.readFileSync(screenshotPath);
+      const hash = crypto.createHash('sha256').update(buf).digest('hex');
+      if (!visionBudget.tryConsumeHash(hash)) {
+        log.info(`vision baseline: skipping duplicate screenshot for ${page.route}`);
+        continue;
+      }
+    } catch {
+      continue;
+    }
+
+    // Gate the API call budget here (after confirming screenshot is unique)
+    if (!visionBudget.tryConsume()) {
+      log.info('vision: per-run budget exhausted during baseline');
+      break;
+    }
+
+    screenshotEntries.push({ page, screenshotPath });
+  }
+
+  // Phase 2: classify in concurrency-bounded pool
+  const results: VisualBaselineEntry[] = [];
+  const inFlight = new Set<Promise<void>>();
+
+  for (const { page, screenshotPath } of screenshotEntries) {
+    const p = classifyVisualAnomalies({
+      screenshotPath,
+      url: `${baseUrl}${page.route}`,
+      action: { kind: 'render' },
+      role,
+      config: visionConfig,
+      client: visionClient,
+    }).then(detections => {
+      for (const detection of detections) {
+        results.push({ page, detection, screenshotPath });
+      }
+      inFlight.delete(p);
+    }).catch(err => {
+      log.warn(`vision baseline: classification error for ${page.route}`, { err: String(err) });
+      inFlight.delete(p);
+    });
+
+    inFlight.add(p);
+    if (inFlight.size >= concurrency) {
+      await Promise.race(inFlight);
+    }
+  }
+
+  await Promise.allSettled(inFlight);
+  log.info(`vision baseline: found ${results.length} anomaly/anomalies across ${screenshotEntries.length} page(s)`);
+  return results;
 }

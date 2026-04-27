@@ -225,6 +225,13 @@ function generateFixHints(detection: BugDetection): string[] {
     case 'surface_call_failed':
       hints.push(`surface_call failed for tool ${detection.endpoint}. Check API validation and response handling.`);
       break;
+    case 'visual_anomaly': {
+      const lines = [detection.rootCause];
+      if (detection.screenshotPath) lines.push(`Screenshot: ${detection.screenshotPath}`);
+      if (detection.visualSuggestedFix) lines.push(`Suggested fix: ${detection.visualSuggestedFix}`);
+      hints.push(lines.join('\n'));
+      break;
+    }
   }
   return hints;
 }

@@ -9,6 +9,13 @@ export type TestCounters = {
   testsRan: number;
   testsSkipped: number;
   skipReasons: Array<{ reason: string; count: number }>;
+  vision?: {
+    enabled: boolean;
+    called: number;
+    succeeded: number;
+    anomaliesFound: number;
+    abortReason?: 'auth' | 'transport';
+  };
 };
 
 export function runEmit(
@@ -61,6 +68,7 @@ export function runEmit(
     testsRan,
     testsSkipped,
     skippedReasons: skipReasons,
+    ...(counters?.vision ? { vision: counters.vision } : {}),
   };
 
   writeJsonFile(paths.summaryFile, summary);
