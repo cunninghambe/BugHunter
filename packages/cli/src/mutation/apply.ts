@@ -33,16 +33,19 @@ export function formTestCases(
   }));
 }
 
-// Generate 4 direct API test cases for a tool.
+// Generate direct API test cases for a tool.
+// 'unknown'/'partial' confidence → one happy-path call only (per §3.4.1 and §8).
 export function apiTestCases(
   runId: string,
   role: string,
   tool: ToolMeta,
   samples: unknown[],
-  domainHints?: Record<string, string[]>
+  domainHints?: Record<string, string[]>,
+  bodyFixture?: Record<string, unknown>
 ): TestCase[] {
-  if (tool.inputSchemaConfidence === 'unknown') {
-    // After failed probe: one happy-path call only
+  if (tool.inputSchemaConfidence === 'unknown' || tool.inputSchemaConfidence === 'partial') {
+    const base = samples[0] ?? {};
+    const input = bodyFixture ? { ...base as Record<string, unknown>, ...bodyFixture } : base;
     return [{
       id: createId(),
       runId,
@@ -54,7 +57,7 @@ export function apiTestCases(
         expectedOutcome: 'unknown',
         palette: 'happy',
         toolId: tool.toolId,
-        input: samples[0] ?? {},
+        input,
       },
       expectedOutcome: 'unknown',
       palette: 'happy',
@@ -73,7 +76,7 @@ export function apiTestCases(
       expectedOutcome: palette === 'happy' ? 'success' : 'expected_failure',
       palette,
       toolId: tool.toolId,
-      input: buildApiInput(tool, palette, samples[0], domainHints),
+      input: buildApiInput(tool, palette, samples[0], domainHints, bodyFixture),
     },
     expectedOutcome: palette === 'happy' ? 'success' : 'expected_failure',
     palette,
@@ -99,7 +102,8 @@ export function buildApiInput(
   tool: ToolMeta,
   palette: PaletteVariant,
   sampleInput: unknown,
-  domainHints?: Record<string, string[]>
+  domainHints?: Record<string, string[]>,
+  bodyFixture?: Record<string, unknown>
 ): unknown {
   if (!tool.inputSchema.properties) return sampleInput ?? {};
   const result: Record<string, unknown> = {};
@@ -121,6 +125,10 @@ export function buildApiInput(
     const cases = generatePaletteCases(inputType, key, dummyField, sampleVal, domainHints);
     const match = cases.find(c => c.variant === palette) ?? cases.find(c => c.variant === 'happy');
     if (match) result[key] = match.value;
+  }
+  // Shallow-merge fixture onto happy-palette only; fixture keys win
+  if (palette === 'happy' && bodyFixture) {
+    return { ...result, ...bodyFixture };
   }
   return result;
 }

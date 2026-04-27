@@ -55,6 +55,7 @@ export const ConfigSchema = z.object({
   forbiddenPaths: z.array(z.string()).optional(),
   extraHeaders: z.record(z.string()).optional(),
   artifactBudgetBytes: z.number().int().positive().optional(),
+  bodyFixtures: z.record(z.record(z.record(z.unknown()))).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

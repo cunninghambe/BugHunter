@@ -85,8 +85,31 @@ export async function runPlan(
         .then(r => r.samples.map(s => s.input))
         .catch(() => []);
 
-      const cases = apiTestCases(runId, role, tool, samples, config.domainHints);
+      // Resolve bodyFixture: specific role wins over wildcard
+      const toolFixtures = config.bodyFixtures?.[tool.toolId];
+      const bodyFixture =
+        toolFixtures?.[role] ??
+        toolFixtures?.['*'];
+
+      const cases = apiTestCases(runId, role, tool, samples, config.domainHints, bodyFixture);
       testCases.push(...cases);
+    }
+  }
+
+  // Orphan-fixture warning: bodyFixtures keys not in catalog
+  if (config.bodyFixtures) {
+    const catalogIds = new Set(enrichedTools.map(t => t.toolId));
+    const configRoles = config.roles ?? [];
+    for (const [toolId, roleMap] of Object.entries(config.bodyFixtures)) {
+      if (!catalogIds.has(toolId)) {
+        log.warn('bodyFixture references unknown toolId', { toolId, roles: Object.keys(roleMap) });
+        continue;
+      }
+      for (const role of Object.keys(roleMap)) {
+        if (role !== '*' && configRoles.length > 0 && !configRoles.includes(role)) {
+          log.warn(`bodyFixture for tool ${toolId} has unknown role "${role}"`, { toolId, role });
+        }
+      }
     }
   }
 
@@ -119,6 +142,7 @@ async function enrichToolSchemas(
 ): Promise<ToolMeta[]> {
   const result: ToolMeta[] = [];
   for (const tool of tools) {
+    // 'partial' tools already had a probe attempt; don't re-probe (§8)
     if (tool.inputSchemaConfidence !== 'unknown') {
       result.push(tool);
       continue;

@@ -146,7 +146,10 @@ Per (role, page):
 
 Before generating test cases:
 - For every tool with `inputSchemaConfidence: 'unknown'`: call `surface_probe`. If recovered, the tool is treated as `inferred` for this run. If not, log and downgrade per above.
+- For every tool with `inputSchemaConfidence: 'partial'` (SurfaceMCP detected partial manual validation): skip re-probe — it already ran. Treat like `'unknown'` in test planning: one happy-path call only.
 - For every tool: call `surface_sample_inputs` to seed `happy`-palette values. If the result is empty, generate values from the schema (boundary-aware via `format`, `enum`, `minLength`, etc.).
+
+Where probe recovery is incomplete (e.g. routes using manual, non-Zod validation), users can supplement happy-palette bodies via `BugHunterConfig.bodyFixtures` (keyed by `toolId` then `roleName`). The fixture is shallow-merged over the synthesized happy body before the call. A `"*"` role key acts as a wildcard. Other palette variants (`null`, `edge`, `out_of_bounds`) ignore fixtures by design.
 
 #### 3.4.2 Mutation palette per input type
 
@@ -837,6 +840,9 @@ type BugHunterConfig = {
   forbiddenPaths?: string[];            // user-extensible; defaults baked in
   extraHeaders?: Record<string, string>;  // e.g. { "X-Test-Mode": "true" } added to UI calls
   artifactBudgetBytes?: number;         // default 4 GB; oldest full artifacts degrade to summaries
+  bodyFixtures?: Record<string, Record<string, Record<string, unknown>>>;
+  // toolId → roleName ("*" wildcard supported) → partial body merged onto happy
+  // palette synthesized input. Other palettes (null/edge/out_of_bounds) are unaffected.
 };
 ```
 

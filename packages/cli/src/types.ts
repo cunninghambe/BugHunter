@@ -33,7 +33,7 @@ export type BugKind =
   | 'surface_call_failed';
 
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
-export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown';
+export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
 export type ResetPolicy = 'transactional' | 'per-test' | 'per-page' | 'per-run';
 
 export type ExpectedOutcome = 'success' | 'expected_failure' | 'unknown';
@@ -338,6 +338,13 @@ export type BugHunterConfig = {
   forbiddenPaths?: string[];
   extraHeaders?: Record<string, string>;
   artifactBudgetBytes?: number;
+  /**
+   * Per-tool body fixtures for the happy palette.
+   * Outer key: toolId. Middle key: roleName or "*" wildcard. Inner: partial body
+   * shallow-merged onto the synthesized happy-palette body.
+   * Applies only to API direct-call tests on the 'happy' palette.
+   */
+  bodyFixtures?: Record<string, Record<string, Record<string, unknown>>>;
 };
 
 export type RunSummary = {
