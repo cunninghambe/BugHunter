@@ -14,7 +14,9 @@ export type TestCounters = {
     called: number;
     succeeded: number;
     anomaliesFound: number;
-    abortReason?: 'auth' | 'transport';
+    abortReason?: 'auth' | 'transport' | 'cost_cap';
+    costUsd?: number;
+    costCapUsd?: number;
   };
 };
 

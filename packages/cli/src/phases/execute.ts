@@ -341,6 +341,7 @@ async function executeUiTestInner(
         role: tc.role,
         config: visionConfig,
         client: visionClient,
+        budget: visionBudget,
       }).catch(err => {
         log.warn('vision: classification failed', { occurrenceId, err: String(err) });
         return [] as BugDetection[];

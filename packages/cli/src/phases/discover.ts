@@ -292,6 +292,7 @@ async function runVisualBaseline(
       role,
       config: visionConfig,
       client: visionClient,
+      budget: visionBudget,
     }).then(detections => {
       for (const detection of detections) {
         results.push({ page, detection, screenshotPath });

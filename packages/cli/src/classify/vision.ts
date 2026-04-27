@@ -99,6 +99,8 @@ export type ClassifyVisualInput = {
   role: string;
   config?: VisionConfig;
   client: VisionClientInterface;
+  /** Optional budget — when supplied, classifier records token usage for cost tracking. */
+  budget?: { recordUsage(model: string, inputTokens: number, outputTokens: number): void };
 };
 
 export function resolveVisionConfig(c: VisionConfig | undefined, apiKey: string): {
@@ -106,6 +108,7 @@ export function resolveVisionConfig(c: VisionConfig | undefined, apiKey: string)
   model: string;
   apiKey: string;
   maxCalls: number;
+  maxCostUsd: number;
   concurrency: number;
   severityThreshold: VisionSeverity;
 } {
@@ -114,6 +117,7 @@ export function resolveVisionConfig(c: VisionConfig | undefined, apiKey: string)
     model: c?.model ?? DEFAULT_MODEL,
     apiKey,
     maxCalls: c?.maxCalls ?? 100,
+    maxCostUsd: c?.maxCostUsd ?? 20,
     concurrency: c?.concurrency ?? 4,
     severityThreshold: c?.severityThreshold ?? 'major',
   };
@@ -128,15 +132,19 @@ export async function classifyVisualAnomalies(input: ClassifyVisualInput): Promi
     .replace('{{role}}', input.role)
     .replace('{{actionDescription}}', actionDescription);
 
+  const callModel = input.config?.model ?? DEFAULT_MODEL;
   let rawText: string;
   try {
     const response = await input.client.classify({
       imagePath: input.screenshotPath,
       promptText,
-      model: input.config?.model ?? DEFAULT_MODEL,
+      model: callModel,
       timeoutMs: VISION_CALL_TIMEOUT_MS,
     });
     rawText = response.rawText;
+    if (response.usage && input.budget) {
+      input.budget.recordUsage(callModel, response.usage.inputTokens, response.usage.outputTokens);
+    }
   } catch (err) {
     if (err instanceof VisionApiError) {
       log.warn(`vision: API error (${err.kind})`, { message: err.message });
