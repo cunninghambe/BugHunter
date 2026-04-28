@@ -47,6 +47,19 @@ const KIND_PRIORITY: BugKind[] = [
   'missing_state_change',
   'console_error',
   'accessibility_critical',
+  // v0.6 a11y baseline kinds (same tier as accessibility_critical)
+  'axe_color_contrast_strong',
+  'keyboard_trap',
+  'focus_lost_after_action',
+  'image_missing_alt',
+  'form_input_unlabeled',
+  // v0.6 SEO hygiene kinds (above visual_anomaly, below security)
+  'seo_title_missing',
+  'seo_title_duplicate_across_routes',
+  'seo_meta_description_missing',
+  'seo_canonical_missing',
+  'seo_h1_missing_or_multiple',
+  'seo_robots_blocking_crawl',
   // v0.6 performance kinds (below security, above nothing)
   'slow_lcp',
   'slow_inp',

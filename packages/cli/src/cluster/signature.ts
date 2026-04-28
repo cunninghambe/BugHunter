@@ -184,6 +184,36 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     }
     case 'memory_leak_suspected':
       return 'memory_leak_suspected:run';
+
+    // v0.6 a11y baseline kinds
+    case 'axe_color_contrast_strong':
+      return `axe_color_contrast_strong|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+    case 'keyboard_trap':
+      return `keyboard_trap|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+    case 'focus_lost_after_action':
+      return `focus_lost_after_action|${detection.pageRoute ?? ''}|${detection.a11yContext?.triggeringSelector ?? detection.selectorClass ?? ''}`;
+    case 'image_missing_alt':
+      return `image_missing_alt|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+    case 'form_input_unlabeled':
+      return `form_input_unlabeled|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+
+    // v0.6 SEO hygiene kinds
+    case 'seo_title_missing':
+      return `seo_title_missing|${detection.pageRoute ?? ''}`;
+    case 'seo_title_duplicate_across_routes': {
+      const title = detection.seoContext?.observedValue ?? '';
+      return `seo_title_duplicate_across_routes|${title}`;
+    }
+    case 'seo_meta_description_missing':
+      return `seo_meta_description_missing|${detection.pageRoute ?? ''}`;
+    case 'seo_canonical_missing':
+      return `seo_canonical_missing|${detection.pageRoute ?? ''}`;
+    case 'seo_h1_missing_or_multiple': {
+      const h1Count = detection.seoContext?.observedValue ?? '';
+      return `seo_h1_missing_or_multiple|${detection.pageRoute ?? ''}|${h1Count}`;
+    }
+    case 'seo_robots_blocking_crawl':
+      return `seo_robots_blocking_crawl|${detection.pageRoute ?? ''}`;
   }
 }
 
