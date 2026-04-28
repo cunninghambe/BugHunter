@@ -6,7 +6,12 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
-import type { BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem, VisualBaselineEntry, VisionConfig, CrawlTelemetry } from '../types.js';
+import type { BugDetection, BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem, VisualBaselineEntry, VisionConfig, CrawlTelemetry } from '../types.js';
+import { runStaticAnalysis } from '../static/runner.js';
+import { gitleaksTool } from '../static/tools/gitleaks.js';
+import { npmAuditTool } from '../static/tools/npm-audit.js';
+import { semgrepTool } from '../static/tools/semgrep.js';
+import { eslintNoEmptyTool } from '../static/tools/eslint-no-empty.js';
 import { isDynamicRoute, expandDynamicRoute } from '../discovery/filesystem-pages.js';
 import { discoverPages } from '../discovery/pages.js';
 import { walkDom } from '../discovery/dom-walker.js';
@@ -226,12 +231,16 @@ export async function runDiscover(
   // Per-page baseline vision pass (§ 4.3.1).
   const visualBaselineDetections = await runVisualBaseline(pages, config, roles, browser, visionClient, visionBudget);
 
+  // Static analysis pass (§ 3.4 — default-on; disable via staticAnalysis.enabled=false).
+  const staticDetections = await runStaticAnalysisPhase(projectDir, config);
+
   return {
     pages,
     apiTools: filteredApiTools,
     skipList: [...skipList, ...externalSkips],
     visualBaselineDetections,
     crawlTelemetry,
+    staticDetections,
   };
 }
 
@@ -334,4 +343,31 @@ export async function runVisualBaseline(
   await Promise.allSettled(inFlight);
   log.info(`vision baseline: found ${results.length} anomaly/anomalies across ${screenshotEntries.length} page(s)`);
   return results;
+}
+
+async function runStaticAnalysisPhase(
+  projectDir: string,
+  config: BugHunterConfig,
+): Promise<BugDetection[]> {
+  if (config.staticAnalysis?.enabled === false) {
+    log.info('static: staticAnalysis.enabled=false; skipping');
+    return [];
+  }
+
+  const tools = [gitleaksTool, npmAuditTool, semgrepTool, eslintNoEmptyTool];
+  const runs = await runStaticAnalysis(projectDir, tools);
+
+  const detections: BugDetection[] = [];
+  for (const run of runs) {
+    if (run.warnings.length > 0) {
+      log.warn(`static: tool ${run.toolId} warnings`, { warnings: run.warnings });
+    }
+    detections.push(...run.detections);
+  }
+
+  if (detections.length > 0) {
+    log.info(`static: found ${detections.length} detection(s) across ${runs.filter(r => !r.skipped).length} tool(s)`);
+  }
+
+  return detections;
 }

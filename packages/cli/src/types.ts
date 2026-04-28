@@ -333,6 +333,8 @@ export type DiscoveryOutput = {
   skipList: SkippedItem[];
   visualBaselineDetections?: VisualBaselineEntry[];
   crawlTelemetry?: CrawlTelemetry;
+  /** Detections from static-analysis tools (gitleaks, npm-audit, semgrep, eslint-no-empty). */
+  staticDetections?: BugDetection[];
 };
 
 export type SkippedItem = {

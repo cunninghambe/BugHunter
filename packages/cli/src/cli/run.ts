@@ -16,9 +16,10 @@ import { runPlan } from '../phases/plan.js';
 import { runExecute } from '../phases/execute.js';
 import { runClassify } from '../phases/classify.js';
 import { runCluster } from '../phases/cluster.js';
+import { runCrossUser } from '../phases/cross-user.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry } from '../types.js';
+import type { BugDetection, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry } from '../types.js';
 import { runEmit } from '../phases/emit.js';
 import { log } from '../log.js';
 
@@ -180,8 +181,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   runState.phase = 'execute';
   saveRunState(runState);
 
+  // Page URLs for header probing — one per discovered page route.
+  const pageUrls = discovery.pages.map(p => p.route);
+
   // Phase 3: execute
-  const { results, abortReason, skipReasons } = await runExecute({
+  const { results, abortReason, skipReasons, headerProbeDetections } = await runExecute({
     testCases,
     runState,
     browser,
@@ -199,6 +203,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     visionConfig: resolved.vision,
     visionClient,
     visionBudget,
+    headerProbeEnabled: resolved.headers !== undefined || resolved.staticAnalysis?.enabled !== false,
+    pageUrls,
   });
 
   if (abortReason !== undefined) {
@@ -211,21 +217,38 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   runState.phase = 'classify';
   saveRunState(runState);
 
+  // Phase 3.5: cross-user IDOR probe (runs after execute, before classify).
+  const { detections: crossUserDetections, testCases: crossUserTestCases } = await runCrossUser({
+    runState,
+    surface,
+    roles: effectiveRoles,
+    maxClusters: resolved.maxBugs,
+    onClusterFound: () => runState.clusterCount,
+  });
+
   // Synthesise visual baseline test cases + results (Option a from § 4.3.1).
   // These bypass execute and are merged directly into classify + cluster inputs.
   const { baselineTestCases, baselineResults } = synthesiseVisualBaselineCases(
     runId, discovery.visualBaselineDetections ?? []
   );
 
+  // Synthesise static-analysis detections as fake test cases + results.
+  const staticDetectionList: BugDetection[] = [
+    ...(discovery.staticDetections ?? []),
+    ...(headerProbeDetections ?? []),
+    ...crossUserDetections.map(d => d.detection),
+  ];
+  const { staticTestCases, staticResults } = synthesiseFakeDetectionCases(runId, staticDetectionList);
+
   // Phase 4: classify
-  const allResults = [...results, ...baselineResults];
+  const allResults = [...results, ...baselineResults, ...staticResults];
   const { bugs, infraFailures } = runClassify(allResults);
   runState.phase = 'cluster';
   saveRunState(runState);
 
   // Phase 5: cluster
   const paths = runPaths(opts.projectDir, runId);
-  const allTestCases = [...testCases, ...baselineTestCases];
+  const allTestCases = [...testCases, ...baselineTestCases, ...staticTestCases, ...crossUserTestCases];
   const stateByTestId = new Map<string, { preState: PreState; postState: PostState }>(
     results
       .filter(r => r.postState !== undefined)
@@ -323,6 +346,46 @@ function synthesiseVisualBaselineCases(
   }
 
   return { baselineTestCases, baselineResults };
+}
+
+/**
+ * Synthesise TestCase + TestResult pairs from non-executed detections
+ * (static analysis, header probes, cross-user).
+ */
+function synthesiseFakeDetectionCases(
+  runId: string,
+  detections: BugDetection[],
+): { staticTestCases: TestCase[]; staticResults: TestResult[] } {
+  const staticTestCases: TestCase[] = [];
+  const staticResults: TestResult[] = [];
+
+  for (const detection of detections) {
+    const testId = createId();
+    const occurrenceId = createId();
+
+    const tc: TestCase = {
+      id: testId,
+      runId,
+      role: 'system',
+      page: detection.endpoint ?? detection.targetPath ?? 'static',
+      action: { kind: 'render', via: 'api', expectedOutcome: 'success', palette: 'happy' },
+      expectedOutcome: 'success',
+      palette: 'happy',
+    };
+
+    const result: TestResult = {
+      testId,
+      occurrenceId,
+      passed: false,
+      bugs: [detection],
+      durationMs: 0,
+    };
+
+    staticTestCases.push(tc);
+    staticResults.push(result);
+  }
+
+  return { staticTestCases, staticResults };
 }
 
 async function closeAllExistingTabs(browser: CamofoxBrowserMcpAdapter): Promise<void> {
