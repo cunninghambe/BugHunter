@@ -95,11 +95,22 @@ export type ActionVia = 'ui' | 'api';
 
 export type Action = {
   kind: ActionKind;
+  /**
+   * CSS selector for the element to interact with. For `kind: 'submit'`, this is
+   * the form-element selector (e.g. `#login-form` or `form:nth-of-type(1)`),
+   * NOT the submit button — the submit button is resolved at execute time.
+   */
   selector?: string;
   via: ActionVia;
   expectedOutcome: ExpectedOutcome;
   palette: PaletteVariant;
   toolId?: string;
+  /**
+   * Input payload for the action. For `kind: 'submit'`, this MUST be a
+   * `Record<string, unknown>` whose keys are HTML field `name` attributes and
+   * whose values are coerced to strings by `runFormSubmit`. The runtime guard
+   * `isStringKeyedRecord` enforces this at the execute call site.
+   */
   input?: unknown;
   /** When set, the test plants this nonce in input and expects no XSS reflection. */
   injectionNonce?: string;
@@ -387,6 +398,18 @@ export type TestCase = {
   palette: PaletteVariant;
   formSignature?: string;
   elementSignature?: string;
+  /**
+   * Set when the test case was discovered on a state-page (kind: 'state').
+   * Execute uses this to navigate to baseRoute and re-issue the trigger click
+   * before running the action — the synthetic `page` route ("/?setTab=trades")
+   * is a dedup key, NOT a literal URL the SPA honours. Skipped for navigate actions.
+   */
+  stateContext?: {
+    baseRoute: string;
+    stateVar: string;
+    stateValue: string;
+    triggerHint: TriggerSelectorHint;
+  };
 };
 
 export type TestResult = {

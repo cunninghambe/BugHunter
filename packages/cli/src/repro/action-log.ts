@@ -3,7 +3,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { Action } from '../types.js';
+import type { Action, TestCase } from '../types.js';
 
 export type ActionLogEntry = {
   step: number;
@@ -28,6 +28,11 @@ export type ActionLog = {
   baseUrl: string;
   actions: ActionLogEntry[];
   createdAt: string;
+  /**
+   * Mirrors TestCase.stateContext when set — enables the replay command to
+   * re-establish state (navigate to baseRoute + clickByHint) before replaying.
+   */
+  stateContext?: TestCase['stateContext'];
 };
 
 export function writeActionLog(actionLogsDir: string, log: ActionLog): string {

@@ -24,6 +24,7 @@ import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
 import type { VisionConfig } from '../types.js';
 import { writeActionLog } from '../repro/action-log.js';
+import { runFormSubmit, isStringKeyedRecord } from './form-submit-runner.js';
 import { hashSchema } from '../util/hash.js';
 import { runPaths, type RunPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
@@ -399,6 +400,36 @@ async function executeUiTestInner(
   const preConsoleErrors: ConsoleError[] = [];
   const preSnapshot = await scope.snapshot().catch(() => null);
 
+  // State-page re-establishment: if discovery reached this page via a click trigger
+  // after navigating to a base route, re-issue the trigger click so the action runs
+  // against the correct DOM state. Skipped for `navigate` actions (those take us off
+  // the state-page anyway). Must run before MutationObserver start so that trigger-click
+  // DOM mutations are not attributed to the action under test, and before the a11y
+  // baseline hook so the baseline reflects the correct tab content.
+  if (tc.stateContext !== undefined && tc.action.kind !== 'navigate') {
+    const triggerRes = await scope.clickByHint(tc.stateContext.triggerHint);
+    if (!triggerRes.clicked) {
+      return {
+        testId: tc.id,
+        occurrenceId,
+        passed: false,
+        bugs: [],
+        infrastructureFailure: {
+          id: createId(),
+          runId,
+          timestamp: new Date().toISOString(),
+          kind: 'browser_element_not_found',
+          detail: `state-nav: trigger_not_found (hint=${JSON.stringify(tc.stateContext.triggerHint)}, baseRoute=${tc.stateContext.baseRoute})`,
+          role: tc.role,
+          page: tc.page,
+          action: tc.action,
+        },
+        durationMs: Date.now() - start,
+      };
+    }
+    await new Promise<void>(r => { setTimeout(r, 250); });
+  }
+
   // Per-page baseline hook (a11y-strict): runs once per route before any action.
   let focusAfterThisAction: FocusAfterActionResult | undefined;
   if (onPageBaseline !== undefined) {
@@ -429,11 +460,13 @@ async function executeUiTestInner(
         if (tc.action.selector === '') throw new Error('execute: click action has empty selector — planning bug?');
         await scope.click(tc.action.selector);
         break;
-      case 'submit':
+      case 'submit': {
         if (tc.action.selector === undefined) throw new Error('execute: submit action missing selector');
         if (tc.action.selector === '') throw new Error('execute: submit action has empty selector — planning bug?');
-        await scope.click(tc.action.selector);
+        const inputRecord = isStringKeyedRecord(tc.action.input) ? tc.action.input : {};
+        await runFormSubmit(scope, tc.action.selector, inputRecord);
         break;
+      }
       case 'fill':
         if (tc.action.selector === undefined) throw new Error('execute: fill action missing selector');
         if (tc.action.selector === '') throw new Error('execute: fill action has empty selector — planning bug?');
@@ -644,7 +677,8 @@ async function executeUiTest(
   const start = Date.now();
   const occurrenceId = createId();
   const headers = { 'X-BugHunter-Run': runId, ...(extraHeaders ?? {}) };
-  const pageUrl = tc.page.startsWith('http') ? tc.page : `${appBaseUrl ?? ''}${tc.page}`;
+  const navTarget = tc.stateContext !== undefined ? tc.stateContext.baseRoute : tc.page;
+  const pageUrl = navTarget.startsWith('http') ? navTarget : `${appBaseUrl ?? ''}${navTarget}`;
 
   const actionLog = {
     occurrenceId,
@@ -665,6 +699,7 @@ async function executeUiTest(
       timestamp: new Date().toISOString(),
     }],
     createdAt: new Date().toISOString(),
+    stateContext: tc.stateContext,
   };
 
   let result: TestResult;

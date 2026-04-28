@@ -1,8 +1,8 @@
-// Tests for mutation helpers — xssFormTestCases and xssApiTestCases (v0.7 Task X2).
+// Tests for mutation helpers — xssFormTestCases, xssApiTestCases, formTestCases (v0.7 + v0.9).
 
 import { describe, it, expect } from 'vitest';
-import { xssFormTestCases, xssApiTestCases } from './apply.js';
-import type { DiscoveredForm, ToolMeta } from '../types.js';
+import { xssFormTestCases, xssApiTestCases, formTestCases } from './apply.js';
+import type { DiscoveredForm, ToolMeta, TestCase } from '../types.js';
 
 function makeForm(fields: Array<{ name: string; type: DiscoveredForm['fields'][number]['type'] }>): DiscoveredForm {
   return {
@@ -135,5 +135,92 @@ describe('xssApiTestCases', () => {
     const tool = makeTool({ count: { type: 'integer' }, name: { type: 'string' } });
     // Only 'name' is injectable → 5 cases
     expect(xssApiTestCases('run1', 'user', tool)).toHaveLength(5);
+  });
+});
+
+// v0.9 Bug 1: formTestCases selector + stateContext propagation
+describe('formTestCases (v0.9)', () => {
+  const form: DiscoveredForm = {
+    formSelector: '#profile-form',
+    method: 'POST',
+    fields: [
+      { name: 'username', type: 'text', required: true },
+      { name: 'email', type: 'email', required: true },
+    ],
+  };
+
+  const stateCtx: NonNullable<TestCase['stateContext']> = {
+    baseRoute: '/',
+    stateVar: 'setTab',
+    stateValue: 'profile',
+    triggerHint: { text: 'Profile' },
+  };
+
+  it('sets action.selector to form.formSelector for every palette', () => {
+    const cases = formTestCases('run1', 'user', '/?setTab=profile', form, 'run1');
+    expect(cases).toHaveLength(4);
+    for (const tc of cases) {
+      expect(tc.action.selector).toBe('#profile-form');
+    }
+  });
+
+  it('action.input is a Record keyed by field name', () => {
+    const cases = formTestCases('run1', 'user', '/?setTab=profile', form, 'run1');
+    for (const tc of cases) {
+      expect(typeof tc.action.input).toBe('object');
+      expect(tc.action.input).not.toBeNull();
+    }
+  });
+
+  it('threads stateContext onto each TestCase', () => {
+    const cases = formTestCases('run1', 'user', '/?setTab=profile', form, 'run1', undefined, stateCtx);
+    for (const tc of cases) {
+      expect(tc.stateContext).toEqual(stateCtx);
+    }
+  });
+
+  it('stateContext is undefined when not passed', () => {
+    const cases = formTestCases('run1', 'user', '/', form, 'run1');
+    for (const tc of cases) {
+      expect(tc.stateContext).toBeUndefined();
+    }
+  });
+});
+
+// v0.9 Bug 1 + Bug 2: xssFormTestCases selector + stateContext propagation
+describe('xssFormTestCases (v0.9)', () => {
+  const form: DiscoveredForm = {
+    formSelector: '#xss-form',
+    method: 'POST',
+    fields: [{ name: 'query', type: 'text', required: false }],
+  };
+
+  const stateCtx: NonNullable<TestCase['stateContext']> = {
+    baseRoute: '/',
+    stateVar: 'tab',
+    stateValue: 'search',
+    triggerHint: { ariaLabel: 'Search' },
+  };
+
+  it('sets action.selector to form.formSelector for every canary case', () => {
+    const cases = xssFormTestCases('run1', 'user', '/page', form);
+    expect(cases.length).toBeGreaterThan(0);
+    for (const tc of cases) {
+      expect(tc.action.selector).toBe('#xss-form');
+    }
+  });
+
+  it('threads stateContext onto each XSS canary TestCase', () => {
+    const cases = xssFormTestCases('run1', 'user', '/page', form, 'minimal', stateCtx);
+    for (const tc of cases) {
+      expect(tc.stateContext).toEqual(stateCtx);
+    }
+  });
+
+  it('stateContext is undefined when not passed', () => {
+    const cases = xssFormTestCases('run1', 'user', '/page', form);
+    for (const tc of cases) {
+      expect(tc.stateContext).toBeUndefined();
+    }
   });
 });

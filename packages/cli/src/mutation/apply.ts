@@ -6,6 +6,8 @@ import { createId } from '@paralleldrive/cuid2';
 import { generateCanaries } from '../security/injection-palette.js';
 import type { CanaryPayload } from '../security/injection-palette.js';
 
+type StateContext = NonNullable<TestCase['stateContext']>;
+
 // Generate test cases for a form (fill-and-submit, 4 palette variants).
 export function formTestCases(
   runId: string,
@@ -13,7 +15,8 @@ export function formTestCases(
   page: string,
   form: DiscoveredForm,
   runIdForEmail: string,
-  domainHints?: Record<string, string[]>
+  domainHints?: Record<string, string[]>,
+  stateContext?: StateContext,
 ): TestCase[] {
   const formSig = formSignature(form);
   const palettes: PaletteVariant[] = ['null', 'happy', 'edge', 'out_of_bounds'];
@@ -28,10 +31,12 @@ export function formTestCases(
       via: 'ui',
       expectedOutcome: palette === 'happy' ? 'success' : 'expected_failure',
       palette,
+      selector: form.formSelector,
       input: buildFormInput(form.fields, palette, runIdForEmail, domainHints),
     },
     expectedOutcome: palette === 'happy' ? 'success' : 'expected_failure',
     palette,
+    stateContext,
   }));
 }
 
@@ -166,6 +171,7 @@ export function xssFormTestCases(
   page: string,
   form: DiscoveredForm,
   depth: 'minimal' | 'full' = 'minimal',
+  stateContext?: StateContext,
 ): TestCase[] {
   const textFields = form.fields.filter(f => isTextInjectable(f.type));
   if (textFields.length === 0) return [];
@@ -176,7 +182,7 @@ export function xssFormTestCases(
 
   for (const field of textFields) {
     for (const canary of canaries) {
-      results.push(mintCanaryFormCase(runId, role, page, form, formSig, field, canary));
+      results.push(mintCanaryFormCase(runId, role, page, form, formSig, field, canary, stateContext));
     }
   }
 
@@ -224,6 +230,7 @@ function mintCanaryFormCase(
   formSig: string,
   field: FormField,
   canary: CanaryPayload,
+  stateContext?: StateContext,
 ): TestCase {
   const input: Record<string, unknown> = {};
   for (const f of form.fields) {
@@ -240,11 +247,13 @@ function mintCanaryFormCase(
       via: 'ui',
       expectedOutcome: 'expected_failure',
       palette: 'xss_inject',
+      selector: form.formSelector,
       input,
       injectionNonce: canary.nonce,
     },
     expectedOutcome: 'expected_failure',
     palette: 'xss_inject',
+    stateContext,
   };
 }
 

@@ -7,7 +7,7 @@
     "bughunter": "./dist/cli/main.js"
   },
   "scripts": {
-    "build": "../../node_modules/.bin/tsc -p tsconfig.json",
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json && mkdir -p dist/perf/web-vitals-vendored && cp src/perf/web-vitals-vendored/web-vitals.umd.js dist/perf/web-vitals-vendored/",
     "typecheck": "../../node_modules/.bin/tsc -p tsconfig.json --noEmit",
     "test": "../../node_modules/.bin/vitest run",
     "test:watch": "../../node_modules/.bin/vitest",
