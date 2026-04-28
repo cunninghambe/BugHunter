@@ -9,14 +9,34 @@ export type ClassifyResult = {
   infraFailures: InfrastructureFailure[];
 };
 
-// Priority order: index 0 = highest priority (§ 3.5.1)
+// Priority order: index 0 = highest priority (§ 3.5.1).
+// Security kinds rank between unhandled_exception and visual_anomaly.
 const KIND_PRIORITY: BugKind[] = [
   'unhandled_exception',
   'network_5xx',
   'react_error',
+  'hydration_mismatch',
   'surface_call_failed',
   'network_4xx_unexpected',
   '404_for_linked_route',
+  // v0.5 security kinds (ranked above visual but below network errors)
+  'idor_horizontal',
+  'idor_vertical_role_escalate',
+  'auth_bypass_via_unauthed_route',
+  'missing_csp_header',
+  'permissive_cors',
+  'cookie_security_flags',
+  'csrf_missing_on_mutating_route',
+  'open_redirect',
+  'sensitive_data_in_url',
+  'stack_trace_leak_in_response',
+  'vulnerable_dependency_high',
+  'hardcoded_credentials_in_source',
+  'no_rate_limit_on_login',
+  'race_double_submit',
+  'optimistic_update_divergence',
+  'hallucinated_route',
+  'swallowed_error_empty_catch',
   'dom_error_text',
   'visual_anomaly',
   'missing_state_change',
