@@ -18,7 +18,15 @@ const typeAwareRules = TYPE_AWARE ? {
   '@typescript-eslint/no-unnecessary-condition': 'warn',
   '@typescript-eslint/prefer-nullish-coalescing': 'warn',
   '@typescript-eslint/prefer-optional-chain': 'warn',
-  // strict-boolean-expressions intentionally deferred to Phase 2.5
+  '@typescript-eslint/strict-boolean-expressions': ['warn', {
+    allowString: false,
+    allowNumber: false,
+    allowNullableObject: false,
+    allowNullableBoolean: false,
+    allowNullableString: false,
+    allowNullableNumber: false,
+    allowAny: false,
+  }],
 } : {};
 
 export default [
