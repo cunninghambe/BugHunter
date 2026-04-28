@@ -203,7 +203,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     visionConfig: resolved.vision,
     visionClient,
     visionBudget,
-    headerProbeEnabled: resolved.headers !== undefined || resolved.staticAnalysis?.enabled !== false,
+    headerProbeEnabled: resolved.headers?.enabled ?? true,
     pageUrls,
   });
 

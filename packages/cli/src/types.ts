@@ -524,6 +524,8 @@ export type StaticAnalysisConfig = {
 };
 
 export type HeadersConfig = {
+  /** Master switch for header probing. Default: true. */
+  enabled?: boolean;
   /** CSP-specific overrides. */
   csp?: {
     /** Severity for unsafe-inline weakness. Default: 'informational'. */
