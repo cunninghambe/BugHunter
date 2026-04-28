@@ -26,6 +26,8 @@ const KIND_PRIORITY: BugKind[] = [
   'idor_horizontal',
   'idor_vertical_role_escalate',
   'auth_bypass_via_unauthed_route',
+  'auth_session_fixation',
+  'password_reset_token_reuse',
   'missing_csp_header',
   'permissive_cors',
   'cookie_security_flags',

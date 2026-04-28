@@ -229,13 +229,15 @@ describe('executeUiTestInner — XSS DOM detection', () => {
 
   it('emits xss_dom when observer drain returns a fired entry', async () => {
     const [canary] = generateCanaries('minimal');
-    const scope: TabScope = {
+    const scope = {
+      tabId: 'test-tab',
       navigate: vi.fn().mockResolvedValue(undefined),
       click: vi.fn().mockResolvedValue(undefined),
       type: vi.fn().mockResolvedValue(undefined),
       scroll: vi.fn().mockResolvedValue(undefined),
       snapshot: vi.fn().mockResolvedValue({ snapshot: '<html><body></body></html>' }),
       screenshot: vi.fn().mockResolvedValue(undefined),
+      clickByHint: vi.fn().mockResolvedValue({ clicked: false }),
       evaluate: vi.fn().mockImplementation((script: string) => {
         // Start script: no-op
         if (script.includes('__bh_xss_installed')) return Promise.resolve({ value: undefined });
@@ -251,7 +253,7 @@ describe('executeUiTestInner — XSS DOM detection', () => {
         }
         return Promise.resolve({ value: null });
       }),
-    };
+    } as unknown as TabScope;
     const browser: BrowserMcpAdapter = {
       withTab: vi.fn().mockImplementation((_url: string, _headers: unknown, fn: (scope: TabScope) => Promise<unknown>) => fn(scope)),
     } as unknown as BrowserMcpAdapter;
@@ -285,20 +287,22 @@ describe('executeUiTestInner — XSS DOM detection', () => {
     const [canary] = generateCanaries('minimal');
     const vulnHtml = `<html><body><div>${canary.value}</div></body></html>`;
 
-    const scope: TabScope = {
+    const scope = {
+      tabId: 'test-tab',
       navigate: vi.fn().mockResolvedValue(undefined),
       click: vi.fn().mockResolvedValue(undefined),
       type: vi.fn().mockResolvedValue(undefined),
       scroll: vi.fn().mockResolvedValue(undefined),
       snapshot: vi.fn().mockResolvedValue({ snapshot: vulnHtml }),
       screenshot: vi.fn().mockResolvedValue(undefined),
+      clickByHint: vi.fn().mockResolvedValue({ clicked: false }),
       evaluate: vi.fn().mockImplementation((script: string) => {
         if (script.includes('__bh_xss_installed')) return Promise.resolve({ value: undefined });
         if (script.includes('__bhConsoleErrors')) return Promise.resolve({ value: [] });
         if (script.includes('__bh_xss instanceof Map')) return Promise.resolve({ value: [] });
         return Promise.resolve({ value: { durationMs: 0 } });
       }),
-    };
+    } as unknown as TabScope;
     const browser: BrowserMcpAdapter = {
       withTab: vi.fn().mockImplementation((_url: string, _headers: unknown, fn: (scope: TabScope) => Promise<unknown>) => fn(scope)),
     } as unknown as BrowserMcpAdapter;
