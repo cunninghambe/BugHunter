@@ -2,17 +2,19 @@
 
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
-  BugHunterConfig, DiscoveryOutput, TestCase, ToolMeta,
+  BugHunterConfig, DiscoveredForm, DiscoveredPage, DiscoveryOutput, TestCase, ToolMeta,
 } from '../types.js';
 import { formTestCases, apiTestCases, xssFormTestCases, xssApiTestCases } from '../mutation/apply.js';
 import { formCollapseSignature } from '../discovery/element-collapse.js';
 import { log } from '../log.js';
 import { createId } from '@paralleldrive/cuid2';
+import { probeKey as buildProbeKey, type ProbeKey, type ProbeResult } from './form-reachability-probe.js';
 
 export type PlanResult = {
   testCases: TestCase[];
   projectedRuntimeMs: number;
   upgradedToolIds: string[];
+  skipReasons: Array<{ reason: string; count: number }>;
 };
 
 const AVG_TEST_MS = 7_500; // conservative estimate per test
@@ -22,7 +24,8 @@ export async function runPlan(
   discovery: DiscoveryOutput,
   config: BugHunterConfig,
   roles: string[],
-  surface: SurfaceMcpAdapter
+  surface: SurfaceMcpAdapter,
+  probes?: Map<ProbeKey, ProbeResult>,
 ): Promise<PlanResult> {
   const upgradedToolIds: string[] = [];
 
@@ -32,6 +35,7 @@ export async function runPlan(
   const testCases: TestCase[] = [];
   const seenFormSigs = new Set<string>(); // per-role, across pages
   const seenElementSigs = new Map<string, Set<string>>(); // role -> Set of sigs
+  const skipReasonCounts = new Map<string, number>();
 
   const xssEnabled = config.xss?.enabled ?? true;
   const xssDepth = config.xss?.depth ?? 'minimal';
@@ -79,6 +83,13 @@ export async function runPlan(
         );
         if (!seenFormSigs.has(sig)) {
           seenFormSigs.add(sig);
+          const { emit, skipReason } = shouldEmitSubmitTest(role, page, form, probes);
+          if (!emit) {
+            const reason = skipReason ?? 'form_unreachable_for_role';
+            skipReasonCounts.set(reason, (skipReasonCounts.get(reason) ?? 0) + 1);
+            log.debug('plan: skipping submit tests', { role, page: page.route, form: form.formSelector, skipReason: reason });
+            continue;
+          }
           const cases = formTestCases(runId, role, page.route, form, runId, config.domainHints, pageStateCtx);
           testCases.push(...cases);
 
@@ -159,7 +170,13 @@ export async function runPlan(
     `Set --max-runtime to a higher value or pass --budget <ms> to time-box this run.\n\n`
   );
 
-  return { testCases, projectedRuntimeMs, upgradedToolIds };
+  const skipReasons = [...skipReasonCounts.entries()].map(([reason, count]) => ({ reason, count }));
+
+  if (skipReasons.length > 0) {
+    log.info('plan: skipped submit tests by probe', { skipReasons });
+  }
+
+  return { testCases, projectedRuntimeMs, upgradedToolIds, skipReasons };
 }
 
 async function enrichToolSchemas(
@@ -230,4 +247,36 @@ function clickTestCase(runId: string, role: string, page: string, selector: stri
     palette: 'happy',
     stateContext,
   };
+}
+
+/**
+ * Determines whether submit tests should be emitted for a (role, page, form) tuple.
+ * When probes are undefined (legacy/no-probe path), always emits.
+ * When a probe result says formPresent:false, skips with the appropriate reason.
+ */
+export function shouldEmitSubmitTest(
+  role: string,
+  page: DiscoveredPage,
+  form: DiscoveredForm,
+  probes: Map<ProbeKey, ProbeResult> | undefined,
+): { emit: boolean; skipReason?: string } {
+  if (probes === undefined) return { emit: true };
+
+  // Only state-kind pages have probes; url-kind pages always emit
+  if (page.kind !== 'state') return { emit: true };
+
+  const key = buildProbeKey(role, page.route, form.formSelector);
+  const result = probes.get(key);
+
+  // No probe result: budget was exhausted; default to emit
+  if (result === undefined) return { emit: true };
+
+  if (!result.formPresent) {
+    const reason = result.reason === 'trigger_not_found'
+      ? 'state_trigger_not_reproducible'
+      : 'form_unreachable_for_role';
+    return { emit: false, skipReason: reason };
+  }
+
+  return { emit: true };
 }

@@ -1,4 +1,4 @@
-// Tests for runFormSubmit helper and related utilities (v0.10).
+// Tests for runFormSubmit helper and related utilities (v0.10 + v0.11).
 
 import { describe, it, expect, vi } from 'vitest';
 import { runFormSubmit, buildFillSubmitScript, isStringKeyedRecord } from './form-submit-runner.js';
@@ -160,6 +160,48 @@ describe('buildFillSubmitScript', () => {
   it('output length is bounded under 4 KiB', () => {
     const script = buildFillSubmitScript('#f', { field1: 'value1', field2: 'value2' });
     expect(script.length).toBeLessThan(4096);
+  });
+});
+
+describe('runFormSubmit v0.11 — bounded form-present wait', () => {
+  it('resolves when evaluate returns success (form appeared within asyncMaxWaitMs)', async () => {
+    const scope = { evaluate: vi.fn().mockResolvedValue({ value: { ok: true, via: 'button', missingFields: [] } }) };
+    await expect(runFormSubmit(scope, 'form:nth-of-type(1)', {}, { asyncMaxWaitMs: 2000 })).resolves.toBeUndefined();
+    expect(scope.evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws form_never_rendered when evaluate returns that reason', async () => {
+    const scope = { evaluate: vi.fn().mockResolvedValue({ value: { ok: false, reason: 'form_never_rendered' } }) };
+    await expect(runFormSubmit(scope, 'form:nth-of-type(1)', {}, { asyncMaxWaitMs: 2000 })).rejects.toThrow(
+      'submit: form_never_rendered (formSelector=form:nth-of-type(1))',
+    );
+  });
+
+  it('falls back to form_not_found when asyncMaxWaitMs <= 0 (legacy mode)', async () => {
+    const scope = { evaluate: vi.fn().mockResolvedValue({ value: { ok: false, reason: 'form_not_found' } }) };
+    await expect(runFormSubmit(scope, 'form:nth-of-type(1)', {}, { asyncMaxWaitMs: 0 })).rejects.toThrow(
+      'submit: form_not_found (formSelector=form:nth-of-type(1))',
+    );
+  });
+});
+
+describe('buildFillSubmitScript v0.11 — asyncMaxWaitMs', () => {
+  it('produces a polled IIFE with a deadline when asyncMaxWaitMs > 0', () => {
+    const script = buildFillSubmitScript('#f', {}, 2000);
+    expect(script).toContain('deadline');
+    expect(script).toContain('2000');
+    expect(script).toContain('form_never_rendered');
+  });
+
+  it('produces immediate IIFE with form_not_found when asyncMaxWaitMs <= 0', () => {
+    const script = buildFillSubmitScript('#f', {}, 0);
+    expect(script).toContain('form_not_found');
+    expect(script).not.toContain('form_never_rendered');
+  });
+
+  it('default asyncMaxWaitMs is 2000 (polled path active)', () => {
+    const script = buildFillSubmitScript('#f', {});
+    expect(script).toContain('form_never_rendered');
   });
 });
 

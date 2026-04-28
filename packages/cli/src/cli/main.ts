@@ -48,7 +48,8 @@ Run options:
   --seo                  Enable SEO hygiene cluster
   --keyboard-trap-max=N  Max Tab presses during keyboard trap probe (default 20)
   --no-seo-duplicate-titles  Suppress seo_title_duplicate_across_routes detections
-  --include-external     Allow external side-effect API calls
+  --include-external              Allow external side-effect API calls
+  --form-reachability-timeout <ms>  Max wait for form to appear in probe/execute (default: asyncMaxWaitMs from config)
 `;
 
 function parseArgs(argv: string[]): { command: string; args: string[]; flags: Record<string, string | boolean> } {
@@ -138,6 +139,7 @@ async function main(): Promise<void> {
           a11yStrict: flags['a11y-strict'] === true,
           seoEnabled: flags['seo'] === true,
           keyboardTrapMax: typeof flags['keyboard-trap-max'] === 'string' ? parseInt(flags['keyboard-trap-max'], 10) : undefined,
+          formReachabilityTimeout: typeof flags['form-reachability-timeout'] === 'string' ? parseInt(flags['form-reachability-timeout'], 10) : undefined,
         });
         break;
       }

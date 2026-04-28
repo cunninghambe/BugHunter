@@ -1,8 +1,10 @@
-// Tests for plan phase — stateContext propagation (v0.9 T2).
+// Tests for plan phase — stateContext propagation (v0.9 T2) + probe filter (v0.11 T3).
 
 import { describe, it, expect, vi } from 'vitest';
-import { runPlan } from './plan.js';
-import type { DiscoveryOutput, BugHunterConfig } from '../types.js';
+import { runPlan, shouldEmitSubmitTest } from './plan.js';
+import { probeKey } from './form-reachability-probe.js';
+import type { DiscoveryOutput, BugHunterConfig, DiscoveredPage, DiscoveredForm } from '../types.js';
+import type { ProbeResult } from './form-reachability-probe.js';
 
 function makeSurface() {
   return {
@@ -157,5 +159,108 @@ describe('runPlan (v0.9 stateContext)', () => {
     for (const tc of apiCases) {
       expect(tc.stateContext).toBeUndefined();
     }
+  });
+});
+
+describe('shouldEmitSubmitTest (v0.11 probe filter)', () => {
+  const stateCtx = { baseRoute: '/', stateVar: 'setTab', stateValue: 'profile', triggerHint: { text: 'Profile' } };
+  const statePage: DiscoveredPage = {
+    route: '/?setTab=profile',
+    elements: [],
+    forms: [],
+    links: [],
+    kind: 'state',
+    stateContext: stateCtx,
+  };
+  const urlPage: DiscoveredPage = { route: '/login', elements: [], forms: [], links: [], kind: 'url' };
+  const form: DiscoveredForm = { formSelector: 'form:nth-of-type(1)', method: 'POST', fields: [] };
+
+  it('emits when probes is undefined (legacy / pre-probe path)', () => {
+    const { emit } = shouldEmitSubmitTest('owner', statePage, form, undefined);
+    expect(emit).toBe(true);
+  });
+
+  it('skips when probe says formPresent:false', () => {
+    const probes = new Map<ReturnType<typeof probeKey>, ProbeResult>();
+    probes.set(probeKey('anon', '/?setTab=profile', 'form:nth-of-type(1)'), { probed: true, formPresent: false, latencyMs: 2000, reason: 'form_never_rendered' });
+    const { emit, skipReason } = shouldEmitSubmitTest('anon', statePage, form, probes);
+    expect(emit).toBe(false);
+    expect(skipReason).toBe('form_unreachable_for_role');
+  });
+
+  it('emits for owner, skips for anon (asymmetric probe results)', () => {
+    const probes = new Map<ReturnType<typeof probeKey>, ProbeResult>();
+    probes.set(probeKey('owner', '/?setTab=profile', 'form:nth-of-type(1)'), { probed: true, formPresent: true, latencyMs: 150 });
+    probes.set(probeKey('anon', '/?setTab=profile', 'form:nth-of-type(1)'), { probed: true, formPresent: false, latencyMs: 2000, reason: 'form_never_rendered' });
+    expect(shouldEmitSubmitTest('owner', statePage, form, probes).emit).toBe(true);
+    expect(shouldEmitSubmitTest('anon', statePage, form, probes).emit).toBe(false);
+  });
+
+  it('emits for url-kind page regardless of probes', () => {
+    const probes = new Map<ReturnType<typeof probeKey>, ProbeResult>();
+    probes.set(probeKey('owner', '/login', 'form:nth-of-type(1)'), { probed: true, formPresent: false, latencyMs: 2000, reason: 'form_never_rendered' });
+    const { emit } = shouldEmitSubmitTest('owner', urlPage, form, probes);
+    expect(emit).toBe(true);
+  });
+
+  it('emits when probe key not in map (budget exhausted — default to emit)', () => {
+    const probes = new Map<ReturnType<typeof probeKey>, ProbeResult>(); // empty — no probe ran for this tuple
+    const { emit } = shouldEmitSubmitTest('owner', statePage, form, probes);
+    expect(emit).toBe(true);
+  });
+});
+
+describe('runPlan v0.11 — probe-filtered submit tests', () => {
+  function makeSurface() {
+    return {
+      surface_describe_self: vi.fn().mockResolvedValue({ capabilities: { listNavigations: false, enumerateRoutesRuntime: false } }),
+      surface_list_navigations: vi.fn().mockResolvedValue({ navigations: [] }),
+      surface_sample_inputs: vi.fn().mockResolvedValue({ samples: [] }),
+      surface_probe: vi.fn().mockResolvedValue(null),
+      surface_call: vi.fn().mockResolvedValue({ ok: true, status: 200, body: {}, durationMs: 0 }),
+      surface_list_routes: vi.fn().mockResolvedValue({ routes: [] }),
+      surface_postprocess_runtime_routes: vi.fn().mockResolvedValue({ routes: [], summary: { dedupedRoutes: 0, detectedRouters: [] } }),
+      surface_enumerate_routes_runtime: vi.fn().mockResolvedValue({ script: '', timeoutMs: 1000 }),
+    };
+  }
+
+  const baseConfig: BugHunterConfig = {
+    projectName: 'test',
+    surfaceMcpUrl: 'http://localhost:3105',
+    xss: { enabled: false },
+  };
+
+  const stateCtx = { baseRoute: '/', stateVar: 'setTab', stateValue: 'profile', triggerHint: { text: 'Profile' } };
+  const profilePage: DiscoveredPage = {
+    route: '/?setTab=profile',
+    elements: [],
+    forms: [{ formSelector: 'form:nth-of-type(1)', method: 'POST', fields: [{ name: 'name', type: 'text', required: true }] }],
+    links: [],
+    kind: 'state',
+    stateContext: stateCtx,
+  };
+
+  it('emits submit tests when probes not provided', async () => {
+    const discovery: DiscoveryOutput = { pages: [profilePage], apiTools: [], skipList: [] };
+    const { testCases, skipReasons } = await runPlan('run1', discovery, baseConfig, ['owner', 'anon'], makeSurface() as never);
+    const submitCases = testCases.filter(tc => tc.action.kind === 'submit');
+    expect(submitCases.length).toBeGreaterThan(0);
+    expect(skipReasons).toHaveLength(0);
+  });
+
+  it('skips anon submit tests when probe says formPresent:false for anon', async () => {
+    const probes = new Map<ReturnType<typeof probeKey>, ProbeResult>();
+    probes.set(probeKey('owner', '/?setTab=profile', 'form:nth-of-type(1)'), { probed: true, formPresent: true, latencyMs: 100 });
+    probes.set(probeKey('anon', '/?setTab=profile', 'form:nth-of-type(1)'), { probed: true, formPresent: false, latencyMs: 2000, reason: 'form_never_rendered' });
+
+    const discovery: DiscoveryOutput = { pages: [profilePage], apiTools: [], skipList: [] };
+    const { testCases, skipReasons } = await runPlan('run1', discovery, baseConfig, ['owner', 'anon'], makeSurface() as never, probes);
+    const anonSubmits = testCases.filter(tc => tc.action.kind === 'submit' && tc.role === 'anon');
+    const ownerSubmits = testCases.filter(tc => tc.action.kind === 'submit' && tc.role === 'owner');
+    expect(ownerSubmits.length).toBeGreaterThan(0);
+    expect(anonSubmits).toHaveLength(0);
+    const unreachableSkip = skipReasons.find(r => r.reason === 'form_unreachable_for_role');
+    expect(unreachableSkip).toBeDefined();
+    expect(unreachableSkip?.count).toBeGreaterThan(0);
   });
 });

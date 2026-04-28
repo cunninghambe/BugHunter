@@ -372,6 +372,12 @@ export type CrawlTelemetry = {
   stateKindPages: number;
 };
 
+export type ProbeTelemetryRecord = {
+  probesRun: number;
+  skippedByBudget: number;
+  durationMs: number;
+};
+
 export type DiscoveryOutput = {
   pages: DiscoveredPage[];
   apiTools: ToolMeta[];
@@ -380,6 +386,8 @@ export type DiscoveryOutput = {
   crawlTelemetry?: CrawlTelemetry;
   /** Detections from static-analysis tools (gitleaks, npm-audit, semgrep, eslint-no-empty). */
   staticDetections?: BugDetection[];
+  /** Form-reachability probe telemetry — present when probe ran. */
+  probe?: { telemetry: ProbeTelemetryRecord };
 };
 
 export type SkippedItem = {
