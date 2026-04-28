@@ -398,6 +398,32 @@ async function clickSubmitEvaluate(
   return tryClickByCssSelector(browser, uiSubmitSelector);
 }
 
+const LOGIN_FORM_READY_MAX_MS = 5000;
+const LOGIN_FORM_READY_POLL_MS = 100;
+
+async function waitForLoginFormReady(
+  browser: BrowserMcpAdapter,
+  plan: BrowseableAuthPlan
+): Promise<void> {
+  const candidateSelectors: string[] = [];
+  for (const [credKey, domName] of Object.entries(plan.fields)) {
+    candidateSelectors.push(...fieldCandidates(credKey, domName));
+  }
+  const selectorsJson = JSON.stringify(candidateSelectors);
+  const deadline = Date.now() + LOGIN_FORM_READY_MAX_MS;
+  while (Date.now() < deadline) {
+    try {
+      const res = await browser.evaluate(
+        `(function(){const sels=${selectorsJson};for(const s of sels){if(document.querySelector(s))return true;}return false;})()`
+      );
+      if (res.value === true) return;
+    } catch {
+      // ignore — keep polling
+    }
+    await sleep(LOGIN_FORM_READY_POLL_MS);
+  }
+}
+
 export async function loginInBrowser(
   browser: BrowserMcpAdapter,
   surface: SurfaceMcpAdapter,
@@ -446,7 +472,9 @@ export async function loginInBrowser(
     }
   }
 
-  await sleep(250);
+  // Poll for the first field selector to appear (max 5000ms) — covers
+  // SPA cold-start hydration that exceeds a fixed 250ms wait.
+  await waitForLoginFormReady(browser, browseablePlan);
 
   // Step 3: Detect captcha / 2FA
   try {
@@ -487,11 +515,17 @@ export async function loginInBrowser(
     await sleep(250);
   }
 
-  // Steps 5 & 6: Locate and type into each field
+  // Steps 5 & 6: Locate and type into each field. Prefer evaluate-based type
+  // (raw document.querySelector + native value setter) because camofox's
+  // snapshot-based type rejects inputs without accessible names.
   for (const [credKey, domName] of Object.entries(browseablePlan.fields)) {
     const value = browseablePlan.values[domName] ?? '';
     let typed = false;
     for (const selector of fieldCandidates(credKey, domName)) {
+      if (await tryTypeByCssSelector(browser, selector, value)) {
+        typed = true;
+        break;
+      }
       if (await tryType(browser, selector, value)) {
         typed = true;
         break;

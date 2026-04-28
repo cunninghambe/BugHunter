@@ -338,7 +338,7 @@ export type VisionCategory = 'layout' | 'content' | 'state' | 'error' | 'a11y' |
 export type VisionConfig = {
   /** Master switch. Default: false (opt-in). */
   enabled?: boolean;
-  /** Anthropic model id. Default: 'claude-haiku-4-5-20251001'. */
+  /** Anthropic model id. Default: 'claude-sonnet-4-6'. */
   model?: string;
   /**
    * Anthropic API key. PREFERRED location is the ANTHROPIC_API_KEY env var.
