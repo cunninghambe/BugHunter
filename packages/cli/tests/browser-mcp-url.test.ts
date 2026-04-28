@@ -63,32 +63,21 @@ describe('CamofoxBrowserMcpAdapter — browserMcpUrl convention (§4)', () => {
     expect(params?.name).toBe('navigate');
   });
 
-  it('click() sends tabId and ref (not selector), and uses snapshot first', async () => {
-    // First call: navigate to set tabId
-    // Second call: snapshot (returns a11y tree with #submit ref)
-    // Third call: click with {tabId, ref}
-    const snapshotText = `- generic [e1]:
-  - button "Submit" [ref=e3]`;
-
-    let callCount = 0;
+  it('click() with string selector uses evaluate (not snapshot+ref) — v0.12', async () => {
+    // v0.12: string-selector clicks go through a single evaluate round-trip.
+    // No snapshot call, no camofox click call.
     const capturedBodies: Record<string, unknown>[] = [];
 
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       capturedBodies.push(body);
-      callCount++;
 
       const params = body['params'] as { name?: string; arguments?: Record<string, unknown> };
 
-      if (params?.name === 'snapshot') {
+      if (params?.name === 'evaluate') {
+        // Return a valid click result so runEvaluateClick succeeds
         return new Response(JSON.stringify({
-          result: { content: [{ text: JSON.stringify({ tabId: 't1', snapshot: snapshotText }) }] },
-        }), { headers: { 'content-type': 'application/json' } });
-      }
-
-      if (params?.name === 'click') {
-        return new Response(JSON.stringify({
-          result: { content: [{ text: JSON.stringify({ tabId: 't1', ok: true }) }] },
+          result: { content: [{ text: JSON.stringify({ tabId: 't1', result: { ok: true, accessibleNameAbsent: false, ariaLabelSource: 'aria-label', tagName: 'button', role: null } }) }] },
         }), { headers: { 'content-type': 'application/json' } });
       }
 
@@ -102,14 +91,21 @@ describe('CamofoxBrowserMcpAdapter — browserMcpUrl convention (§4)', () => {
     await adapter.navigate('http://x');
     await adapter.click('button[aria-label="Submit"]');
 
-    const clickBody = capturedBodies.find(b => {
+    // Must call evaluate (not snapshot or camofox click)
+    const evalBody = capturedBodies.find(b => {
       const p = b['params'] as { name?: string } | undefined;
-      return p?.name === 'click';
+      return p?.name === 'evaluate';
     });
-    expect(clickBody).toBeDefined();
-    const clickArgs = (clickBody?.['params'] as { arguments?: Record<string, unknown> })?.arguments;
-    expect(clickArgs?.['tabId']).toBeDefined();
-    expect(clickArgs?.['ref']).toBeDefined();
-    expect(clickArgs?.['selector']).toBeUndefined();
+    expect(evalBody).toBeDefined();
+    const evalArgs = (evalBody?.['params'] as { arguments?: Record<string, unknown> })?.arguments;
+    expect(evalArgs?.['tabId']).toBeDefined();
+    expect(evalArgs?.['expression']).toBeDefined();
+    expect(typeof evalArgs?.['expression']).toBe('string');
+
+    // Must NOT call snapshot or camofox click for string selectors
+    const snapshotBody = capturedBodies.find(b => (b['params'] as { name?: string } | undefined)?.name === 'snapshot');
+    expect(snapshotBody).toBeUndefined();
+    const clickBody = capturedBodies.find(b => (b['params'] as { name?: string } | undefined)?.name === 'click');
+    expect(clickBody).toBeUndefined();
   });
 });

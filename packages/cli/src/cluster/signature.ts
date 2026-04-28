@@ -196,6 +196,9 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
       return `image_missing_alt|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
     case 'form_input_unlabeled':
       return `form_input_unlabeled|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+    // v0.12 click-evaluate kinds
+    case 'interactive_element_missing_accessible_name':
+      return `interactive_element_missing_accessible_name|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
 
     // v0.6 SEO hygiene kinds
     case 'seo_title_missing':
