@@ -147,13 +147,13 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     const contentType = res.headers.get('content-type') ?? '';
     const envelope = await parseEnvelope(res, contentType);
 
-    if (envelope.error) {
+    if (envelope.error !== undefined) {
       const msg = String(envelope.error.message ?? envelope.error);
       throw new BrowserMcpError(classifyRpcError(msg, tool), `camofox ${tool} error: ${msg}`, undefined);
     }
 
     // MCP tool-level errors use result.isError = true with text content
-    if (envelope.result?.isError) {
+    if (envelope.result?.isError === true) {
       const msg = envelope.result.content?.[0]?.text ?? 'Unknown MCP tool error';
       throw new BrowserMcpError(classifyRpcError(msg, tool), `camofox ${tool} error: ${msg}`, undefined);
     }
@@ -165,7 +165,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
   }
 
   private requireTab(): string {
-    if (!this.currentTabId) {
+    if (this.currentTabId === undefined) {
       throw new BrowserMcpError('no_tab', 'Adapter has no active tab; call navigate(url) first');
     }
     return this.currentTabId;
@@ -198,7 +198,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     }
 
     const html = String(evalResult.result ?? evalResult.value ?? '');
-    if (!html || html === 'null') {
+    if (html === '' || html === 'null') {
       throw new BrowserMcpError('element_not_found', `No matching ref in snapshot or DOM`, selector);
     }
 
@@ -208,7 +208,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     const tagMatch = /^\.?(\w+)/.exec(selector);
     const tag = tagMatch?.[1] ?? 'div';
     const ref = resolveByHtml(html, tag, freshNodes);
-    if (!ref) {
+    if (ref === null) {
       throw new BrowserMcpError(
         'element_not_found',
         `Element exists in DOM but has no accessible name in snapshot`,
@@ -222,7 +222,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
 
   async navigate(url: string, _extraHeaders?: ExtraHeaders): Promise<NavigateResult> {
     // extraHeaders silently dropped — camofox v0.1 has no per-tab header support
-    const args: Record<string, unknown> = this.currentTabId
+    const args: Record<string, unknown> = this.currentTabId !== undefined
       ? { tabId: this.currentTabId, url }
       : { url };
     const result = await this.mcpCall<CamofoxNavigateResult>('navigate', args);
@@ -357,7 +357,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
   async cookies(urls?: string[]): Promise<CookiesResult> {
     const tabId = this.requireTab();
     const args: Record<string, unknown> = { tabId };
-    if (urls && urls.length > 0) args.urls = urls;
+    if (urls !== undefined && urls.length > 0) args.urls = urls;
     return this.mcpCall<CookiesResult>('cookies', args);
   }
 
@@ -437,7 +437,7 @@ async function parseEnvelope(res: Response, contentType: string): Promise<McpRpc
 
 function parseTextContent(envelope: McpRpcEnvelope, tool: string): unknown {
   const content = envelope.result?.content?.[0];
-  if (!content) {
+  if (content === undefined) {
     throw new BrowserMcpError('transport', `No content in camofox response for ${tool}`);
   }
   if (content.type === 'image') {
@@ -445,7 +445,7 @@ function parseTextContent(envelope: McpRpcEnvelope, tool: string): unknown {
     return { dataUrl: `data:${content.mimeType ?? 'image/png'};base64,${content.data ?? ''}` };
   }
   const text = content.text;
-  if (!text) {
+  if (text === undefined || text === '') {
     throw new BrowserMcpError('transport', `Empty text content in camofox response for ${tool}`);
   }
   return JSON.parse(text);
@@ -458,7 +458,7 @@ function parseImageContent(envelope: McpRpcEnvelope): { dataUrl: string } {
   }
   // Fallback: if text content, treat as JSON with dataUrl inside
   const text = content?.text;
-  if (text) {
+  if (text !== undefined && text !== '') {
     const parsed = JSON.parse(text) as { dataUrl?: string };
     return { dataUrl: parsed.dataUrl ?? '' };
   }

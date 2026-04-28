@@ -48,13 +48,13 @@ export function runClassify(results: TestResult[]): ClassifyResult {
   const infraFailures: InfrastructureFailure[] = [];
 
   for (const result of results) {
-    if (result.infrastructureFailure) {
+    if (result.infrastructureFailure !== undefined) {
       infraFailures.push(result.infrastructureFailure);
       // Infrastructure failures do NOT enter bugs
       continue;
     }
     const canonical = applyPriorityFilter(result.bugs);
-    if (canonical) {
+    if (canonical !== null) {
       bugs.push({ testId: result.testId, detection: canonical });
     }
   }

@@ -139,7 +139,7 @@ export async function collectDomOnly(browser: BrowserMcpAdapter): Promise<DomWal
     log.warn('DOM collectDomOnly evaluate failed', err);
     return null;
   });
-  if (!evalResult) return { elements: [], forms: [], links: [] };
+  if (evalResult === null) return { elements: [], forms: [], links: [] };
   return shapeFromEvalResult(evalResult);
 }
 
@@ -158,7 +158,7 @@ export async function walkDom(
     log.warn('DOM walk evaluate failed', err);
     return null;
   });
-  if (!evalResult) return { elements: [], forms: [], links: [] };
+  if (evalResult === null) return { elements: [], forms: [], links: [] };
   return shapeFromEvalResult(evalResult);
 }
 

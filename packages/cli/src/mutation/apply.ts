@@ -45,7 +45,7 @@ export function apiTestCases(
 ): TestCase[] {
   if (tool.inputSchemaConfidence === 'unknown' || tool.inputSchemaConfidence === 'partial') {
     const base = samples[0] ?? {};
-    const input = bodyFixture ? { ...base as Record<string, unknown>, ...bodyFixture } : base;
+    const input = bodyFixture !== undefined ? { ...base as Record<string, unknown>, ...bodyFixture } : base;
     return [{
       id: createId(),
       runId,
@@ -93,7 +93,7 @@ function buildFormInput(
   for (const field of fields) {
     const cases = generatePaletteCases(field.type, runId, field, undefined, domainHints);
     const match = cases.find(c => c.variant === palette) ?? cases.find(c => c.variant === 'happy');
-    if (match) result[field.name] = match.value;
+    if (match !== undefined) result[field.name] = match.value;
   }
   return result;
 }
@@ -105,7 +105,7 @@ export function buildApiInput(
   domainHints?: Record<string, string[]>,
   bodyFixture?: Record<string, unknown>
 ): unknown {
-  if (!tool.inputSchema.properties) return sampleInput ?? {};
+  if (tool.inputSchema.properties === undefined) return sampleInput ?? {};
   const result: Record<string, unknown> = {};
   for (const [key, schema] of Object.entries(tool.inputSchema.properties)) {
     const inputType = schemaToInputType(schema);
@@ -124,10 +124,10 @@ export function buildApiInput(
       : undefined;
     const cases = generatePaletteCases(inputType, key, dummyField, sampleVal, domainHints);
     const match = cases.find(c => c.variant === palette) ?? cases.find(c => c.variant === 'happy');
-    if (match) result[key] = match.value;
+    if (match !== undefined) result[key] = match.value;
   }
   // Shallow-merge fixture onto happy-palette only; fixture keys win
-  if (palette === 'happy' && bodyFixture) {
+  if (palette === 'happy' && bodyFixture !== undefined) {
     return { ...result, ...bodyFixture };
   }
   return result;

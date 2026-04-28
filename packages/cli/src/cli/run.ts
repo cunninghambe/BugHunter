@@ -59,7 +59,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   });
 
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
-  const browser = resolved.browserMcpUrl ? new CamofoxBrowserMcpAdapter(resolved.browserMcpUrl) : undefined;
+  const browser = resolved.browserMcpUrl !== undefined ? new CamofoxBrowserMcpAdapter(resolved.browserMcpUrl) : undefined;
 
   // Resolve vision auth — Anthropic Messages API requires an API key.
   // CLAUDE_CODE_OAUTH_TOKEN is NOT usable here (Messages API explicitly rejects OAuth tokens).
@@ -70,7 +70,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       resolved.vision?.apiKey ??
       process.env['ANTHROPIC_API_KEY'] ??
       process.env['CLAUDE_API_KEY'];
-    if (!apiKey) {
+    if (apiKey === undefined || apiKey === '') {
       throw new Error(
         'vision.enabled is true but no ANTHROPIC_API_KEY was found. ' +
         'Set ANTHROPIC_API_KEY or vision.apiKey. ' +
@@ -83,7 +83,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   // Resume or new run
   let runId: string;
   let resumeState = undefined;
-  if (opts.resume) {
+  if (opts.resume !== undefined) {
     runId = opts.resume;
     resumeState = loadRunState(opts.projectDir, runId);
     log.info(`Resuming run ${runId} from phase ${resumeState.phase}`);
@@ -93,12 +93,12 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   }
 
   const startMs = Date.now();
-  const roles = opts.role ? [opts.role] : undefined;
+  const roles = opts.role !== undefined ? [opts.role] : undefined;
 
   // Construct vision budget + client (one per run; shared by discover + execute)
-  const resolvedVision = resolveVisionConfig(resolved.vision, visionAuth ? '__present__' : '');
+  const resolvedVision = resolveVisionConfig(resolved.vision, visionAuth !== undefined ? '__present__' : '');
   const visionBudget = visionEnabled ? makeVisionBudget(resolvedVision.maxCalls, resolvedVision.maxCostUsd) : undefined;
-  const visionClient = visionEnabled && visionAuth
+  const visionClient = visionEnabled && visionAuth !== undefined
     ? new AnthropicVisionClient(visionAuth, resolvedVision.model, 30_000)
     : undefined;
 
@@ -112,7 +112,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   });
 
   // Clear any stale tabs from previous processes to prevent tab leakage in the camofox session.
-  if (browser) {
+  if (browser !== undefined) {
     await closeAllExistingTabs(browser);
   }
 
@@ -183,7 +183,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     visionBudget,
   });
 
-  if (abortReason) {
+  if (abortReason !== undefined) {
     log.warn(`Run stopped: ${abortReason}`);
     runState.partialEmit = true;
   }
@@ -244,7 +244,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const discoverySkipReasons = aggregateDiscoverySkips(discovery.skipList);
   const allSkipReasons = [...discoverySkipReasons, ...skipReasons];
 
-  const visionSummary = visionBudget ? {
+  const visionSummary = visionBudget !== undefined ? {
     enabled: true,
     called: visionBudget.consumed,
     succeeded: visionBudget.consumed,

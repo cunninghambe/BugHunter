@@ -38,11 +38,11 @@ export async function runDiscover(
 
   // Browser-side login — runs once per discover phase, before page discovery.
   const loginCfg = config.browserLogin;
-  const browserLoginEnabled = (loginCfg?.enabled ?? true) && !!browser;
+  const browserLoginEnabled = (loginCfg?.enabled ?? true) && browser !== undefined;
 
   if (browserLoginEnabled) {
     const loginRole = loginCfg?.role ?? roles[0];
-    if (!loginRole) {
+    if (loginRole === '') {
       log.info('browser_login: no roles configured; skipping');
     } else {
       const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
@@ -59,7 +59,7 @@ export async function runDiscover(
         skipList.push({ route: '<login>', reason: `browser_login_${result.reason}` });
       }
     }
-  } else if (!browser) {
+  } else if (browser === undefined) {
     log.info('browser_login: skipped (no browser adapter)');
   }
 
@@ -78,7 +78,7 @@ export async function runDiscover(
   // Crawl-based discovery: triggered by seed pages
   const crawledPages: DiscoveredPage[] = [];
   let crawlTelemetry: CrawlTelemetry | undefined;
-  if (seedEntries.length > 0 && browser && config.crawl?.enabled !== false) {
+  if (seedEntries.length > 0 && browser !== undefined && config.crawl?.enabled !== false) {
     const seedRoutes = seedEntries.map(s => s.route);
     const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
     log.info(`crawl: starting from ${seedRoutes.length} seed(s): ${seedRoutes.join(', ')}`);
@@ -108,7 +108,7 @@ export async function runDiscover(
     for (const s of result.skipped) {
       skipList.push({ route: s.url, reason: `crawl_skipped: ${s.reason}` });
     }
-  } else if (seedEntries.length > 0 && !browser) {
+  } else if (seedEntries.length > 0 && browser === undefined) {
     log.warn('crawl: seed pages detected but no browser available; crawl skipped');
   }
 
@@ -136,7 +136,7 @@ export async function runDiscover(
   }
 
   // Apply route pattern filter
-  const routes = routePattern
+  const routes = routePattern !== undefined
     ? expandedRoutes.filter(r => micromatch([r.route], [routePattern]).length > 0)
     : expandedRoutes;
 
@@ -152,7 +152,7 @@ export async function runDiscover(
   // Exclude configured routes
   const excluded = config.excludedRoutes ?? [];
   const filteredRoutes = excluded.length > 0
-    ? dedupRoutes.filter(r => !micromatch([r.route], excluded).length)
+    ? dedupRoutes.filter(r => micromatch([r.route], excluded).length === 0)
     : dedupRoutes;
 
   // Source 3: DOM walk per role per page
@@ -170,24 +170,25 @@ export async function runDiscover(
       links: [],
     };
 
-    if (browser) {
+    if (browser !== undefined) {
       // Walk DOM as first role (read-only discovery; auth state from SurfaceMCP)
       try {
         const domResult = await walkDom(browser, baseUrl + route, runId, config.extraHeaders);
         const collapsed = collapseElements(domResult.elements.filter(e => !e.disabled));
-        const pagePathForSurface = sourceFile
+        const pagePathForSurface = (sourceFile !== undefined && sourceFile !== '')
           ? path.relative(projectDir, sourceFile)
           : route;
         const crossRefed = await crossRefForms(domResult.forms, pagePathForSurface, surface);
         // Filter external-side-effect forms/buttons
         const safeApiToolIds = new Set(
           apiTools
-            .filter(t => t.sideEffectClass !== 'external' || config.externalIntegrationsAllowed)
+            .filter(t => t.sideEffectClass !== 'external' || config.externalIntegrationsAllowed === true)
             .map(t => t.toolId)
         );
         const safeForms = crossRefed.filter(f => {
-          if (!f.apiToolIds?.length) return false;
-          return f.apiToolIds.some(id => safeApiToolIds.has(id));
+          const ids = f.apiToolIds;
+          if (ids === undefined || ids.length === 0) return false;
+          return ids.some(id => safeApiToolIds.has(id));
         });
 
         pageElements.elements = collapsed;
@@ -209,18 +210,18 @@ export async function runDiscover(
       const canonical = config.routeAliases?.[p.route] ?? p.route;
       if (seen.has(canonical)) continue;
       seen.add(canonical);
-      if (config.excludedRoutes && config.excludedRoutes.length > 0 && micromatch([p.route], config.excludedRoutes).length > 0) continue;
+      if (config.excludedRoutes !== undefined && config.excludedRoutes.length > 0 && micromatch([p.route], config.excludedRoutes).length > 0) continue;
       pages.push(p);
     }
   }
 
   // Filter external tools
   const filteredApiTools = apiTools.filter(
-    t => t.sideEffectClass !== 'external' || config.externalIntegrationsAllowed
+    t => t.sideEffectClass !== 'external' || config.externalIntegrationsAllowed === true
   );
 
   const externalSkips = apiTools
-    .filter(t => t.sideEffectClass === 'external' && !config.externalIntegrationsAllowed)
+    .filter(t => t.sideEffectClass === 'external' && config.externalIntegrationsAllowed !== true)
     .map(t => ({ toolId: t.toolId, reason: 'external_side_effect' }));
 
   // Per-page baseline vision pass (§ 4.3.1).
@@ -243,7 +244,7 @@ async function runVisualBaseline(
   visionClient: VisionClientInterface | undefined,
   visionBudget: VisionBudget | undefined,
 ): Promise<VisualBaselineEntry[]> {
-  if (!browser || !visionClient || !visionBudget || !config.vision?.enabled) return [];
+  if (browser === undefined || visionClient === undefined || visionBudget === undefined || config.vision?.enabled !== true) return [];
 
   const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
   const role = roles[0] ?? 'anonymous';
@@ -254,16 +255,17 @@ async function runVisualBaseline(
   const screenshotEntries: Array<{ page: DiscoveredPage; screenshotPath: string }> = [];
 
   for (const page of pages) {
-    const routeSlug = page.route.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '') || 'root';
+    const routeSlugRaw = page.route.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '');
+    const routeSlug = routeSlugRaw !== '' ? routeSlugRaw : 'root';
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-vision-'));
     const screenshotPath = path.join(tmpDir, `vision-baseline-${routeSlug}.png`);
 
     try {
-      if (page.kind === 'state' && page.stateContext) {
+      if (page.kind === 'state' && page.stateContext !== undefined) {
         const ctx = page.stateContext;
         await browser.withTab(`${baseUrl}${ctx.baseRoute}`, undefined, async scope => {
           const sel = await resolveTriggerSelector(scope, ctx.triggerHint);
-          if (!sel) throw new Error('trigger_not_found_in_vision');
+          if (sel === null || sel === '') throw new Error('trigger_not_found_in_vision');
           await scope.click(sel);
           await new Promise<void>(r => { setTimeout(r, VISION_BASELINE_SETTLE_MS); });
           await scope.screenshot(screenshotPath);

@@ -11,7 +11,7 @@ import { log } from '../log.js';
 export async function replayCommand(projectDir: string, occurrenceId: string): Promise<void> {
   const config = resolvedConfig(loadConfig(projectDir));
   const surface = new HttpSurfaceMcpAdapter(config.surfaceMcpUrl);
-  const browser = config.browserMcpUrl ? new CamofoxBrowserMcpAdapter(config.browserMcpUrl) : undefined;
+  const browser = config.browserMcpUrl !== undefined ? new CamofoxBrowserMcpAdapter(config.browserMcpUrl) : undefined;
 
   // Find the action log across all runs
   const runIds = listRunIds(projectDir);
@@ -27,13 +27,13 @@ export async function replayCommand(projectDir: string, occurrenceId: string): P
     }
   }
 
-  if (!actionLog) {
+  if (actionLog === null) {
     throw new Error(`Action log not found for occurrence ${occurrenceId}. Run 'bughunter list' to see available runs.`);
   }
 
   log.info(`Replaying occurrence ${occurrenceId} from run ${actionLog.runId}`);
 
-  if (!browser) {
+  if (browser === undefined) {
     log.warn('No browser MCP configured — UI steps will be skipped');
   }
 
@@ -47,7 +47,7 @@ export async function replayCommand(projectDir: string, occurrenceId: string): P
   process.stdout.write('\n=== Replay Result ===\n');
   process.stdout.write(`${JSON.stringify(result, null, 2)  }\n`);
 
-  if (!result.ok) {
+  if (result.ok !== true) {
     process.exitCode = 1;
   }
 }

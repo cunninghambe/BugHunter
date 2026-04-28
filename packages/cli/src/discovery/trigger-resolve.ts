@@ -31,17 +31,17 @@ export async function resolveTriggerSelector(
   browser: EvaluatorLike,
   hint: TriggerSelectorHint
 ): Promise<string | null> {
-  if (hint.testId) {
+  if (hint.testId !== undefined && hint.testId !== '') {
     const sel = `[data-testid="${escapeAttr(hint.testId)}"]`;
     if (await selectorExists(browser, sel)) return sel;
   }
 
-  if (hint.ariaLabel) {
+  if (hint.ariaLabel !== undefined && hint.ariaLabel !== '') {
     const sel = `[aria-label="${escapeAttr(hint.ariaLabel)}"]`;
     if (await selectorExists(browser, sel)) return sel;
   }
 
-  if (hint.text) {
+  if (hint.text !== undefined && hint.text !== '') {
     // :has-text() is a Playwright pseudo-selector resolved by BrowserMcpAdapter.click.
     return `:has-text("${escapeAttr(hint.text)}")`;
   }

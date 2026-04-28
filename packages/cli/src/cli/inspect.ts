@@ -20,7 +20,7 @@ export function inspectCommand(projectDir: string, id: string): void {
       const matchesCluster = cluster.id === id;
       const matchingOcc = cluster.occurrences.find(o => o.occurrenceId === id);
 
-      if (!matchesCluster && !matchingOcc) continue;
+      if (!matchesCluster && matchingOcc === undefined) continue;
 
       printCluster(cluster, matchingOcc ?? null);
       return;
@@ -32,8 +32,9 @@ export function inspectCommand(projectDir: string, id: string): void {
 }
 
 function printCluster(cluster: BugCluster, focusOcc: Occurrence | null): void {
-  const relatedLine = cluster.relatedClusterIds?.length
-    ? [`Related clusters: ${cluster.relatedClusterIds.join(', ')}`]
+  const relatedIds = cluster.relatedClusterIds;
+  const relatedLine = (relatedIds !== undefined && relatedIds.length > 0)
+    ? [`Related clusters: ${relatedIds.join(', ')}`]
     : [];
 
   const lines = [
@@ -43,7 +44,7 @@ function printCluster(cluster: BugCluster, focusOcc: Occurrence | null): void {
     `Cluster Size: ${cluster.clusterSize}`,
     `First Seen: ${cluster.firstSeenAt}`,
     `Last Seen: ${cluster.lastSeenAt}`,
-    `Suspected Files: ${cluster.suspectedFiles.join(', ') || '(none)'}`,
+    `Suspected Files: ${cluster.suspectedFiles.length === 0 ? '(none)' : cluster.suspectedFiles.join(', ')}`,
     `Third Party: ${cluster.thirdPartyOrGenerated}`,
     ...relatedLine,
     '',
@@ -53,7 +54,7 @@ function printCluster(cluster: BugCluster, focusOcc: Occurrence | null): void {
     `Occurrences (${cluster.occurrences.length}):`,
   ];
 
-  const occs = focusOcc ? [focusOcc] : cluster.occurrences;
+  const occs = focusOcc !== null ? [focusOcc] : cluster.occurrences;
   for (const occ of occs) {
     lines.push(`  [${occ.occurrenceId}] role=${occ.role} page=${occ.page} fullArtifacts=${occ.fullArtifacts}`);
     if (occ.fullArtifacts) {

@@ -75,7 +75,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- set just above or on previous iteration; cannot be absent here
     const cluster = clusterMap.get(sig)!;
     const occId = opts.occurrenceIdByTestId.get(testId);
-    if (!occId) {
+    if (occId === undefined || occId === '') {
       throw new Error(
         `cluster: missing occurrenceId for testId ${testId}; ` +
         `executor must populate occurrenceIdByTestId for every TestResult`,
@@ -103,7 +103,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
   for (const cluster of clusterMap.values()) {
     const fullSet = computeFullArtifactSet(cluster.occurrences);
     cluster.occurrences = cluster.occurrences.map((occ): Occurrence => {
-      if (!fullSet.has(occ.occurrenceId)) return occ;
+      if (fullSet.has(occ.occurrenceId) !== true) return occ;
       return upgradeToFull(occ, opts);
     });
 
@@ -183,7 +183,7 @@ function annotateRelatedClusters(clusters: BugCluster[]): void {
 
       const keyA = routeKeyOf(a);
       const keyB = routeKeyOf(b);
-      if (!keyA || !keyB || keyA !== keyB) continue;
+      if (keyA === null || keyB === null || keyA !== keyB) continue;
 
       const pairKey = [a.id, b.id].sort().join(':');
       if (linked.has(pairKey)) continue;
@@ -203,7 +203,7 @@ function annotateRelatedClusters(clusters: BugCluster[]): void {
  */
 function routeKeyOf(cluster: BugCluster): string | null {
   const toolId = cluster.occurrences[0]?.action.toolId;
-  if (toolId) return `tool:${toolId}`;
+  if (toolId !== undefined && toolId !== '') return `tool:${toolId}`;
 
   if (cluster.kind === '404_for_linked_route') {
     const match = /links to (\S+) which returned/.exec(cluster.rootCause);
@@ -237,8 +237,8 @@ function generateFixHints(detection: BugDetection): string[] {
       break;
     case 'visual_anomaly': {
       const lines = [detection.rootCause];
-      if (detection.screenshotPath) lines.push(`Screenshot: ${detection.screenshotPath}`);
-      if (detection.visualSuggestedFix) lines.push(`Suggested fix: ${detection.visualSuggestedFix}`);
+      if (detection.screenshotPath !== undefined) lines.push(`Screenshot: ${detection.screenshotPath}`);
+      if (detection.visualSuggestedFix !== undefined) lines.push(`Suggested fix: ${detection.visualSuggestedFix}`);
       hints.push(lines.join('\n'));
       break;
     }

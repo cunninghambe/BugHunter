@@ -97,7 +97,7 @@ export async function runPlan(
   }
 
   // Orphan-fixture warning: bodyFixtures keys not in catalog
-  if (config.bodyFixtures) {
+  if (config.bodyFixtures !== undefined) {
     const catalogIds = new Set(enrichedTools.map(t => t.toolId));
     const configRoles = config.roles ?? [];
     for (const [toolId, roleMap] of Object.entries(config.bodyFixtures)) {
@@ -148,7 +148,7 @@ async function enrichToolSchemas(
       continue;
     }
     const probe = await surface.surface_probe({ toolId: tool.toolId, role }).catch(() => null);
-    if (probe?.recoveredSchema && probe.confidence === 'inferred') {
+    if (probe?.recoveredSchema !== undefined && probe.confidence === 'inferred') {
       upgradedToolIds.push(tool.toolId);
       result.push({
         ...tool,

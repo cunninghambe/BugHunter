@@ -72,14 +72,14 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
   // Compute skip reasons and emit pre-execution banner
   const skipReasons: Array<{ reason: string; count: number }> = [];
-  if (!browser && uiQueue.length > 0) {
+  if (browser === undefined && uiQueue.length > 0) {
     skipReasons.push({ reason: 'no browserMcpUrl configured', count: uiQueue.length });
   }
 
-  const willRun = apiQueue.length + (browser ? uiQueue.length : 0);
-  const willSkip = uiQueue.length - (browser ? uiQueue.length : 0);
+  const willRun = apiQueue.length + (browser !== undefined ? uiQueue.length : 0);
+  const willSkip = uiQueue.length - (browser !== undefined ? uiQueue.length : 0);
   const apiLabel = `${apiQueue.length} api`;
-  const uiLabel = browser ? `, ${uiQueue.length} ui` : '';
+  const uiLabel = browser !== undefined ? `, ${uiQueue.length} ui` : '';
   const skipLabel = willSkip > 0
     ? `, ${willSkip} skipped (${skipReasons.map(r => r.reason).join(', ')})`
     : '';
@@ -136,7 +136,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
       const p = runTest(tc).then(result => {
         results.push(result);
-        if (result.infrastructureFailure) {
+        if (result.infrastructureFailure !== undefined) {
           consecutiveInfraFailures++;
           log.warn('Infrastructure failure', result.infrastructureFailure);
         } else {
@@ -156,7 +156,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
   // Run UI and API queues concurrently (different pools)
   await Promise.all([
-    browser ? drainQueue(uiQueue, concurrency) : Promise.resolve(),
+    browser !== undefined ? drainQueue(uiQueue, concurrency) : Promise.resolve(),
     drainQueue(apiQueue, apiConcurrency),
   ]);
 
@@ -178,7 +178,7 @@ async function persistUiArtifacts(
     .screenshot(path.join(screenshotsDir, `${occurrenceId}.png`))
     .catch(err => log.warn('screenshot failed', { occurrenceId, err: String(err) }));
 
-  if (postSnapshot?.snapshot) {
+  if (postSnapshot?.snapshot !== undefined && postSnapshot.snapshot !== '') {
     fs.writeFileSync(path.join(domDir, `${occurrenceId}.html`), postSnapshot.snapshot);
   }
 
@@ -323,14 +323,14 @@ async function executeUiTestInner(
   bugs.push(...classifyNetworkRequests([], tc.expectedOutcome, true));
 
   const missingChange = classifyMissingStateChange(preState, postState, tc.action, tc.page);
-  if (missingChange) bugs.push(missingChange);
+  if (missingChange !== null) bugs.push(missingChange);
 
   void preSnapshot;
 
   await persistUiArtifacts(scope, occurrenceId, postSnapshot, postConsoleErrors, artifactPaths);
 
   // Per-occurrence vision pass: only when missing_state_change fired and vision is active.
-  if (missingChange && visionEnabled && visionClient && visionBudget?.tryConsume()) {
+  if (missingChange !== null && visionEnabled === true && visionClient !== undefined && visionBudget?.tryConsume() === true) {
     const screenshotPath = path.join(artifactPaths.screenshotsDir, `${occurrenceId}.png`);
     let hashOk = true;
     try {
@@ -453,7 +453,7 @@ async function executeApiTest(
   const bugs: BugDetection[] = [];
   const occurrenceId = createId();
 
-  const toolSchema = toolMap?.get(tc.action.toolId ?? '')?.inputSchema;
+  const toolSchema = (tc.action.toolId !== undefined && tc.action.toolId !== '') ? toolMap?.get(tc.action.toolId)?.inputSchema : undefined;
   const actionLog = {
     occurrenceId,
     runId,
@@ -468,7 +468,7 @@ async function executeApiTest(
       toolId: tc.action.toolId,
       palette: tc.action.palette,
       input: tc.action.input,
-      inputSchemaHash: toolSchema ? hashSchema(toolSchema) : undefined,
+      inputSchemaHash: toolSchema !== undefined ? hashSchema(toolSchema) : undefined,
       timestamp: new Date().toISOString(),
     }],
     createdAt: new Date().toISOString(),
@@ -476,7 +476,7 @@ async function executeApiTest(
 
   let result: TestResult;
   try {
-    if (!tc.action.toolId) {
+    if (tc.action.toolId === undefined || tc.action.toolId === '') {
       result = { testId: tc.id, occurrenceId, passed: true, bugs: [], durationMs: 0 };
     } else {
       const callResult = await surface.surface_call({
@@ -487,14 +487,14 @@ async function executeApiTest(
       });
 
       // surface_call_failed
-      if (!callResult.ok && tc.action.palette === 'happy') {
+      if (callResult.ok !== true && tc.action.palette === 'happy') {
         const status = callResult.status ?? 0;
         if (status >= 400 && status < 500) {
           const meta = toolMap?.get(tc.action.toolId);
-          const endpoint = meta
+          const endpoint = meta !== undefined
             ? `${meta.method} ${normalizePath(meta.path)}`
             : tc.action.toolId;
-          if (!meta) {
+          if (meta === undefined) {
             log.debug(`toolMap miss for toolId ${tc.action.toolId}; using bare id as endpoint`);
           }
           bugs.push({

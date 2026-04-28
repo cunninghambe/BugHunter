@@ -241,7 +241,7 @@ async function findSubmitSelector(
   browser: BrowserMcpAdapter,
   uiSubmitSelector: string | undefined
 ): Promise<string | StructuredSelector | null> {
-  if (uiSubmitSelector) return uiSubmitSelector;
+  if (uiSubmitSelector !== undefined) return uiSubmitSelector;
 
   // Try button[type="submit"] via evaluate
   try {
@@ -338,7 +338,7 @@ async function loginViaModalEvaluate(
 ): Promise<LoginResult> {
   // Step 4: Click trigger via evaluate
   const parsed = parsePlaywrightHasText(triggerSelector);
-  if (!parsed) {
+  if (parsed === null) {
     return { ok: false, reason: 'trigger_not_found', detail: triggerSelector };
   }
   const triggerClicked = await tryClickByText(browser, parsed.tag, parsed.text);
@@ -387,11 +387,11 @@ async function clickSubmitEvaluate(
   browser: BrowserMcpAdapter,
   uiSubmitSelector: string | undefined
 ): Promise<boolean> {
-  if (!uiSubmitSelector) {
+  if (uiSubmitSelector === undefined || uiSubmitSelector === '') {
     return tryClickFirstMatchingButton(browser, SUBMIT_LABELS);
   }
   const hasText = parsePlaywrightHasText(uiSubmitSelector);
-  if (hasText) {
+  if (hasText !== null) {
     return tryClickByText(browser, hasText.tag, hasText.text);
   }
   // Plain CSS selector
@@ -458,8 +458,8 @@ export async function loginInBrowser(
       `})()`
     );
     const val = captchaResult.value as { captcha?: boolean; twoFa?: boolean } | null;
-    if (val?.captcha) return { ok: false, reason: 'captcha_detected', detail: 'captcha element detected on login page' };
-    if (val?.twoFa) return { ok: false, reason: 'two_factor_detected', detail: '2FA input detected on login page' };
+    if (val?.captcha === true) return { ok: false, reason: 'captcha_detected', detail: 'captcha element detected on login page' };
+    if (val?.twoFa === true) return { ok: false, reason: 'two_factor_detected', detail: '2FA input detected on login page' };
   } catch { /* ignore detect errors */ }
 
   // Steps 4–8: Fill and submit the login form.
@@ -479,7 +479,7 @@ export async function loginInBrowser(
   }
 
   // Step 4: Click trigger if configured (snapshot-driven path)
-  if (browseablePlan.uiTriggerSelector) {
+  if (browseablePlan.uiTriggerSelector !== undefined) {
     const clicked = await tryClick(browser, browseablePlan.uiTriggerSelector);
     if (!clicked) {
       return { ok: false, reason: 'trigger_not_found', detail: browseablePlan.uiTriggerSelector };

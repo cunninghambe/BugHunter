@@ -71,8 +71,8 @@ export function runEmit(
     testsRan,
     testsSkipped,
     skippedReasons: skipReasons,
-    ...(counters?.vision ? { vision: counters.vision } : {}),
-    ...(crawlTelemetry ? { discovery: crawlTelemetry } : {}),
+    ...(counters?.vision !== undefined ? { vision: counters.vision } : {}),
+    ...(crawlTelemetry !== undefined ? { discovery: crawlTelemetry } : {}),
   };
 
   writeJsonFile(paths.summaryFile, summary);

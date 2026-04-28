@@ -11,7 +11,7 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     case 'react_error':
     case 'unhandled_exception': {
       const msgNorm = normalizeErrorMessage(detection.rootCause);
-      const stackFp = detection.stackTrace ? fingerprintStackTrace(detection.stackTrace) : '';
+      const stackFp = detection.stackTrace !== undefined ? fingerprintStackTrace(detection.stackTrace) : '';
       return `${detection.kind}|${msgNorm}|${stackFp}`;
     }
     case 'network_5xx':
@@ -45,10 +45,10 @@ export function extractNormalizedFields(detection: BugDetection): {
   const isMessageBased = (k: BugKind) =>
     k === 'console_error' || k === 'react_error' || k === 'unhandled_exception';
 
-  if (!isMessageBased(detection.kind)) return {};
+  if (isMessageBased(detection.kind) !== true) return {};
   return {
     errorMessageNormalized: normalizeErrorMessage(detection.rootCause),
-    stackTraceFingerprint: detection.stackTrace ? fingerprintStackTrace(detection.stackTrace) : undefined,
+    stackTraceFingerprint: detection.stackTrace !== undefined ? fingerprintStackTrace(detection.stackTrace) : undefined,
   };
 }
 

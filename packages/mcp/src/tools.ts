@@ -112,7 +112,7 @@ export function registerTools(server: McpServer): void {
     // eslint-disable-next-line @typescript-eslint/require-await -- MCP tool handler interface contract; synchronous lookup
     async (args) => {
       const job = jobs.get(args.jobId);
-      if (!job) return toolErr('not_found', `Job ${args.jobId} not found`);
+      if (job === undefined) return toolErr('not_found', `Job ${args.jobId} not found`);
       return toolOk(job);
     }
   );

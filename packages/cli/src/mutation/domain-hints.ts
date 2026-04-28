@@ -10,12 +10,12 @@ export async function resolveDomainHint(
   surface: SurfaceMcpAdapter,
   domainHints: Record<string, string[]> | undefined
 ): Promise<unknown | undefined> {
-  if (toolId) {
+  if (toolId !== undefined) {
     const samples = await surface.surface_sample_inputs({ toolId }).catch(() => null);
-    if (samples?.samples.length) {
+    if (samples !== null && samples.samples.length > 0) {
       for (const s of samples.samples) {
         const obj = s.input as Record<string, unknown> | null;
-        if (obj && typeof obj === 'object') {
+        if (obj !== null && typeof obj === 'object') {
           for (const val of Object.values(obj)) {
             if (type === 'slug' && typeof val === 'string' && /^[a-z0-9-]+$/.test(val)) return val;
             if (type === 'foreign_id' && (typeof val === 'number' || typeof val === 'string')) return val;

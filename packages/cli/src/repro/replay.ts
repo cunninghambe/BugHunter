@@ -82,7 +82,7 @@ async function executeStep(
       break;
 
     case 'api_call':
-      if (entry.toolId) {
+      if (entry.toolId !== undefined && entry.toolId !== '') {
         await surface.surface_call({
           toolId: entry.toolId,
           role,

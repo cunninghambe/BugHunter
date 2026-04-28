@@ -54,7 +54,7 @@ export type CrawlResult = {
 
 /** Returns absolute URL if same-origin & supported scheme, else null. */
 export function normalizeLink(href: string, currentUrl: string, opts: Pick<CrawlOpts, 'baseUrl' | 'followQueryParams' | 'sameOriginOnly'>): string | null {
-  if (!href || href.startsWith('#')) return null;
+  if (href === '' || href.startsWith('#')) return null;
   const lowered = href.toLowerCase();
   if (
     // eslint-disable-next-line no-script-url -- defensive URL scheme filter, not a script URL value
@@ -91,7 +91,7 @@ export function normalizeLink(href: string, currentUrl: string, opts: Pick<Crawl
 export function routeKey(u: URL, followQueryParams: boolean): string {
   let key = u.pathname;
   if (key !== '/' && key.endsWith('/')) key = key.slice(0, -1);
-  if (followQueryParams && u.search) {
+  if (followQueryParams && u.search !== '') {
     const params = [...u.searchParams.entries()].sort((a, b) => a[0].localeCompare(b[0]));
     key += `?${  params.map(([k, v]) => `${k}=${v}`).join('&')}`;
   }
@@ -146,7 +146,7 @@ function timeoutAfter(ms: number, label: string): Promise<never> {
 
 async function runRuntimeEnum(browser: BrowserMcpAdapter, surface: SurfaceMcpAdapter): Promise<SurfacePostprocessedRoute[]> {
   const self = await surface.surface_describe_self();
-  if (!self.capabilities.enumerateRoutesRuntime) return [];
+  if (self.capabilities.enumerateRoutesRuntime !== true) return [];
 
   const { script, timeoutMs } = await surface.surface_enumerate_routes_runtime();
   let raw: unknown;
@@ -203,12 +203,12 @@ export async function crawlFromSeeds(
   }
 
   // Source 2: static navigations from surface_list_navigations
-  if (opts.surface) {
+  if (opts.surface !== undefined) {
     const self = await opts.surface.surface_describe_self();
-    if (self.capabilities.listNavigations) {
+    if (self.capabilities.listNavigations === true) {
       const nav = await opts.surface.surface_list_navigations();
       for (const n of nav.navigations) {
-        if (n.confidence === 'low' && !opts.includeLowConfidence) continue;
+        if (n.confidence === 'low' && opts.includeLowConfidence !== true) continue;
         if (n.kind === 'url' || n.kind === 'hash') {
           const target = n.kind === 'hash' ? `/${n.target}` : n.target;
           queue.push({ kind: 'url', url: opts.baseUrl + target, depth: 0, source: 'static-navigation' });
@@ -243,7 +243,7 @@ export async function crawlFromSeeds(
   while (queue.length > 0) {
     if (visited.size >= opts.maxPages) { hitMaxPages = true; break; }
     const item = queue.shift();
-    if (!item) break;
+    if (item === undefined) break;
 
     const key = queueKey(item, opts.followQueryParams);
     if (visited.has(key)) continue;
@@ -277,7 +277,7 @@ export async function crawlFromSeeds(
         }
 
         const selector = await resolveTriggerSelector(browser, item.trigger);
-        if (!selector) {
+        if (selector === null || selector === '') {
           skipped.push({ url: key, reason: 'trigger_not_found' });
           visited.delete(key);
           continue;
@@ -302,7 +302,7 @@ export async function crawlFromSeeds(
     visited.set(key, page);
 
     // Source 3: runtime enum — once per crawl, after first depth-0 walk
-    if (!runtimeEnumDone && item.depth === 0 && !opts.disableRuntimeEnum && opts.surface) {
+    if (!runtimeEnumDone && item.depth === 0 && opts.disableRuntimeEnum !== true && opts.surface !== undefined) {
       runtimeEnumDone = true;
       const runtimeRoutes = await runRuntimeEnum(browser, opts.surface);
       for (const r of runtimeRoutes) {
