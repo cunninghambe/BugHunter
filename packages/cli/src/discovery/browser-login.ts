@@ -35,19 +35,38 @@ export type LoginConfig = {
 type BrowseableAuthPlan = Extract<DescribeAuthResult, { authKind: 'form' | 'nextauth' }>;
 
 // Selector candidates for a field, tried in priority order.
-function fieldCandidates(credKey: string, domName: string): string[] {
+// True when domName already looks like a CSS selector (#id, .class, [attr=...],
+// or contains a combinator/space). Covers the case where a user puts the
+// actual selector in `uiLoginFields` instead of a name/id fragment.
+export function looksLikeCssSelector(domName: string): boolean {
+  const trimmed = domName.trim();
+  if (trimmed === '') return false;
+  if (trimmed.startsWith('#') || trimmed.startsWith('.') || trimmed.startsWith('[')) return true;
+  if (/[\s>+~]/.test(trimmed)) return true;
+  return false;
+}
+
+export function fieldCandidates(credKey: string, domName: string): string[] {
   const pwKey = credKey === 'password' || domName.toLowerCase().includes('password');
   const emailKey = !pwKey && (credKey.includes('email') || domName.toLowerCase().includes('email'));
-  return [
+  const candidates: string[] = [];
+  // 1. Honor a user-supplied CSS selector verbatim — highest priority.
+  if (looksLikeCssSelector(domName)) {
+    candidates.push(domName);
+  }
+  // 2. Default attribute-fragment expansion.
+  candidates.push(
     `input[name="${domName}"]`,
     `input[id="${domName}"]`,
     `input[name="${credKey}"]`,
     `input[id="${credKey}"]`,
     `input[id="auth-${domName}"]`,
     `input[id="auth-${credKey}"]`,
-    ...(pwKey ? [`input[type="password"]`] : emailKey ? [`input[type="email"]`] : []),
-    `input[placeholder*="${credKey}" i]`,
-  ];
+  );
+  if (pwKey) candidates.push(`input[type="password"]`);
+  else if (emailKey) candidates.push(`input[type="email"]`);
+  candidates.push(`input[placeholder*="${credKey}" i]`);
+  return candidates;
 }
 
 const SUBMIT_LABELS = ['Sign in', 'Log in', 'Login', 'Continue', 'Submit'];
@@ -350,18 +369,21 @@ async function loginViaModalEvaluate(
   // Steps 5 & 6: Fill each field via evaluate
   for (const [credKey, domName] of Object.entries(plan.fields)) {
     const value = plan.values[domName] ?? '';
+    const candidates = fieldCandidates(credKey, domName);
     let typed = false;
-    for (const selector of fieldCandidates(credKey, domName)) {
+    for (const selector of candidates) {
       if (await tryTypeByCssSelector(browser, selector, value)) {
         typed = true;
         break;
       }
     }
     if (!typed) {
+      const tried = candidates.map(s => `"${s}"`).join(', ');
+      log.warn(`browser_login: field_not_found (credKey=${credKey}, domName=${domName}); tried: [${tried}]`);
       return {
         ok: false,
         reason: 'field_not_found',
-        detail: `No input matched any candidate selector for credential key "${credKey}" (domName "${domName}")`,
+        detail: `No input matched any candidate selector for credential key "${credKey}" (domName "${domName}"). Tried: [${tried}]`,
       };
     }
     await sleep(FIELD_SETTLE_MS);
@@ -398,7 +420,7 @@ async function clickSubmitEvaluate(
   return tryClickByCssSelector(browser, uiSubmitSelector);
 }
 
-const LOGIN_FORM_READY_MAX_MS = 5000;
+const LOGIN_FORM_READY_MAX_MS = 2500;
 const LOGIN_FORM_READY_POLL_MS = 100;
 
 async function waitForLoginFormReady(
@@ -520,8 +542,9 @@ export async function loginInBrowser(
   // snapshot-based type rejects inputs without accessible names.
   for (const [credKey, domName] of Object.entries(browseablePlan.fields)) {
     const value = browseablePlan.values[domName] ?? '';
+    const candidates = fieldCandidates(credKey, domName);
     let typed = false;
-    for (const selector of fieldCandidates(credKey, domName)) {
+    for (const selector of candidates) {
       if (await tryTypeByCssSelector(browser, selector, value)) {
         typed = true;
         break;
@@ -532,10 +555,12 @@ export async function loginInBrowser(
       }
     }
     if (!typed) {
+      const tried = candidates.map(s => `"${s}"`).join(', ');
+      log.warn(`browser_login: field_not_found (credKey=${credKey}, domName=${domName}); tried: [${tried}]`);
       return {
         ok: false,
         reason: 'field_not_found',
-        detail: `No input matched any candidate selector for credential key "${credKey}" (domName "${domName}")`,
+        detail: `No input matched any candidate selector for credential key "${credKey}" (domName "${domName}"). Tried: [${tried}]`,
       };
     }
   }
