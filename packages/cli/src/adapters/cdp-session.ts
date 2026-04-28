@@ -4,7 +4,7 @@
 
 import { chromium } from 'playwright-core';
 import type { Browser, BrowserContext, Page, CDPSession as PlaywrightCdpSession, Cookie } from 'playwright-core';
-import type { WebVitalSample, LongTaskSample, HeapSample, RenderEvent } from '../types.js';
+import type { WebVitalSample, LongTaskSample, HeapSample, RenderEvent, ConsoleError } from '../types.js';
 import { log } from '../log.js';
 
 // Minimal CDP network event types (subset we actually use for HAR building).
@@ -66,6 +66,8 @@ export type DrainResult = {
   networkEvents: NetworkEvent[];
   renderEvents: RenderEvent[];
   navigationEvents: NavigationEvent[];
+  /** Console errors collected via CDP Console.messageAdded (level: 'error'). */
+  consoleErrors: ConsoleError[];
 };
 
 export interface CdpTabScope {
@@ -84,6 +86,7 @@ export interface CdpSession {
 type CollectedData = {
   networkEvents: NetworkEvent[];
   navigationEvents: NavigationEvent[];
+  consoleErrors: ConsoleError[];
   currentActionWindowId: string;
 };
 
@@ -95,6 +98,7 @@ function makeEmptyDrain(): DrainResult {
     networkEvents: [],
     renderEvents: [],
     navigationEvents: [],
+    consoleErrors: [],
   };
 }
 
@@ -125,6 +129,7 @@ class CdpSessionImpl implements CdpSession {
   private readonly collected: CollectedData = {
     networkEvents: [],
     navigationEvents: [],
+    consoleErrors: [],
     currentActionWindowId: 'init',
   };
 
@@ -151,6 +156,13 @@ class CdpSessionImpl implements CdpSession {
 
     await cdp.send('Network.enable', {});
     await cdp.send('Performance.enable', {});
+    await cdp.send('Console.enable', {});
+
+    cdp.on('Console.messageAdded', (ev: { message: { level: string; text: string } }) => {
+      if (ev.message.level === 'error') {
+        this.collected.consoleErrors.push({ level: 'error', text: ev.message.text });
+      }
+    });
 
     cdp.on('Network.requestWillBeSent', (ev) => {
       this.collected.networkEvents.push({
@@ -276,11 +288,13 @@ class CdpSessionImpl implements CdpSession {
       networkEvents: [...this.collected.networkEvents],
       renderEvents,
       navigationEvents: [...this.collected.navigationEvents],
+      consoleErrors: [...this.collected.consoleErrors],
     };
 
     // Clear collected data for next action window
     this.collected.networkEvents = [];
     this.collected.navigationEvents = [];
+    this.collected.consoleErrors = [];
 
     return result;
   }

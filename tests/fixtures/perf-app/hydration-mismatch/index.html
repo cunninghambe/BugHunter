@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hydration Mismatch Fixture</title>
+</head>
+<body>
+  <div id="root">
+    <!-- Simulated server-rendered HTML -->
+    <p>Server text</p>
+  </div>
+  <script>
+    // Simulate React 18 hydration mismatch console error
+    // (the real React runtime would emit this; here we emit it directly for fixture tests)
+    const hydrateError = 'Hydration failed because the initial UI does not match what was rendered on the server.';
+    console.error(hydrateError);
+
+    // Also simulate React 16 variant
+    const react16Error = 'Warning: Did not expect server HTML to contain a <div> in <div>.';
+    console.error(react16Error);
+  </script>
+</body>
+</html>

@@ -77,6 +77,7 @@ export async function createPerfCollector(opts: PerfCollectorOptions): Promise<P
         longTasks: injectionFailed ? [] : drained.longTasks,
         heapSamples: heapSampling ? [...heapSamples] : [],
         renderEvents: injectionFailed ? [] : drained.renderEvents,
+        cdpConsoleErrors: drained.consoleErrors,
       };
 
       const har = eventsToHar(drained.networkEvents);

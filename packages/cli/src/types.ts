@@ -479,6 +479,8 @@ export type PerfArtifacts = {
   longTasks: LongTaskSample[];
   heapSamples: HeapSample[];
   renderEvents: RenderEvent[];
+  /** Console errors collected via CDP Console.messageAdded (hydration-mismatch redundancy path). */
+  cdpConsoleErrors?: ConsoleError[];
 };
 
 export type BundleArtifact = {
