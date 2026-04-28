@@ -30,7 +30,7 @@ export function classifyExcessiveRerenders(
   // Group by component name
   const byComponent = new Map<string, RenderEvent[]>();
   for (const ev of perf.renderEvents) {
-    const name = ev.component || 'Anonymous';
+    const name = ev.component !== '' ? ev.component : 'Anonymous';
     const existing = byComponent.get(name);
     if (existing !== undefined) {
       existing.push(ev);

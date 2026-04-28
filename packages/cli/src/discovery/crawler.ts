@@ -152,7 +152,7 @@ async function runRuntimeEnum(browser: BrowserMcpAdapter, surface: SurfaceMcpAda
   try {
     const result = await Promise.race([
       browser.evaluate(script),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('runtime_enum_timeout')), timeoutMs + 500)),
+      new Promise<never>((_, rej) => { setTimeout(() => rej(new Error('runtime_enum_timeout')), timeoutMs + 500); }),
     ]);
     raw = (result as { value: unknown }).value;
   } catch (err) {

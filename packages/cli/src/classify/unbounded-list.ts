@@ -77,7 +77,7 @@ function extractListContainers(domSnapshot: string): ListContainer[] {
     let match: RegExpExecArray | null;
     re.lastIndex = 0;
     while ((match = re.exec(domSnapshot)) !== null) {
-      const attrs = match[1] ?? '';
+      const attrs = match[1];
       // match[0] is the full outer HTML (including the container element itself)
       const outerHtml = match[0];
 

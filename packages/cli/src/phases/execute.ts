@@ -8,7 +8,7 @@ import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   TestCase, TestResult, BugDetection, InfrastructureFailure, PreState, PostState,
-  ConsoleError, NetworkRequest, RunState, ToolMeta, DiscoveredIds, BugHunterConfig
+  ConsoleError, NetworkRequest, RunState, ToolMeta, DiscoveredIds, BugHunterConfig, PerfArtifacts
 } from '../types.js';
 import { probeHeaders, analyzeProbeResult } from '../security/header-probe.js';
 import { extractIdsFromBody, mergeDiscoveredIds } from '../security/resource-id-extractor.js';
@@ -75,7 +75,7 @@ export type ExecuteResult = {
   /** Security header probe detections — emitted before test execution. */
   headerProbeDetections?: BugDetection[];
   /** v0.6 perf artifacts keyed by occurrenceId. Populated when perfCollector is set. */
-  perfArtifacts?: Map<string, import('../types.js').PerfArtifacts>;
+  perfArtifacts?: Map<string, PerfArtifacts>;
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
@@ -91,7 +91,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   const apiQueue = testCases.filter(t => t.action.via === 'api');
 
   const results: TestResult[] = [];
-  const perfArtifacts = new Map<string, import('../types.js').PerfArtifacts>();
+  const perfArtifacts = new Map<string, PerfArtifacts>();
   let abortReason: ExecuteResult['abortReason'];
   let consecutiveInfraFailures = runState.consecutiveInfraFailures;
 

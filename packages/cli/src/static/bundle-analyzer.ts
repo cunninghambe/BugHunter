@@ -51,8 +51,8 @@ function parseInitialRouteAssets(indexHtmlContent: string, distPath: string): Se
     let m: RegExpExecArray | null;
     re.lastIndex = 0;
     while ((m = re.exec(indexHtmlContent)) !== null) {
-      // Script: group 1. Link: group 2 or 1
-      const href = m[2] ?? m[1] ?? '';
+      // Script: group 1. Link: group 2 or 1 (cast needed: noUncheckedIndexedAccess is off)
+      const href = (m[2] as string | undefined) ?? (m[1] as string | undefined) ?? '';
       if (href === '') continue;
       // Resolve to an absolute path within distPath
       const stripped = href.replace(/^\//, '');
