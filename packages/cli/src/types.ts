@@ -57,7 +57,19 @@ export type BugKind =
   | 'xss_stored'   // placeholder; v0.8
   // v0.7 auth-flow kinds
   | 'auth_session_fixation'
-  | 'password_reset_token_reuse';
+  | 'password_reset_token_reuse'
+  // v0.6 performance kinds
+  | 'slow_lcp'
+  | 'slow_inp'
+  | 'high_cls'
+  | 'unbounded_list_render'
+  | 'n_plus_one_api_calls'
+  | 'request_dedup_missing'
+  | 'request_cancellation_missing'
+  | 'main_thread_blocked'
+  | 'oversized_bundle'
+  | 'excessive_re_renders'
+  | 'memory_leak_suspected';
 
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
 export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
@@ -429,6 +441,61 @@ export type AuthFlowContext = {
   redirectTarget?: string;
 };
 
+// --- v0.6 performance types ---
+
+export type WebVitalSample = {
+  name: 'LCP' | 'INP' | 'CLS' | 'FCP' | 'TTFB';
+  value: number;
+  rating: 'good' | 'needs-improvement' | 'poor';
+  /** When the sample was captured relative to action start (ms). */
+  capturedAtMs: number;
+};
+
+export type LongTaskSample = {
+  /** ms duration of the long task */
+  duration: number;
+  /** ms relative to action start */
+  startTime: number;
+};
+
+export type HeapSample = {
+  /** ms relative to action start */
+  capturedAtMs: number;
+  /** bytes */
+  jsHeapUsedSize: number;
+  jsHeapTotalSize: number;
+};
+
+export type RenderEvent = {
+  /** Component display name (best-effort; "Anonymous" if missing). */
+  component: string;
+  /** ms relative to action start */
+  capturedAtMs: number;
+};
+
+export type PerfArtifacts = {
+  occurrenceId: string;
+  webVitals: WebVitalSample[];
+  longTasks: LongTaskSample[];
+  heapSamples: HeapSample[];
+  renderEvents: RenderEvent[];
+};
+
+export type BundleArtifact = {
+  path: string;
+  kind: 'js' | 'css' | 'html' | 'asset';
+  bytesRaw: number;
+  bytesGzipped: number;
+  initialRoute: boolean;
+};
+
+export type BundleProbeConfig = {
+  enabled: boolean;
+  jsThresholdGzipBytes: number;
+  cssThresholdGzipBytes: number;
+  searchPaths?: string[];
+};
+
 /** Context populated by XSS detection. */
 export type XssContext = {
   /** The canary variant that fired ('script_tag_basic', etc.). */
@@ -474,6 +541,8 @@ export type BugDetection = {
   xssContext?: XssContext;
   /** Populated for auth-flow findings. */
   authFlowContext?: AuthFlowContext;
+  /** Populated for v0.6 performance findings; shape varies by BugKind. */
+  evidence?: Record<string, unknown>;
 };
 
 export type RunPhase =
@@ -722,6 +791,25 @@ export type BugHunterConfig = {
   xss?: XssConfig;
   /** Auth-flow detectors (session fixation, reset token reuse, open redirect). Default: disabled. */
   authFlow?: AuthFlowConfig;
+  /** v0.6 performance subsystem. Disabled by default until users opt in. */
+  perf?: {
+    enabled: boolean;
+    vitalsThresholds?: {
+      lcpMs?: number;
+      inpMs?: number;
+      cls?: number;
+    };
+    requestHygiene?: {
+      enabled: boolean;
+      nPlusOneThreshold?: number;
+    };
+    heapSampling?: boolean;
+    longTaskMs?: number;
+    rerenderCountThreshold?: number;
+    rerenderWindowMs?: number;
+  };
+  /** v0.6 bundle-size sidecar. */
+  bundleProbe?: BundleProbeConfig;
 };
 
 export type RunSummary = {
@@ -763,5 +851,18 @@ export type RunSummary = {
     crawlLinkRoutes: number;
     visitedPages: number;
     stateKindPages: number;
+  };
+  perfSummary?: {
+    vitalsByPage: Record<string, { lcp?: number; inp?: number; cls?: number }>;
+    longestTaskMs: number;
+    totalNetworkRequests: number;
+    heapGrowthBytesPerSec?: number;
+    worstNPlusOne?: { endpoint: string; count: number };
+    injectionFailures?: number;
+  };
+  bundleSummary?: {
+    initialJsBytesGzipped: number;
+    initialCssBytesGzipped: number;
+    budgetExceeded: boolean;
   };
 };

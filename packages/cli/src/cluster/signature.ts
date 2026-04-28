@@ -2,6 +2,7 @@
 
 import type { BugDetection, BugKind } from '../types.js';
 import { normalizeErrorMessage, fingerprintStackTrace, shapeResponseBody } from './normalize.js';
+import { normalizePath } from '../classify/network.js';
 
 export type ClusterKey = string;
 
@@ -145,6 +146,44 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     }
     case 'password_reset_token_reuse':
       return `password_reset_token_reuse|${detection.endpoint ?? ''}`;
+
+    // v0.6 performance kinds
+    case 'slow_lcp':
+      return `${detection.pageRoute ?? ''}:slow_lcp`;
+    case 'slow_inp':
+      return `${detection.pageRoute ?? ''}:slow_inp`;
+    case 'high_cls':
+      return `${detection.pageRoute ?? ''}:high_cls`;
+    case 'unbounded_list_render': {
+      const sel = (detection.evidence as { containerSelector?: string } | undefined)?.containerSelector ?? '';
+      return `${detection.pageRoute ?? ''}:${sel}:unbounded_list_render`;
+    }
+    case 'n_plus_one_api_calls': {
+      const ep = (detection.evidence as { endpointFamily?: string } | undefined)?.endpointFamily ?? detection.endpoint ?? '';
+      return `${ep}:n_plus_one_api_calls`;
+    }
+    case 'request_dedup_missing': {
+      const method = (detection.evidence as { method?: string } | undefined)?.method ?? '';
+      const url = (detection.evidence as { url?: string } | undefined)?.url ?? '';
+      return `${method}:${normalizePath(url)}:request_dedup_missing`;
+    }
+    case 'request_cancellation_missing': {
+      const method = (detection.evidence as { method?: string } | undefined)?.method ?? '';
+      const url = (detection.evidence as { url?: string } | undefined)?.url ?? '';
+      return `${method}:${normalizePath(url)}:request_cancellation_missing`;
+    }
+    case 'main_thread_blocked':
+      return `${detection.pageRoute ?? ''}:main_thread_blocked`;
+    case 'oversized_bundle': {
+      const kind = (detection.evidence as { kind?: string } | undefined)?.kind ?? '';
+      return `oversized_bundle:${kind}`;
+    }
+    case 'excessive_re_renders': {
+      const comp = (detection.evidence as { component?: string } | undefined)?.component ?? '';
+      return `${comp}:excessive_re_renders`;
+    }
+    case 'memory_leak_suspected':
+      return 'memory_leak_suspected:run';
   }
 }
 

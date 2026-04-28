@@ -47,6 +47,18 @@ const KIND_PRIORITY: BugKind[] = [
   'missing_state_change',
   'console_error',
   'accessibility_critical',
+  // v0.6 performance kinds (below security, above nothing)
+  'slow_lcp',
+  'slow_inp',
+  'high_cls',
+  'unbounded_list_render',
+  'n_plus_one_api_calls',
+  'request_dedup_missing',
+  'request_cancellation_missing',
+  'main_thread_blocked',
+  'oversized_bundle',
+  'excessive_re_renders',
+  'memory_leak_suspected',
 ];
 
 function priorityOf(kind: BugKind): number {
