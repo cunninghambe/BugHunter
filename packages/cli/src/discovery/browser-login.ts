@@ -35,19 +35,110 @@ export type LoginConfig = {
 type BrowseableAuthPlan = Extract<DescribeAuthResult, { authKind: 'form' | 'nextauth' }>;
 
 // Selector candidates for a field, tried in priority order.
-function fieldCandidates(credKey: string, domName: string): string[] {
+// True when domName already looks like a CSS selector (#id, .class, [attr=...],
+// or contains a combinator/space). Covers the case where a user puts the
+// actual selector in `uiLoginFields` instead of a name/id fragment.
+export function looksLikeCssSelector(domName: string): boolean {
+  const trimmed = domName.trim();
+  if (trimmed === '') return false;
+  if (trimmed.startsWith('#') || trimmed.startsWith('.') || trimmed.startsWith('[')) return true;
+  if (/[\s>+~]/.test(trimmed)) return true;
+  return false;
+}
+
+export function fieldCandidates(credKey: string, domName: string): string[] {
   const pwKey = credKey === 'password' || domName.toLowerCase().includes('password');
   const emailKey = !pwKey && (credKey.includes('email') || domName.toLowerCase().includes('email'));
-  return [
+  const candidates: string[] = [];
+  // 1. Honor a user-supplied CSS selector verbatim — highest priority.
+  if (looksLikeCssSelector(domName)) {
+    candidates.push(domName);
+  }
+  // 2. Default attribute-fragment expansion.
+  candidates.push(
     `input[name="${domName}"]`,
     `input[id="${domName}"]`,
     `input[name="${credKey}"]`,
     `input[id="${credKey}"]`,
     `input[id="auth-${domName}"]`,
     `input[id="auth-${credKey}"]`,
-    ...(pwKey ? [`input[type="password"]`] : emailKey ? [`input[type="email"]`] : []),
-    `input[placeholder*="${credKey}" i]`,
-  ];
+  );
+  if (pwKey) candidates.push(`input[type="password"]`);
+  else if (emailKey) candidates.push(`input[type="email"]`);
+  candidates.push(`input[placeholder*="${credKey}" i]`);
+  // 3. aria-label fallback — modern forms commonly use <input aria-label="Password">
+  // with no name/id. Try credKey first; also domName when it's not a CSS selector.
+  candidates.push(`input[aria-label*="${credKey}" i]`);
+  if (!looksLikeCssSelector(domName) && domName !== credKey) {
+    candidates.push(`input[aria-label*="${domName}" i]`);
+  }
+  return candidates;
+}
+
+/**
+ * Candidate label-text fragments to search for when no CSS selector matches.
+ * Returned as lowercased substrings — labelText match is case-insensitive.
+ */
+export function labelTextCandidates(credKey: string, domName: string): string[] {
+  const out = new Set<string>();
+  out.add(credKey.toLowerCase());
+  if (!looksLikeCssSelector(domName)) out.add(domName.toLowerCase());
+  // Common humanized aliases
+  if (credKey === 'email' || domName.toLowerCase().includes('email')) {
+    out.add('email');
+    out.add('email address');
+    out.add('username');
+  }
+  if (credKey === 'password' || domName.toLowerCase().includes('password')) {
+    out.add('password');
+  }
+  return Array.from(out).filter(s => s !== '');
+}
+
+/**
+ * Type into the input associated with a `<label>` whose text contains
+ * `labelText` (case-insensitive). Resolves the input via `label.htmlFor`
+ * → `getElementById`, or falls back to a descendant `<input>/<textarea>/<select>`.
+ * Uses the native value setter so React tracks the change. Returns true on
+ * success, false if no matching label-input pair is found.
+ */
+async function tryTypeByLabelText(
+  browser: BrowserMcpAdapter,
+  labelText: string,
+  value: string
+): Promise<boolean> {
+  const script = `(function(){
+    var needle=${JSON.stringify(labelText.toLowerCase())};
+    var labels=Array.from(document.querySelectorAll('label'));
+    var match=labels.find(function(l){
+      return (l.textContent||'').toLowerCase().includes(needle);
+    });
+    if(!match)return false;
+    var input=null;
+    if(match.htmlFor){input=document.getElementById(match.htmlFor);}
+    if(!input){input=match.querySelector('input,textarea,select');}
+    if(!input)return false;
+    if(input.tagName==='SELECT'){
+      input.value=${JSON.stringify(value)};
+      input.dispatchEvent(new Event('change',{bubbles:true}));
+      return true;
+    }
+    var proto=input instanceof HTMLTextAreaElement
+      ?HTMLTextAreaElement.prototype
+      :HTMLInputElement.prototype;
+    var setter=Object.getOwnPropertyDescriptor(proto,'value').set;
+    setter.call(input,${JSON.stringify(value)});
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+    return true;
+  })()`;
+  try {
+    const result = await browser.evaluate(script);
+    return result.value === true;
+  } catch (err) {
+    log.warn(`tryTypeByLabelText(${JSON.stringify(labelText)}) evaluate failed: ${String(err)}`);
+    return false;
+  }
 }
 
 const SUBMIT_LABELS = ['Sign in', 'Log in', 'Login', 'Continue', 'Submit'];
@@ -350,18 +441,31 @@ async function loginViaModalEvaluate(
   // Steps 5 & 6: Fill each field via evaluate
   for (const [credKey, domName] of Object.entries(plan.fields)) {
     const value = plan.values[domName] ?? '';
+    const candidates = fieldCandidates(credKey, domName);
     let typed = false;
-    for (const selector of fieldCandidates(credKey, domName)) {
+    for (const selector of candidates) {
       if (await tryTypeByCssSelector(browser, selector, value)) {
         typed = true;
         break;
       }
     }
+    // Final fallback: walk <label> elements for matching text → resolve to input.
     if (!typed) {
+      for (const labelText of labelTextCandidates(credKey, domName)) {
+        if (await tryTypeByLabelText(browser, labelText, value)) {
+          typed = true;
+          break;
+        }
+      }
+    }
+    if (!typed) {
+      const tried = candidates.map(s => `"${s}"`).join(', ');
+      const labelTried = labelTextCandidates(credKey, domName).map(s => `"${s}"`).join(', ');
+      log.warn(`browser_login: field_not_found (credKey=${credKey}, domName=${domName}); css tried: [${tried}]; label-text tried: [${labelTried}]`);
       return {
         ok: false,
         reason: 'field_not_found',
-        detail: `No input matched any candidate selector for credential key "${credKey}" (domName "${domName}")`,
+        detail: `No input matched any candidate selector for credential key "${credKey}" (domName "${domName}"). CSS tried: [${tried}]. Label-text tried: [${labelTried}].`,
       };
     }
     await sleep(FIELD_SETTLE_MS);
@@ -396,6 +500,45 @@ async function clickSubmitEvaluate(
   }
   // Plain CSS selector
   return tryClickByCssSelector(browser, uiSubmitSelector);
+}
+
+const LOGIN_FORM_READY_MAX_MS = 2500;
+const LOGIN_FORM_READY_POLL_MS = 100;
+
+async function waitForLoginFormReady(
+  browser: BrowserMcpAdapter,
+  plan: BrowseableAuthPlan
+): Promise<void> {
+  const candidateSelectors: string[] = [];
+  const labelTexts = new Set<string>();
+  for (const [credKey, domName] of Object.entries(plan.fields)) {
+    candidateSelectors.push(...fieldCandidates(credKey, domName));
+    for (const text of labelTextCandidates(credKey, domName)) labelTexts.add(text);
+  }
+  const selectorsJson = JSON.stringify(candidateSelectors);
+  const labelsJson = JSON.stringify(Array.from(labelTexts));
+  const deadline = Date.now() + LOGIN_FORM_READY_MAX_MS;
+  while (Date.now() < deadline) {
+    try {
+      const res = await browser.evaluate(
+        `(function(){
+          var sels=${selectorsJson};
+          for(var i=0;i<sels.length;i++){if(document.querySelector(sels[i]))return true;}
+          var labels=Array.from(document.querySelectorAll('label'));
+          var needles=${labelsJson};
+          for(var j=0;j<labels.length;j++){
+            var t=(labels[j].textContent||'').toLowerCase();
+            for(var k=0;k<needles.length;k++){if(t.includes(needles[k]))return true;}
+          }
+          return false;
+        })()`
+      );
+      if (res.value === true) return;
+    } catch {
+      // ignore — keep polling
+    }
+    await sleep(LOGIN_FORM_READY_POLL_MS);
+  }
 }
 
 export async function loginInBrowser(
@@ -446,7 +589,9 @@ export async function loginInBrowser(
     }
   }
 
-  await sleep(250);
+  // Poll for the first field selector to appear (max 5000ms) — covers
+  // SPA cold-start hydration that exceeds a fixed 250ms wait.
+  await waitForLoginFormReady(browser, browseablePlan);
 
   // Step 3: Detect captcha / 2FA
   try {
@@ -487,21 +632,40 @@ export async function loginInBrowser(
     await sleep(250);
   }
 
-  // Steps 5 & 6: Locate and type into each field
+  // Steps 5 & 6: Locate and type into each field. Prefer evaluate-based type
+  // (raw document.querySelector + native value setter) because camofox's
+  // snapshot-based type rejects inputs without accessible names.
   for (const [credKey, domName] of Object.entries(browseablePlan.fields)) {
     const value = browseablePlan.values[domName] ?? '';
+    const candidates = fieldCandidates(credKey, domName);
     let typed = false;
-    for (const selector of fieldCandidates(credKey, domName)) {
+    for (const selector of candidates) {
+      if (await tryTypeByCssSelector(browser, selector, value)) {
+        typed = true;
+        break;
+      }
       if (await tryType(browser, selector, value)) {
         typed = true;
         break;
       }
     }
+    // Final fallback: walk <label> elements for matching text → resolve to input.
     if (!typed) {
+      for (const labelText of labelTextCandidates(credKey, domName)) {
+        if (await tryTypeByLabelText(browser, labelText, value)) {
+          typed = true;
+          break;
+        }
+      }
+    }
+    if (!typed) {
+      const tried = candidates.map(s => `"${s}"`).join(', ');
+      const labelTried = labelTextCandidates(credKey, domName).map(s => `"${s}"`).join(', ');
+      log.warn(`browser_login: field_not_found (credKey=${credKey}, domName=${domName}); css tried: [${tried}]; label-text tried: [${labelTried}]`);
       return {
         ok: false,
         reason: 'field_not_found',
-        detail: `No input matched any candidate selector for credential key "${credKey}" (domName "${domName}")`,
+        detail: `No input matched any candidate selector for credential key "${credKey}" (domName "${domName}"). CSS tried: [${tried}]. Label-text tried: [${labelTried}].`,
       };
     }
   }

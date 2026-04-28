@@ -10,7 +10,7 @@ import { log } from '../log.js';
 export const MAX_DETECTIONS_PER_CALL = 5;
 const MAX_DESCRIPTION_CHARS = 500;
 const VISION_CALL_TIMEOUT_MS = 30_000;
-const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 // v1 prompt template — exported so tests can assert exact content.
 export const VISION_PROMPT_TEMPLATE_V1 = `You are a senior front-end engineer reviewing a SaaS web app screenshot for visual defects.

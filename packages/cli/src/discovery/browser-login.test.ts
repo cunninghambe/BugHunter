@@ -1,6 +1,6 @@
 // Unit tests for loginInBrowser — mocked adapters only
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loginInBrowser } from './browser-login.js';
+import { loginInBrowser, fieldCandidates, looksLikeCssSelector, labelTextCandidates } from './browser-login.js';
 import type { BrowserMcpAdapter, CookieEntry } from '../adapters/browser-mcp.js';
 import type { SurfaceMcpAdapter, DescribeAuthResult } from '../adapters/surface-mcp.js';
 
@@ -76,6 +76,18 @@ function makeBrowser(opts: {
     evaluate: vi.fn(async (script: string) => {
       if (script.includes('captcha')) {
         return { value: { captcha: !!opts.captchaDetected, twoFa: !!opts.twoFaDetected } };
+      }
+      // waitForLoginFormReady poll — recognize and short-circuit so tests don't timeout.
+      if (script.includes('for(var i=0;i<sels.length;i++)') || script.includes('for(const s of sels)')) {
+        return { value: !opts.fieldTypeFails };
+      }
+      // tryTypeByLabelText script (label-text fallback) — fails when fieldTypeFails.
+      if (script.includes("querySelectorAll('label')") && script.includes('htmlFor')) {
+        return { value: false };
+      }
+      // tryTypeByCssSelector script (native value setter) — fails when fieldTypeFails.
+      if (script.includes('getOwnPropertyDescriptor')) {
+        return { value: !opts.fieldTypeFails };
       }
       if (script.includes('button[type=\\"submit\\"]') || script.includes("button[type=\"submit\"]") || script.includes("button[type='submit']") || script.includes('querySelector')) {
         if (opts.submitNotFound) return { value: false };
@@ -173,7 +185,12 @@ describe('loginInBrowser — form auth happy path', () => {
     expect(result.cookies.length).toBeGreaterThan(0);
     expect(browser.navigate).toHaveBeenCalledWith('http://localhost:3002/login');
     expect(browser.click).toHaveBeenCalledWith('button[data-trigger]');
-    expect(browser.type).toHaveBeenCalledTimes(2);
+    // Field fill prefers evaluate-based tryTypeByCssSelector; assert the native
+    // value-setter script ran twice (one per field) regardless of whether the
+    // snapshot-based browser.type was reached.
+    const evalCalls = (browser.evaluate as unknown as { mock: { calls: [string][] } }).mock.calls;
+    const setterCalls = evalCalls.filter(([s]) => s.includes('getOwnPropertyDescriptor'));
+    expect(setterCalls.length).toBe(2);
   });
 });
 
@@ -375,6 +392,7 @@ function makeModalBrowser(opts: {
   const cookiesAvailable = opts.cookiesAvailable ?? true;
 
   let submitDone = false;
+  let triggerHandled = false;
   const evaluateCalls: string[] = [];
 
   const browser = {
@@ -392,17 +410,29 @@ function makeModalBrowser(opts: {
       if (script.includes('captcha')) {
         return { value: { captcha: false, twoFa: false } };
       }
-      // Trigger click (tryClickByText)
-      if (script.includes('dispatchEvent(new MouseEvent') && !script.includes('querySelector(') ) {
-        return { value: triggerFound };
+      // waitForLoginFormReady poll — recognize and short-circuit so tests don't timeout.
+      if (script.includes('for(var i=0;i<sels.length;i++)') || script.includes('for(const s of sels)')) {
+        return { value: fieldFound };
       }
-      // Trigger OR submit click — both use dispatchEvent(new MouseEvent
-      if (script.includes('dispatchEvent(new MouseEvent')) {
-        if (script.includes('querySelectorAll(')) {
-          // tryClickByText (trigger or SUBMIT_LABELS fallback)
-          return { value: submitDone ? true : triggerFound };
+      // tryTypeByLabelText script (label-text fallback) — fail in modal tests so
+      // CSS-selector path is the one exercised.
+      if (script.includes("querySelectorAll('label')") && script.includes('htmlFor')) {
+        return { value: false };
+      }
+      // tryClickByText script — first call (with the plan's :has-text trigger
+      // text) is the trigger; subsequent calls are submit-button attempts.
+      if (script.includes('dispatchEvent(new MouseEvent') && script.includes('querySelectorAll(')) {
+        if (!triggerHandled) {
+          triggerHandled = true;
+          return { value: triggerFound };
         }
-        // tryClickByCssSelector (uiSubmitSelector as CSS)
+        // Submit attempts (SUBMIT_LABELS fallback or :has-text submit selector via tryClickByText).
+        const found = submitFound;
+        if (found) submitDone = true;
+        return { value: found };
+      }
+      // tryClickByCssSelector (uiSubmitSelector as CSS, no querySelectorAll)
+      if (script.includes('dispatchEvent(new MouseEvent')) {
         const found = submitFound;
         if (found) submitDone = true;
         return { value: found };
@@ -523,7 +553,8 @@ describe('loginInBrowser — :has-text() modal flow', () => {
     expect(browser.click).not.toHaveBeenCalled();
     // Submit script should contain the text "Submit"
     const calls = vi.mocked(browser.evaluate).mock.calls.map(([s]) => s as string);
-    const submitCall = calls.find(s => s.includes('"Submit"'));
+    // tryClickByText lowercases the text for matching — search the script for "submit" (lowered).
+    const submitCall = calls.find(s => s.toLowerCase().includes('"submit"'));
     expect(submitCall).toBeDefined();
   });
 
@@ -542,5 +573,93 @@ describe('loginInBrowser — :has-text() modal flow', () => {
     if (!result.ok) return;
     expect(result.cookies.length).toBeGreaterThan(0);
     expect(result.cookies[0]?.name).toBe('session');
+  });
+});
+
+describe('looksLikeCssSelector', () => {
+  it('detects #id form', () => {
+    expect(looksLikeCssSelector('#login-password')).toBe(true);
+  });
+  it('detects .class form', () => {
+    expect(looksLikeCssSelector('.password-input')).toBe(true);
+  });
+  it('detects [attr=val] form', () => {
+    expect(looksLikeCssSelector('[data-testid="password"]')).toBe(true);
+  });
+  it('detects descendant combinator (space)', () => {
+    expect(looksLikeCssSelector('form input.pw')).toBe(true);
+  });
+  it('detects child combinator (>)', () => {
+    expect(looksLikeCssSelector('form > input')).toBe(true);
+  });
+  it('rejects bare attribute fragment', () => {
+    expect(looksLikeCssSelector('password')).toBe(false);
+  });
+  it('rejects empty', () => {
+    expect(looksLikeCssSelector('')).toBe(false);
+  });
+});
+
+describe('fieldCandidates', () => {
+  it('puts user-supplied #id selector at the front when domName looks like a CSS selector', () => {
+    const candidates = fieldCandidates('password', '#login-password');
+    expect(candidates[0]).toBe('#login-password');
+    // Default fallbacks still present.
+    expect(candidates).toContain('input[type="password"]');
+  });
+
+  it('puts user-supplied [attr=...] selector at the front', () => {
+    const candidates = fieldCandidates('password', '[data-testid="login-password"]');
+    expect(candidates[0]).toBe('[data-testid="login-password"]');
+  });
+
+  it('preserves attribute-fragment behavior when domName is a bare name', () => {
+    const candidates = fieldCandidates('password', 'password');
+    // First candidate is the name-attr expansion (no CSS-selector-passthrough).
+    expect(candidates[0]).toBe('input[name="password"]');
+    expect(candidates).not.toContain('password');
+  });
+
+  it('still emits input[type="password"] for password credKey', () => {
+    expect(fieldCandidates('password', '#x')).toContain('input[type="password"]');
+  });
+
+  it('still emits input[type="email"] for email credKey', () => {
+    expect(fieldCandidates('email', '#x')).toContain('input[type="email"]');
+  });
+
+  it('emits aria-label fallback for credKey', () => {
+    expect(fieldCandidates('password', 'password')).toContain('input[aria-label*="password" i]');
+  });
+
+  it('emits aria-label fallback for distinct domName', () => {
+    expect(fieldCandidates('password', 'user-pwd')).toContain('input[aria-label*="user-pwd" i]');
+  });
+
+  it('does not emit aria-label[domName] when domName is a CSS selector', () => {
+    const candidates = fieldCandidates('password', '#x');
+    expect(candidates).not.toContain('input[aria-label*="#x" i]');
+  });
+});
+
+describe('labelTextCandidates', () => {
+  it('includes credKey lowercased', () => {
+    expect(labelTextCandidates('password', 'password')).toContain('password');
+  });
+
+  it('includes humanized email aliases', () => {
+    const out = labelTextCandidates('email', 'email');
+    expect(out).toContain('email');
+    expect(out).toContain('email address');
+    expect(out).toContain('username');
+  });
+
+  it('skips CSS-selector-shaped domName', () => {
+    const out = labelTextCandidates('password', '#login-password');
+    expect(out).not.toContain('#login-password');
+  });
+
+  it('keeps non-selector domName when distinct from credKey', () => {
+    expect(labelTextCandidates('password', 'user-pwd')).toContain('user-pwd');
   });
 });
