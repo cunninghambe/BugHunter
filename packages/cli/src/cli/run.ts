@@ -28,7 +28,8 @@ import { log } from '../log.js';
 import { createCdpSession, type CdpSession } from '../adapters/cdp-session.js';
 import { createPerfCollector, type PerfCollector } from '../perf/perf-collector.js';
 import { runBundleProbe } from '../phases/bundle-probe.js';
-import type { RunSummary } from '../types.js';
+import { runSeedHooksAt } from '../seed/runner.js';
+import type { RunSummary, SeedHookExecution } from '../types.js';
 
 function aggregateDiscoverySkips(skipList: SkippedItem[]): Array<{ reason: string; count: number }> {
   const counts = new Map<string, number>();
@@ -216,252 +217,305 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   runState.phase = 'discover';
   saveRunState(runState);
 
-  // Phase 1: discover
-  const discovery = await runDiscover(
-    opts.projectDir,
-    resolved,
-    effectiveRoles,
-    runId,
-    surface,
-    browser,
-    opts.route,
-    visionClient,
-    visionBudget,
-  );
-  runState.discovery = discovery;
-  runState.phase = 'plan';
-  saveRunState(runState);
+  const seedHookTelemetry: SeedHookExecution[] = [];
+  const seedCtxBase = { projectDir: opts.projectDir, appBaseUrl: resolved.appBaseUrl };
 
-  // Phase 1.5: form-reachability probe (runs after discover, before plan)
-  let probeResults: Map<ProbeKey, ProbeResult> | undefined;
-  if (browser !== undefined && resolved.browserLogin?.enabled !== false) {
-    const asyncMaxWaitMs = opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs;
-    const appBaseUrl = resolved.appBaseUrl ?? new URL(resolved.surfaceMcpUrl).origin;
-    const { results, telemetry } = await runFormReachabilityProbes({
-      browser,
-      appBaseUrl,
-      pages: discovery.pages,
-      roles: effectiveRoles,
+  // Seed beforeRun — fires before discovery so hooks can spin up the app or seed the DB.
+  const beforeRunResults = await runSeedHooksAt(resolved.seedHooks?.beforeRun, {
+    ...seedCtxBase, lifecyclePoint: 'beforeRun',
+  });
+  seedHookTelemetry.push(...beforeRunResults);
+
+  try {
+    // Phase 1: discover
+    const discovery = await runDiscover(
+      opts.projectDir,
+      resolved,
+      effectiveRoles,
       runId,
-      extraHeaders: resolved.extraHeaders,
-      asyncMaxWaitMs,
-      perProbeTimeoutMs: 5000,
-      budgetMs: 60_000,
-    });
-    probeResults = results;
-    // Attach telemetry to discovery so it lands in state.json
-    runState.discovery = { ...discovery, probe: { telemetry } };
+      surface,
+      browser,
+      opts.route,
+      visionClient,
+      visionBudget,
+    );
+    runState.discovery = discovery;
+    runState.phase = 'plan';
     saveRunState(runState);
-    log.info('form-reachability-probe: complete', { ...telemetry });
-  }
 
-  // Phase 2: plan
-  const { testCases, projectedRuntimeMs, skipReasons: planSkipReasons } = await runPlan(
-    runId,
-    discovery,
-    resolved,
-    effectiveRoles,
-    surface,
-    probeResults,
-  );
-  runState.testCases = testCases;
-  runState.phase = 'execute';
-  saveRunState(runState);
+    // Seed afterLogin / perRole — fires once per login role after discover completes.
+    // Discover performs a single browser login for the configured role; we mirror that here.
+    const loginRole = resolved.browserLogin?.role ?? effectiveRoles[0];
+    if (loginRole !== '') {
+      const afterLoginResults = await runSeedHooksAt(resolved.seedHooks?.afterLogin, {
+        ...seedCtxBase, role: loginRole, lifecyclePoint: 'afterLogin',
+      });
+      seedHookTelemetry.push(...afterLoginResults);
 
-  // Page URLs for header probing — one per discovered page route.
-  const pageUrls = discovery.pages.map(p => p.route);
-
-  // v0.6: create perf collector when --enable-perf is set
-  let perfCollector: PerfCollector | undefined;
-  let cdpSessionHandle: CdpSession | undefined;
-
-  if (perfEnabled) {
-    const cdpResult = await createCdpSession();
-    if (cdpResult.ok) {
-      const rPaths = runPaths(opts.projectDir, runId);
-      const perfDir = `${rPaths.runDir}/perf`;
-      try {
-        perfCollector = createPerfCollector({
-          cdpSession: cdpResult.session,
-          perfDir,
-          networkDir: rPaths.networkDir,
-          heapSampling,
+      const perRoleHooks = resolved.seedHooks?.perRole?.[loginRole];
+      if (perRoleHooks !== undefined) {
+        const perRoleResults = await runSeedHooksAt(perRoleHooks, {
+          ...seedCtxBase, role: loginRole, lifecyclePoint: 'perRole',
         });
-        cdpSessionHandle = cdpResult.session;
-        log.info('perf-collector: CDP session started');
-      } catch (err) {
-        log.warn('perf-collector: failed to create collector', { err: String(err) });
+        seedHookTelemetry.push(...perRoleResults);
       }
-    } else {
-      log.warn('perf-collector: failed to start CDP session', { reason: cdpResult.reason });
+
+      // Warn for any perRole keys that don't match the active login role.
+      for (const configuredRole of Object.keys(resolved.seedHooks?.perRole ?? {})) {
+        if (configuredRole !== loginRole) {
+          log.info('seed: perRole hook skipped (role not in active roles)', { role: configuredRole });
+        }
+      }
+    }
+
+    // Phase 1.5: form-reachability probe (runs after discover, before plan)
+    let probeResults: Map<ProbeKey, ProbeResult> | undefined;
+    if (browser !== undefined && resolved.browserLogin?.enabled !== false) {
+      const asyncMaxWaitMs = opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs;
+      const appBaseUrl = resolved.appBaseUrl ?? new URL(resolved.surfaceMcpUrl).origin;
+      const { results: probeResultMap, telemetry } = await runFormReachabilityProbes({
+        browser,
+        appBaseUrl,
+        pages: discovery.pages,
+        roles: effectiveRoles,
+        runId,
+        extraHeaders: resolved.extraHeaders,
+        asyncMaxWaitMs,
+        perProbeTimeoutMs: 5000,
+        budgetMs: 60_000,
+      });
+      probeResults = probeResultMap;
+      // Attach telemetry to discovery so it lands in state.json
+      runState.discovery = { ...discovery, probe: { telemetry } };
+      saveRunState(runState);
+      log.info('form-reachability-probe: complete', { ...telemetry });
+    }
+
+    // Phase 2: plan
+    const { testCases, projectedRuntimeMs, skipReasons: planSkipReasons } = await runPlan(
+      runId,
+      discovery,
+      resolved,
+      effectiveRoles,
+      surface,
+      probeResults,
+    );
+    runState.testCases = testCases;
+    runState.phase = 'execute';
+    saveRunState(runState);
+
+    // Seed beforeExecute — fires after plan, before execute phase.
+    const beforeExecuteResults = await runSeedHooksAt(resolved.seedHooks?.beforeExecute, {
+      ...seedCtxBase, lifecyclePoint: 'beforeExecute',
+    });
+    seedHookTelemetry.push(...beforeExecuteResults);
+
+    // Page URLs for header probing — one per discovered page route.
+    const pageUrls = discovery.pages.map(p => p.route);
+
+    // v0.6: create perf collector when --enable-perf is set
+    let perfCollector: PerfCollector | undefined;
+    let cdpSessionHandle: CdpSession | undefined;
+
+    if (perfEnabled) {
+      const cdpResult = await createCdpSession();
+      if (cdpResult.ok) {
+        const rPaths = runPaths(opts.projectDir, runId);
+        const perfDir = `${rPaths.runDir}/perf`;
+        try {
+          perfCollector = createPerfCollector({
+            cdpSession: cdpResult.session,
+            perfDir,
+            networkDir: rPaths.networkDir,
+            heapSampling,
+          });
+          cdpSessionHandle = cdpResult.session;
+          log.info('perf-collector: CDP session started');
+        } catch (err) {
+          log.warn('perf-collector: failed to create collector', { err: String(err) });
+        }
+      } else {
+        log.warn('perf-collector: failed to start CDP session', { reason: cdpResult.reason });
+      }
+    }
+
+    // Phase 3: execute
+    const { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts, a11yBaselineDetections, seoDetections } = await runExecute({
+      testCases,
+      runState,
+      browser,
+      surface,
+      maxBugs: resolved.maxBugs,
+      maxRuntimeMs: resolved.maxRuntimeMs,
+      budgetMs: resolved.budgetMs,
+      concurrency: resolved.concurrency,
+      apiConcurrency: resolved.apiConcurrency,
+      onClusterFound: () => runState.clusterCount,
+      extraHeaders: resolved.extraHeaders,
+      enableA11y: resolved.enableA11y,
+      appBaseUrl: resolved.appBaseUrl,
+      visionEnabled,
+      visionConfig: resolved.vision,
+      visionClient,
+      visionBudget,
+      headerProbeEnabled: resolved.headers?.enabled ?? true,
+      pageUrls,
+      perfCollector,
+      a11yStrict: resolved.a11yStrict ?? false,
+      seoEnabled: resolved.seoEnabled ?? false,
+      keyboardTrapMaxPresses: resolved.keyboardTrapMaxPresses ?? 20,
+      asyncMaxWaitMs: opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs,
+    });
+
+    // Close CDP session after execute completes
+    if (cdpSessionHandle !== undefined) {
+      await cdpSessionHandle.close().catch(err =>
+        log.warn('perf-collector: CDP session close failed', { err: String(err) })
+      );
+    }
+
+    if (abortReason !== undefined) {
+      log.warn(`Run stopped: ${abortReason}`);
+      runState.partialEmit = true;
+    }
+    runState.skipReasons = skipReasons;
+
+    runState.testResults = results;
+    runState.phase = 'classify';
+    saveRunState(runState);
+
+    // Phase 3.5: cross-user IDOR probe (runs after execute, before classify).
+    const { detections: crossUserDetections, testCases: crossUserTestCases } = await runCrossUser({
+      runState,
+      surface,
+      roles: effectiveRoles,
+      maxClusters: resolved.maxBugs,
+      onClusterFound: () => runState.clusterCount,
+    });
+
+    // Phase 3.6: auth-flow detectors (session fixation, reset token reuse, open redirect).
+    const { detections: authFlowDetections, testCases: authFlowTestCases } = await runAuthFlow({
+      runState,
+      surface,
+      browser,
+      appBaseUrl: resolved.appBaseUrl ?? new URL(resolved.surfaceMcpUrl).origin,
+      roles: effectiveRoles,
+      maxClusters: resolved.maxBugs,
+      onClusterFound: () => runState.clusterCount,
+    });
+
+    // Synthesise visual baseline test cases + results (Option a from § 4.3.1).
+    // These bypass execute and are merged directly into classify + cluster inputs.
+    const { baselineTestCases, baselineResults } = synthesiseVisualBaselineCases(
+      runId, discovery.visualBaselineDetections ?? []
+    );
+
+    // Synthesise static-analysis detections as fake test cases + results.
+    const staticDetectionList: BugDetection[] = [
+      ...(discovery.staticDetections ?? []),
+      ...(headerProbeDetections ?? []),
+      ...crossUserDetections.map(d => d.detection),
+      ...authFlowDetections.map(d => d.detection),
+      ...(a11yBaselineDetections ?? []),
+      ...(seoDetections ?? []),
+    ];
+    const { staticTestCases, staticResults } = synthesiseFakeDetectionCases(runId, staticDetectionList);
+
+    // Phase 4: classify
+    const allResults = [...results, ...baselineResults, ...staticResults];
+    const { bugs, infraFailures } = runClassify(allResults);
+    runState.phase = 'cluster';
+    saveRunState(runState);
+
+    // Phase 5: cluster
+    const paths = runPaths(opts.projectDir, runId);
+    const allTestCases = [...testCases, ...baselineTestCases, ...staticTestCases, ...crossUserTestCases, ...authFlowTestCases];
+    const stateByTestId = new Map<string, { preState: PreState; postState: PostState }>(
+      results
+        .filter(r => r.postState !== undefined)
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- filter above ensures postState is set; preState is always present when postState is
+        .map(r => [r.testId, { preState: r.preState!, postState: r.postState! }])
+    );
+    const occurrenceIdByTestId = new Map<string, string>(
+      allResults.map(r => [r.testId, r.occurrenceId]),
+    );
+    const { clusters } = runCluster({
+      detections: bugs,
+      testCases: allTestCases,
+      runId,
+      projectDir: opts.projectDir,
+      actionLogsDir: paths.actionLogsDir,
+      screenshotsDir: paths.screenshotsDir,
+      domDir: paths.domDir,
+      consoleDir: paths.consoleDir,
+      networkDir: paths.networkDir,
+      maxClusters: resolved.maxBugs,
+      occurrenceIdByTestId,
+      stateByTestId,
+    });
+
+    runState.clusters = clusters;
+    runState.clusterCount = clusters.length;
+    runState.phase = 'emit';
+    saveRunState(runState);
+
+    // Phase 6: emit
+    const actualRuntimeMs = Date.now() - startMs;
+
+    // Merge discovery-phase + plan-phase + execute-phase skip reasons.
+    const discoverySkipReasons = aggregateDiscoverySkips(discovery.skipList);
+    const allSkipReasons = [...discoverySkipReasons, ...planSkipReasons, ...skipReasons];
+
+    const visionSummary = visionEnabled ? {
+      enabled: true,
+      called: visionBudget?.consumed ?? 0,
+      succeeded: visionBudget?.consumed ?? 0,
+      anomaliesFound: clusters.filter(c => c.kind === 'visual_anomaly').length,
+      abortReason: visionAbortReason ?? visionBudget?.abortReason,
+      costUsd: visionBudget !== undefined ? Math.round(visionBudget.costUsd * 10000) / 10000 : 0,
+      costCapUsd: visionBudget?.costCapUsd,
+      authMode: visionAuthMode,
+    } : undefined;
+
+    // v0.6: build perf summary from collected artifacts
+    const perfSummary: RunSummary['perfSummary'] = buildPerfSummary(perfArtifacts);
+
+    // v0.6: run bundle probe sidecar
+    const bundleProbeResult = bundleProbeConfig !== undefined
+      ? runBundleProbe({ projectDir: opts.projectDir, config: bundleProbeConfig })
+      : undefined;
+    const bundleSummary: RunSummary['bundleSummary'] = bundleProbeResult !== undefined
+      ? {
+          initialJsBytesGzipped: bundleProbeResult.totalInitialJsGzip,
+          initialCssBytesGzipped: bundleProbeResult.totalInitialCssGzip,
+          budgetExceeded: bundleProbeResult.budgetExceeded,
+        }
+      : undefined;
+
+    runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
+      testsPlanned: testCases.length,
+      testsRan: results.length,
+      testsSkipped: testCases.length - results.length,
+      skipReasons: allSkipReasons,
+      vision: visionSummary,
+      ...(perfSummary !== undefined ? { perfSummary } : {}),
+      ...(bundleSummary !== undefined ? { bundleSummary } : {}),
+      ...(seedHookTelemetry.length > 0 ? { seedHookExecutions: seedHookTelemetry } : {}),
+    });
+    runState.emitted = true;
+    runState.phase = 'done';
+    saveRunState(runState);
+  } finally {
+    // Seed cleanup — always fires, even on abort or infra failure.
+    try {
+      const cleanupResults = await runSeedHooksAt(resolved.seedHooks?.cleanup, {
+        ...seedCtxBase, lifecyclePoint: 'cleanup',
+      });
+      seedHookTelemetry.push(...cleanupResults);
+    } catch (err) {
+      log.warn('seed: cleanup hook error (suppressed)', { reason: String(err) });
     }
   }
-
-  // Phase 3: execute
-  const { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts, a11yBaselineDetections, seoDetections } = await runExecute({
-    testCases,
-    runState,
-    browser,
-    surface,
-    maxBugs: resolved.maxBugs,
-    maxRuntimeMs: resolved.maxRuntimeMs,
-    budgetMs: resolved.budgetMs,
-    concurrency: resolved.concurrency,
-    apiConcurrency: resolved.apiConcurrency,
-    onClusterFound: () => runState.clusterCount,
-    extraHeaders: resolved.extraHeaders,
-    enableA11y: resolved.enableA11y,
-    appBaseUrl: resolved.appBaseUrl,
-    visionEnabled,
-    visionConfig: resolved.vision,
-    visionClient,
-    visionBudget,
-    headerProbeEnabled: resolved.headers?.enabled ?? true,
-    pageUrls,
-    perfCollector,
-    a11yStrict: resolved.a11yStrict ?? false,
-    seoEnabled: resolved.seoEnabled ?? false,
-    keyboardTrapMaxPresses: resolved.keyboardTrapMaxPresses ?? 20,
-    asyncMaxWaitMs: opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs,
-  });
-
-  // Close CDP session after execute completes
-  if (cdpSessionHandle !== undefined) {
-    await cdpSessionHandle.close().catch(err =>
-      log.warn('perf-collector: CDP session close failed', { err: String(err) })
-    );
-  }
-
-  if (abortReason !== undefined) {
-    log.warn(`Run stopped: ${abortReason}`);
-    runState.partialEmit = true;
-  }
-  runState.skipReasons = skipReasons;
-
-  runState.testResults = results;
-  runState.phase = 'classify';
-  saveRunState(runState);
-
-  // Phase 3.5: cross-user IDOR probe (runs after execute, before classify).
-  const { detections: crossUserDetections, testCases: crossUserTestCases } = await runCrossUser({
-    runState,
-    surface,
-    roles: effectiveRoles,
-    maxClusters: resolved.maxBugs,
-    onClusterFound: () => runState.clusterCount,
-  });
-
-  // Phase 3.6: auth-flow detectors (session fixation, reset token reuse, open redirect).
-  const { detections: authFlowDetections, testCases: authFlowTestCases } = await runAuthFlow({
-    runState,
-    surface,
-    browser,
-    appBaseUrl: resolved.appBaseUrl ?? new URL(resolved.surfaceMcpUrl).origin,
-    roles: effectiveRoles,
-    maxClusters: resolved.maxBugs,
-    onClusterFound: () => runState.clusterCount,
-  });
-
-  // Synthesise visual baseline test cases + results (Option a from § 4.3.1).
-  // These bypass execute and are merged directly into classify + cluster inputs.
-  const { baselineTestCases, baselineResults } = synthesiseVisualBaselineCases(
-    runId, discovery.visualBaselineDetections ?? []
-  );
-
-  // Synthesise static-analysis detections as fake test cases + results.
-  const staticDetectionList: BugDetection[] = [
-    ...(discovery.staticDetections ?? []),
-    ...(headerProbeDetections ?? []),
-    ...crossUserDetections.map(d => d.detection),
-    ...authFlowDetections.map(d => d.detection),
-    ...(a11yBaselineDetections ?? []),
-    ...(seoDetections ?? []),
-  ];
-  const { staticTestCases, staticResults } = synthesiseFakeDetectionCases(runId, staticDetectionList);
-
-  // Phase 4: classify
-  const allResults = [...results, ...baselineResults, ...staticResults];
-  const { bugs, infraFailures } = runClassify(allResults);
-  runState.phase = 'cluster';
-  saveRunState(runState);
-
-  // Phase 5: cluster
-  const paths = runPaths(opts.projectDir, runId);
-  const allTestCases = [...testCases, ...baselineTestCases, ...staticTestCases, ...crossUserTestCases, ...authFlowTestCases];
-  const stateByTestId = new Map<string, { preState: PreState; postState: PostState }>(
-    results
-      .filter(r => r.postState !== undefined)
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- filter above ensures postState is set; preState is always present when postState is
-      .map(r => [r.testId, { preState: r.preState!, postState: r.postState! }])
-  );
-  const occurrenceIdByTestId = new Map<string, string>(
-    allResults.map(r => [r.testId, r.occurrenceId]),
-  );
-  const { clusters } = runCluster({
-    detections: bugs,
-    testCases: allTestCases,
-    runId,
-    projectDir: opts.projectDir,
-    actionLogsDir: paths.actionLogsDir,
-    screenshotsDir: paths.screenshotsDir,
-    domDir: paths.domDir,
-    consoleDir: paths.consoleDir,
-    networkDir: paths.networkDir,
-    maxClusters: resolved.maxBugs,
-    occurrenceIdByTestId,
-    stateByTestId,
-  });
-
-  runState.clusters = clusters;
-  runState.clusterCount = clusters.length;
-  runState.phase = 'emit';
-  saveRunState(runState);
-
-  // Phase 6: emit
-  const actualRuntimeMs = Date.now() - startMs;
-
-  // Merge discovery-phase + plan-phase + execute-phase skip reasons.
-  const discoverySkipReasons = aggregateDiscoverySkips(discovery.skipList);
-  const allSkipReasons = [...discoverySkipReasons, ...planSkipReasons, ...skipReasons];
-
-  const visionSummary = visionEnabled ? {
-    enabled: true,
-    called: visionBudget?.consumed ?? 0,
-    succeeded: visionBudget?.consumed ?? 0,
-    anomaliesFound: clusters.filter(c => c.kind === 'visual_anomaly').length,
-    abortReason: visionAbortReason ?? visionBudget?.abortReason,
-    costUsd: visionBudget !== undefined ? Math.round(visionBudget.costUsd * 10000) / 10000 : 0,
-    costCapUsd: visionBudget?.costCapUsd,
-    authMode: visionAuthMode,
-  } : undefined;
-
-  // v0.6: build perf summary from collected artifacts
-  const perfSummary: RunSummary['perfSummary'] = buildPerfSummary(perfArtifacts);
-
-  // v0.6: run bundle probe sidecar
-  const bundleProbeResult = bundleProbeConfig !== undefined
-    ? runBundleProbe({ projectDir: opts.projectDir, config: bundleProbeConfig })
-    : undefined;
-  const bundleSummary: RunSummary['bundleSummary'] = bundleProbeResult !== undefined
-    ? {
-        initialJsBytesGzipped: bundleProbeResult.totalInitialJsGzip,
-        initialCssBytesGzipped: bundleProbeResult.totalInitialCssGzip,
-        budgetExceeded: bundleProbeResult.budgetExceeded,
-      }
-    : undefined;
-
-  runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
-    testsPlanned: testCases.length,
-    testsRan: results.length,
-    testsSkipped: testCases.length - results.length,
-    skipReasons: allSkipReasons,
-    vision: visionSummary,
-    ...(perfSummary !== undefined ? { perfSummary } : {}),
-    ...(bundleSummary !== undefined ? { bundleSummary } : {}),
-  });
-  runState.emitted = true;
-  runState.phase = 'done';
-  saveRunState(runState);
 }
 
 function buildPerfSummary(

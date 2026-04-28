@@ -894,6 +894,59 @@ export type BugHunterConfig = {
   seoEnabled?: boolean;
   /** v0.6 keyboard trap: max Tab presses during trap probe. Default 20. */
   keyboardTrapMaxPresses?: number;
+  /** v0.14 seed-data hooks — run shell commands or HTTP requests at lifecycle points. */
+  seedHooks?: SeedHooksConfig;
+};
+
+// --- v0.14 seed-data hook types ---
+
+export type SeedHookKind = 'shell' | 'http';
+
+export type SeedHookShell = {
+  kind: 'shell';
+  /** Exact command line; parsed by whitespace-aware splitter (no shell interpreter by default). */
+  command: string;
+  /** Working directory. Default: projectDir. */
+  cwd?: string;
+  /** Per-hook timeout. Default: 60_000 ms. */
+  timeoutMs?: number;
+  /** Additional env vars merged onto process.env. */
+  env?: Record<string, string>;
+  /** When true, a non-zero exit does not abort the run. Default: false. */
+  continueOnError?: boolean;
+  description?: string;
+};
+
+export type SeedHookHttp = {
+  kind: 'http';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** Absolute URL or relative path resolved against appBaseUrl at execution time. */
+  url: string;
+  headers?: Record<string, string>;
+  /** Serialised as JSON if non-string; omitted when undefined. */
+  body?: unknown;
+  /** Per-hook timeout. Default: 60_000 ms. */
+  timeoutMs?: number;
+  /** Accepted HTTP status(es). Defaults to 200-299 range. */
+  expectedStatus?: number | number[];
+  /** When true, a non-2xx response does not abort the run. Default: false. */
+  continueOnError?: boolean;
+  description?: string;
+};
+
+export type SeedHook = SeedHookShell | SeedHookHttp;
+
+export type SeedHooksConfig = {
+  /** Runs once before discovery. */
+  beforeRun?: SeedHook[];
+  /** Runs once per role after browser-login completes. */
+  afterLogin?: SeedHook[];
+  /** Role-scoped hooks; run after afterLogin for the matching role. */
+  perRole?: Record<string, SeedHook[]>;
+  /** Runs once after plan, before execute. */
+  beforeExecute?: SeedHook[];
+  /** Runs in finally block — always fires even on abort. */
+  cleanup?: SeedHook[];
 };
 
 export type RunSummary = {
@@ -949,4 +1002,25 @@ export type RunSummary = {
     initialCssBytesGzipped: number;
     budgetExceeded: boolean;
   };
+  /** v0.14: one entry per hook execution, in run order. */
+  seedHookExecutions?: SeedHookExecution[];
+};
+
+// --- v0.14 seed-hook execution record (defined here so emit.ts can reference it) ---
+
+export type SeedHookExecution = {
+  hookKind: 'shell' | 'http';
+  description: string;
+  durationMs: number;
+  ok: boolean;
+  reason?: string;
+  /** Truncated stdout / response body (first 500 chars). */
+  output?: string;
+  /** Exit code — present for shell hooks. */
+  exitCode?: number;
+  /** HTTP status — present for http hooks. */
+  status?: number;
+  lifecyclePoint: 'beforeRun' | 'afterLogin' | 'perRole' | 'beforeExecute' | 'cleanup';
+  /** Present when lifecyclePoint is 'afterLogin' or 'perRole'. */
+  role?: string;
 };

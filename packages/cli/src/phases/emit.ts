@@ -1,6 +1,6 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
-import type { BugCluster, InfrastructureFailure, RunState, RunSummary } from '../types.js';
+import type { BugCluster, InfrastructureFailure, RunState, RunSummary, SeedHookExecution } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { log } from '../log.js';
 
@@ -22,6 +22,8 @@ export type TestCounters = {
   perfSummary?: RunSummary['perfSummary'];
   /** v0.6 bundle summary — present when bundle-probe was enabled. */
   bundleSummary?: RunSummary['bundleSummary'];
+  /** v0.14 seed-hook executions — one per hook, in run order. */
+  seedHookExecutions?: SeedHookExecution[];
 };
 
 export function runEmit(
@@ -82,6 +84,9 @@ export function runEmit(
     ...(counters?.perfSummary !== undefined ? { perfSummary: counters.perfSummary } : {}),
     ...(counters?.bundleSummary !== undefined ? { bundleSummary: counters.bundleSummary } : {}),
     ...(probeTelemetry !== undefined ? { formReachabilityProbes: buildProbeCounters(runState) } : {}),
+    ...(counters?.seedHookExecutions !== undefined && counters.seedHookExecutions.length > 0
+      ? { seedHookExecutions: counters.seedHookExecutions }
+      : {}),
   };
 
   writeJsonFile(paths.summaryFile, summary);
