@@ -81,48 +81,29 @@ const COLLECT_ELEMENTS_SCRIPT = `
 })()
 `;
 
-export async function walkDom(
-  browser: BrowserMcpAdapter,
-  url: string,
-  runId: string,
-  extraHeaders?: Record<string, string>
-): Promise<DomWalkResult> {
-  const headers = { 'X-BugHunter-Run': runId, ...(extraHeaders ?? {}) };
+type RawEvalResult = {
+  elements: Array<{
+    tag: string;
+    roleAttr?: string;
+    typeAttr?: string;
+    testId?: string;
+    ancestorStack: string;
+    selector: string;
+    disabled: boolean;
+    href?: string;
+    text?: string;
+  }>;
+  forms: Array<{
+    formSelector: string;
+    fields: Array<{ name: string; type: string; required: boolean; options?: string[] }>;
+    action?: string;
+    method: string;
+  }>;
+  links: string[];
+};
 
-  await browser.navigate(url, headers);
-
-  // Scroll to trigger lazy-loads — 10s max, stop when network goes quiet
-  // Simplified: scroll down a few times
-  await browser.scroll('body', 'down', 3000).catch(() => {});
-  await browser.scroll('body', 'down', 3000).catch(() => {});
-
-  const evalResult = await browser.evaluate(COLLECT_ELEMENTS_SCRIPT).catch((err: unknown) => {
-    log.warn('DOM walk evaluate failed', err);
-    return null;
-  });
-
-  if (!evalResult) return { elements: [], forms: [], links: [] };
-
-  const raw = evalResult.value as {
-    elements: Array<{
-      tag: string;
-      roleAttr?: string;
-      typeAttr?: string;
-      testId?: string;
-      ancestorStack: string;
-      selector: string;
-      disabled: boolean;
-      href?: string;
-      text?: string;
-    }>;
-    forms: Array<{
-      formSelector: string;
-      fields: Array<{ name: string; type: string; required: boolean; options?: string[] }>;
-      action?: string;
-      method: string;
-    }>;
-    links: string[];
-  };
+function shapeFromEvalResult(evalResult: { value: unknown }): DomWalkResult {
+  const raw = evalResult.value as RawEvalResult;
 
   const elements: Element[] = raw.elements.map(e => ({
     tag: e.tag,
@@ -149,6 +130,36 @@ export async function walkDom(
   }));
 
   return { elements, forms, links: raw.links };
+}
+
+/** Snapshot the current page DOM without navigating. Safe to call after a click/state-change. */
+export async function collectDomOnly(browser: BrowserMcpAdapter): Promise<DomWalkResult> {
+  await browser.scroll('body', 'down', 1500).catch(() => {});
+  const evalResult = await browser.evaluate(COLLECT_ELEMENTS_SCRIPT).catch((err: unknown) => {
+    log.warn('DOM collectDomOnly evaluate failed', err);
+    return null;
+  });
+  if (evalResult === null) return { elements: [], forms: [], links: [] };
+  return shapeFromEvalResult(evalResult);
+}
+
+export async function walkDom(
+  browser: BrowserMcpAdapter,
+  url: string,
+  runId: string,
+  extraHeaders?: Record<string, string>
+): Promise<DomWalkResult> {
+  const headers = { 'X-BugHunter-Run': runId, ...(extraHeaders ?? {}) };
+  await browser.navigate(url, headers);
+  // Scroll to trigger lazy-loads
+  await browser.scroll('body', 'down', 3000).catch(() => {});
+  await browser.scroll('body', 'down', 3000).catch(() => {});
+  const evalResult = await browser.evaluate(COLLECT_ELEMENTS_SCRIPT).catch((err: unknown) => {
+    log.warn('DOM walk evaluate failed', err);
+    return null;
+  });
+  if (evalResult === null) return { elements: [], forms: [], links: [] };
+  return shapeFromEvalResult(evalResult);
 }
 
 function normalizeInputType(t: string): FormField['type'] {

@@ -53,6 +53,7 @@ export function runEmit(
   const testsSkipped = counters?.testsSkipped ?? 0;
   const skipReasons = counters?.skipReasons ?? [];
 
+  const crawlTelemetry = runState.discovery?.crawlTelemetry;
   const summary = {
     runId: runState.runId,
     bugs_filed: clusters.length,
@@ -70,7 +71,8 @@ export function runEmit(
     testsRan,
     testsSkipped,
     skippedReasons: skipReasons,
-    ...(counters?.vision ? { vision: counters.vision } : {}),
+    ...(counters?.vision !== undefined ? { vision: counters.vision } : {}),
+    ...(crawlTelemetry !== undefined ? { discovery: crawlTelemetry } : {}),
   };
 
   writeJsonFile(paths.summaryFile, summary);

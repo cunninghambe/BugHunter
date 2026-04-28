@@ -36,7 +36,7 @@ export const ConfigSchema = z.object({
   surfaceMcpUrl: z.string().url(),
   browserMcpUrl: z.string().url().optional(),
   roles: z.array(z.string()).optional(),
-  resetCommand: z.string().optional(),
+  resetCommand: z.string().min(1).optional(),
   resetPolicy: z.enum(['transactional', 'per-test', 'per-page', 'per-run']).optional(),
   paletteOverridePath: z.string().optional(),
   domainHints: z.record(z.array(z.string())).optional(),
@@ -64,6 +64,14 @@ export const ConfigSchema = z.object({
     followQueryParams: z.boolean().optional(),
     walkTimeoutMs: z.number().int().positive().optional(),
     sameOriginOnly: z.boolean().optional(),
+    /** Include confidence:'low' navigations from surface_list_navigations. Default: false. */
+    includeLowConfidence: z.boolean().optional(),
+    /** Settle delay (ms) after clicking a state-trigger before snapshotting. Default: 250. */
+    stateSettleMs: z.number().int().nonnegative().optional(),
+    /** Disable runtime route enumeration. Default: false (enabled). */
+    disableRuntimeEnum: z.boolean().optional(),
+    /** Cap on state-kind queue items to prevent runaway tab-state crawls. Default: 30. */
+    maxStateNavigations: z.number().int().positive().optional(),
   }).optional(),
   browserLogin: z.object({
     enabled: z.boolean().optional(),

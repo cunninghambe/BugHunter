@@ -23,7 +23,7 @@ export async function initCommand(projectDir: string, opts?: InitOptions): Promi
     return;
   }
 
-  const config = opts?.noInteractive
+  const config = opts?.noInteractive === true
     ? resolveNonInteractive(projectDir, opts)
     : await resolveInteractive(projectDir);
 
@@ -37,18 +37,21 @@ async function resolveInteractive(_projectDir: string): Promise<BugHunterConfig>
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   const projectName = await rl.question('Project name: ');
-  const surfaceMcpUrl = await rl.question('SurfaceMCP URL [http://127.0.0.1:3102]: ') || 'http://127.0.0.1:3102';
-  const browserMcpUrl = await rl.question('Browser MCP URL [http://127.0.0.1:3100]: ') || 'http://127.0.0.1:3100';
+  const surfaceMcpUrlRaw = await rl.question('SurfaceMCP URL [http://127.0.0.1:3102]: ');
+  const surfaceMcpUrl = surfaceMcpUrlRaw !== '' ? surfaceMcpUrlRaw : 'http://127.0.0.1:3102';
+  // browserMcpUrl is optional — blank input leaves it unset, matching non-interactive default.
+  const browserMcpUrlRaw = await rl.question('Browser MCP URL (blank to skip): ');
   const resetCommand = await rl.question('Reset command (e.g. npm run db:seed): ');
-  const resetPolicy = await rl.question('Reset policy [per-page]: ') || 'per-page';
+  const resetPolicyRaw = await rl.question('Reset policy [per-page]: ');
+  const resetPolicy = resetPolicyRaw !== '' ? resetPolicyRaw : 'per-page';
 
   rl.close();
 
   return {
     projectName,
     surfaceMcpUrl,
-    browserMcpUrl: browserMcpUrl || undefined,
-    resetCommand: resetCommand || undefined,
+    browserMcpUrl: browserMcpUrlRaw !== '' ? browserMcpUrlRaw : undefined,
+    resetCommand: resetCommand !== '' ? resetCommand : undefined,
     resetPolicy: resetPolicy as BugHunterConfig['resetPolicy'],
     maxBugs: 200,
     discoveryFixtures: {},

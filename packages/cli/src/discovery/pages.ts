@@ -40,14 +40,14 @@ export async function discoverPages(
     return fsPages.map(p => ({ route: p.route, sourceFile: p.sourceFile }));
   }
 
-  if (capabilities.listPages) {
+  if (capabilities.listPages === true) {
     const result = await surface.surface_list_pages();
     if (result.pages.length === 0) {
       const skips = result.skips ?? [];
       const skipReasons = skips.map(s => s.reason).join(', ');
       log.warn(
         `WARN bughunter: surface_list_pages returned 0 pages for stack=${stack}${ 
-        skipReasons ? ` with skips: ${skipReasons}` : ''}`
+        skipReasons !== '' ? ` with skips: ${skipReasons}` : ''}`
       );
     }
     return result.pages.map(p => ({

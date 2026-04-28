@@ -43,7 +43,7 @@ function findCluster(projectDir: string, runId: string, clusterId: string): BugC
   const cluster = lines
     .map(l => JSON.parse(l) as BugCluster)
     .find(c => c.id === clusterId);
-  if (!cluster) {
+  if (cluster === undefined) {
     throw new Error(`Cluster ${clusterId} not found in run ${runId}`);
   }
   return cluster;
@@ -51,9 +51,9 @@ function findCluster(projectDir: string, runId: string, clusterId: string): BugC
 
 function applySchemaChanges(actionLog: ActionLog, toolMap: Map<string, ToolMeta>): { log: ActionLog; via: 'verbatim' | 'regenerated' } {
   const updatedActions = actionLog.actions.map(entry => {
-    if (!entry.toolId || !entry.inputSchemaHash) return entry;
+    if (entry.toolId === undefined || entry.toolId === '' || entry.inputSchemaHash === undefined || entry.inputSchemaHash === '') return entry;
     const newTool = toolMap.get(entry.toolId);
-    if (!newTool) return entry;
+    if (newTool === undefined) return entry;
     if (hashSchema(newTool.inputSchema) === entry.inputSchemaHash) return entry;
 
     const palette = (entry.palette ?? 'happy') as PaletteVariant;
@@ -86,13 +86,13 @@ export async function replayCluster(
   for (const occ of fullOccs) {
     const toolId = occ.action.toolId;
 
-    if (toolId && !existingToolIds.has(toolId)) {
+    if (toolId !== undefined && toolId !== '' && !existingToolIds.has(toolId)) {
       removedCount++;
       details.push({ occurrenceId: occ.occurrenceId, via: 'tool_removed', passed: true });
       continue;
     }
 
-    if (!browser && occ.action.via === 'ui') {
+    if (browser === undefined && occ.action.via === 'ui') {
       details.push({
         occurrenceId: occ.occurrenceId,
         via: 'verbatim',
@@ -171,7 +171,7 @@ export async function retestOp(
 ): Promise<RetestResult> {
   const config = loadConfig(projectDir);
   const surface = new HttpSurfaceMcpAdapter(config.surfaceMcpUrl);
-  const browser = config.browserMcpUrl ? new CamofoxBrowserMcpAdapter(config.browserMcpUrl) : undefined;
+  const browser = config.browserMcpUrl !== undefined ? new CamofoxBrowserMcpAdapter(config.browserMcpUrl) : undefined;
 
   // baseBranch and fixBranch are available for the skill's context;
   // the retest itself replays against the current dev server regardless of branch.

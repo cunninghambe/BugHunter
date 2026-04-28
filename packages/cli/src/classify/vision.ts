@@ -142,7 +142,7 @@ export async function classifyVisualAnomalies(input: ClassifyVisualInput): Promi
       timeoutMs: VISION_CALL_TIMEOUT_MS,
     });
     rawText = response.rawText;
-    if (response.usage && input.budget) {
+    if (response.usage !== undefined && input.budget !== undefined) {
       input.budget.recordUsage(callModel, response.usage.inputTokens, response.usage.outputTokens);
     }
   } catch (err) {
@@ -206,9 +206,9 @@ function parseVisionResponse(rawText: string, screenshotPath: string): BugDetect
 
     const description = String(anomaly.description ?? '').slice(0, MAX_DESCRIPTION_CHARS);
     const element = String(anomaly.element ?? '');
-    const suggestedFix = anomaly.suggestedFix ? String(anomaly.suggestedFix) : undefined;
+    const suggestedFix = (anomaly.suggestedFix !== undefined && anomaly.suggestedFix !== null) ? String(anomaly.suggestedFix) : undefined;
 
-    const rootCause = element ? `${element}: ${description}` : description;
+    const rootCause = element !== '' ? `${element}: ${description}` : description;
 
     results.push({
       kind: 'visual_anomaly',
@@ -232,6 +232,6 @@ function describeAction(action: { kind: string; selector?: string }): string {
   if (action.kind === 'render' || action.kind === 'navigate') {
     return 'the page rendered fresh on navigation; nothing has been clicked';
   }
-  const selector = action.selector ? ` on '${action.selector}'` : '';
+  const selector = (action.selector !== undefined && action.selector !== '') ? ` on '${action.selector}'` : '';
   return `${action.kind}${selector}`;
 }

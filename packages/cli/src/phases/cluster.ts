@@ -5,6 +5,7 @@ import { clusterSignature, extractNormalizedFields } from '../cluster/signature.
 import { computeFullArtifactSet } from '../store/artifact-budget.js';
 import { normalizePath } from '../classify/network.js';
 import { createId } from '@paralleldrive/cuid2';
+import { log } from '../log.js';
 
 export type ClusterOptions = {
   detections: Array<{ testId: string; detection: BugDetection }>;
@@ -74,7 +75,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- set just above or on previous iteration; cannot be absent here
     const cluster = clusterMap.get(sig)!;
     const occId = opts.occurrenceIdByTestId.get(testId);
-    if (!occId) {
+    if (occId === undefined || occId === '') {
       throw new Error(
         `cluster: missing occurrenceId for testId ${testId}; ` +
         `executor must populate occurrenceIdByTestId for every TestResult`,
@@ -102,7 +103,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
   for (const cluster of clusterMap.values()) {
     const fullSet = computeFullArtifactSet(cluster.occurrences);
     cluster.occurrences = cluster.occurrences.map((occ): Occurrence => {
-      if (!fullSet.has(occ.occurrenceId)) return occ;
+      if (fullSet.has(occ.occurrenceId) !== true) return occ;
       return upgradeToFull(occ, opts);
     });
 
@@ -120,7 +121,12 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
 
 function upgradeToFull(occ: Occurrence, opts: ClusterOptions): OccurrenceFull {
   const { actionLogsDir, screenshotsDir, domDir, consoleDir, networkDir, stateByTestId } = opts;
-  const captured = occ.testId ? stateByTestId?.get(occ.testId) : undefined;
+  // B-8: empty testId silently degrades — be explicit. occId throws on empty (cluster.ts:77);
+  // testId should do the same. Log a warning for the inconsistency when testId is present but lookup misses.
+  const captured = (occ.testId !== undefined && occ.testId !== '') ? stateByTestId?.get(occ.testId) : undefined;
+  if (occ.testId !== undefined && occ.testId !== '' && captured === undefined) {
+    log.warn('cluster: testId present but stateByTestId lookup missed', { testId: occ.testId, occurrenceId: occ.occurrenceId });
+  }
 
   const preState: PreState = captured?.preState ?? { url: occ.page, title: '', consoleErrorCount: 0 };
   const postState: PostState = captured?.postState ?? {
@@ -177,7 +183,7 @@ function annotateRelatedClusters(clusters: BugCluster[]): void {
 
       const keyA = routeKeyOf(a);
       const keyB = routeKeyOf(b);
-      if (!keyA || !keyB || keyA !== keyB) continue;
+      if (keyA === null || keyB === null || keyA !== keyB) continue;
 
       const pairKey = [a.id, b.id].sort().join(':');
       if (linked.has(pairKey)) continue;
@@ -197,11 +203,12 @@ function annotateRelatedClusters(clusters: BugCluster[]): void {
  */
 function routeKeyOf(cluster: BugCluster): string | null {
   const toolId = cluster.occurrences[0]?.action.toolId;
-  if (toolId) return `tool:${toolId}`;
+  if (toolId !== undefined && toolId !== '') return `tool:${toolId}`;
 
   if (cluster.kind === '404_for_linked_route') {
     const match = /links to (\S+) which returned/.exec(cluster.rootCause);
-    if (match?.[1]) return `path:${normalizePath(match[1])}`;
+    // Regex requires \S+ — match[1] is non-empty when it's defined (B-5: mechanical fix).
+    if (match?.[1] !== undefined) return `path:${normalizePath(match[1])}`;
   }
 
   return null;
@@ -230,8 +237,8 @@ function generateFixHints(detection: BugDetection): string[] {
       break;
     case 'visual_anomaly': {
       const lines = [detection.rootCause];
-      if (detection.screenshotPath) lines.push(`Screenshot: ${detection.screenshotPath}`);
-      if (detection.visualSuggestedFix) lines.push(`Suggested fix: ${detection.visualSuggestedFix}`);
+      if (detection.screenshotPath !== undefined) lines.push(`Screenshot: ${detection.screenshotPath}`);
+      if (detection.visualSuggestedFix !== undefined) lines.push(`Suggested fix: ${detection.visualSuggestedFix}`);
       hints.push(lines.join('\n'));
       break;
     }

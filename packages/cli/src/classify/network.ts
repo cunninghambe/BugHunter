@@ -10,6 +10,19 @@ export function classifyNetworkRequests(
   const bugs: BugDetection[] = [];
 
   for (const req of requests) {
+    // Status 0 is the canonical signal for "request never completed" (network
+    // failure, CORS rejection, abort). Classify as a connectivity failure bug.
+    if (req.status === 0) {
+      bugs.push({
+        kind: 'network_5xx',
+        rootCause: `Connectivity failure (status 0) from ${req.method} ${req.path}`,
+        status: 0,
+        endpoint: `${req.method} ${normalizePath(req.path)}`,
+        responseBodyShape: req.responseBodySnippet,
+      });
+      continue;
+    }
+
     if (req.status >= 500) {
       bugs.push({
         kind: 'network_5xx',

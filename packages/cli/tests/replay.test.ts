@@ -125,4 +125,71 @@ describe('replay', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Element not found');
   });
+
+  // B-4 regression: empty selector must throw, not silently succeed (no-op = false positive).
+  it('B-4: click with empty selector throws instead of silently no-oping', async () => {
+    const browser = mockBrowser();
+    const surface = mockSurface();
+
+    const actionLog: ActionLog = {
+      occurrenceId: 'occ-b4-click',
+      runId: 'run-b4',
+      role: 'owner',
+      page: '/test',
+      baseUrl: '/test',
+      actions: [
+        { step: 0, kind: 'click', selector: '', timestamp: new Date().toISOString() },
+      ],
+      createdAt: new Date().toISOString(),
+    };
+
+    const result = await replayActionLog(actionLog, browser, surface, 'run-b4');
+    // Empty selector must produce ok:false — the click never executed.
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('empty selector');
+    // browser.click must NOT have been called.
+    expect(browser.click).not.toHaveBeenCalled();
+  });
+
+  it('B-4: fill with empty selector throws instead of silently no-oping', async () => {
+    const browser = mockBrowser();
+    const surface = mockSurface();
+
+    const actionLog: ActionLog = {
+      occurrenceId: 'occ-b4-fill',
+      runId: 'run-b4',
+      role: 'owner',
+      page: '/test',
+      baseUrl: '/test',
+      actions: [
+        { step: 0, kind: 'fill', selector: '', value: 'test', timestamp: new Date().toISOString() },
+      ],
+      createdAt: new Date().toISOString(),
+    };
+
+    const result = await replayActionLog(actionLog, browser, surface, 'run-b4');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('empty selector');
+  });
+
+  it('B-4: submit with empty selector throws instead of silently no-oping', async () => {
+    const browser = mockBrowser();
+    const surface = mockSurface();
+
+    const actionLog: ActionLog = {
+      occurrenceId: 'occ-b4-submit',
+      runId: 'run-b4',
+      role: 'owner',
+      page: '/test',
+      baseUrl: '/test',
+      actions: [
+        { step: 0, kind: 'submit', selector: '', timestamp: new Date().toISOString() },
+      ],
+      createdAt: new Date().toISOString(),
+    };
+
+    const result = await replayActionLog(actionLog, browser, surface, 'run-b4');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('empty selector');
+  });
 });

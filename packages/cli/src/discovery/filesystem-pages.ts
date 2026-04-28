@@ -54,7 +54,7 @@ function appFileToRoute(file: string): string {
   let route = file.replace(/^app\//, '').replace(/\/page\.[jt]sx?$/, '');
   // Remove route groups (parenthesized segments)
   route = route.replace(/\([^)]+\)\//g, '');
-  if (!route) return '/';
+  if (route === '') return '/';
   // Normalize dynamic segments: [id] stays as [id]
   return `/${  route}`;
 }
@@ -78,7 +78,7 @@ export function expandDynamicRoute(
 ): string[] {
   if (!isDynamicRoute(route)) return [route];
   const ids = fixtures[route] as string[] | undefined;
-  if (!ids || ids.length === 0) return [];
+  if (ids === undefined || ids.length === 0) return [];
   return ids.map(id => {
     let r = route.replace(/\[([^\]]+)\]/g, id); // Next.js style [param]
     r = r.replace(/:[A-Za-z_][\w]*/g, id);       // React Router style :param

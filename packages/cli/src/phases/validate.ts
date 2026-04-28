@@ -27,7 +27,7 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
   log.info('SurfaceMCP reachable', { revision: catalog.revision, toolCount: catalog.tools.length });
 
   // 2. Browser MCP reachable (if configured)
-  if (opts.browserMcp) {
+  if (opts.browserMcp !== undefined) {
     await opts.browserMcp.listTabs().catch((err: unknown) => {
       throw new Error(`Browser MCP unreachable: ${String(err)}`);
     });
@@ -40,9 +40,9 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
 
   for (const role of roles) {
     const status = await opts.surfaceMcp.surface_login_status({ role }).catch(() => null);
-    if (!status?.authenticated) {
+    if (status?.authenticated !== true) {
       const reloginResult = await opts.surfaceMcp.surface_relogin({ role }).catch(() => null);
-      if (!reloginResult?.ok) {
+      if (reloginResult?.ok !== true) {
         failedRoles.push(role);
         log.warn(`Login failed for role: ${role}`);
       }
@@ -54,10 +54,10 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
   }
 
   // 4. Resume validity check
-  if (opts.resumeState) {
+  if (opts.resumeState !== undefined) {
     const savedRevision = opts.resumeState.surfaceRevision;
     if (savedRevision !== undefined && savedRevision !== catalog.revision) {
-      if (!opts.forceResume) {
+      if (opts.forceResume !== true) {
         throw new Error(
           `SurfaceMCP revision changed (was ${savedRevision}, now ${catalog.revision}). ` +
           `Use --force-resume to override.`

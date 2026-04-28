@@ -59,9 +59,9 @@ export function shapeResponseBody(
   if (contentType.includes('text/html')) {
     const s = String(body ?? '');
     const pre = /<pre[^>]*>([\s\S]{0,80})/i.exec(s)?.[1];
-    if (pre) return pre.slice(0, 80);
+    if (pre !== undefined) return pre.slice(0, 80);
     const title = /<title>([^<]+)<\/title>/i.exec(s)?.[1];
-    if (title) return title;
+    if (title !== undefined) return title;
   }
   // Else: first 12 hex of a naive hash of the first 200 chars
   return naiveHash(String(body ?? '').slice(0, 200));

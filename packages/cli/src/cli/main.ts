@@ -56,8 +56,8 @@ function parseArgs(argv: string[]): { command: string; args: string[]; flags: Re
     const arg = rest[i];
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
-      const next = rest[i + 1];
-      if (next && !next.startsWith('--')) {
+      const next = i + 1 < rest.length ? rest[i + 1] : undefined;
+      if (next !== undefined && !next.startsWith('--')) {
         flags[key] = next;
         i++;
       } else {
@@ -125,24 +125,30 @@ async function main(): Promise<void> {
         break;
       }
 
-      case 'replay':
-        if (!args[0]) throw new Error('Usage: bughunter replay <occurrenceId>');
-        await replayCommand(projectDir, args[0]);
+      case 'replay': {
+        const replayId = args[0] ?? '';
+        if (replayId === '') throw new Error('Usage: bughunter replay <occurrenceId>');
+        await replayCommand(projectDir, replayId);
         break;
+      }
 
-      case 'inspect':
-        if (!args[0]) throw new Error('Usage: bughunter inspect <occurrenceId|clusterId>');
-        inspectCommand(projectDir, args[0]);
+      case 'inspect': {
+        const inspectId = args[0] ?? '';
+        if (inspectId === '') throw new Error('Usage: bughunter inspect <occurrenceId|clusterId>');
+        inspectCommand(projectDir, inspectId);
         break;
+      }
 
       case 'list':
         listCommand(projectDir);
         break;
 
-      case 'status':
-        if (!args[0]) throw new Error('Usage: bughunter status <runId>');
-        statusCommand(projectDir, args[0]);
+      case 'status': {
+        const statusRunId = args[0] ?? '';
+        if (statusRunId === '') throw new Error('Usage: bughunter status <runId>');
+        statusCommand(projectDir, statusRunId);
         break;
+      }
 
       case 'palette':
         paletteCommand(projectDir);
@@ -153,8 +159,8 @@ async function main(): Promise<void> {
         break;
 
       case 'forbidden-path-gate': {
-        const branch = args[0];
-        if (!branch) throw new Error('Usage: bughunter forbidden-path-gate <branch> [--base <baseBranch>] [--reset]');
+        const branch = args[0] ?? '';
+        if (branch === '') throw new Error('Usage: bughunter forbidden-path-gate <branch> [--base <baseBranch>] [--reset]');
         const baseBranch = typeof flags['base'] === 'string' ? flags['base'] : 'main';
         const reset = flags['reset'] === true;
         forbiddenPathGateCommand(projectDir, branch, baseBranch, reset);
@@ -162,8 +168,9 @@ async function main(): Promise<void> {
       }
 
       case 'retest': {
-        const [runId, clusterId] = args;
-        if (!runId || !clusterId) throw new Error('Usage: bughunter retest <runId> <clusterId> [--base <baseBranch>] [--branch <fixBranch>]');
+        const runId = args[0] ?? '';
+        const clusterId = args[1] ?? '';
+        if (runId === '' || clusterId === '') throw new Error('Usage: bughunter retest <runId> <clusterId> [--base <baseBranch>] [--branch <fixBranch>]');
         const baseBranch = typeof flags['base'] === 'string' ? flags['base'] : undefined;
         const fixBranch = typeof flags['branch'] === 'string' ? flags['branch'] : undefined;
         await retestCommand(projectDir, runId, clusterId, baseBranch, fixBranch);
@@ -171,8 +178,8 @@ async function main(): Promise<void> {
       }
 
       case 'fix-summary': {
-        const runId = args[0];
-        if (!runId) throw new Error('Usage: bughunter fix-summary <runId>');
+        const runId = args[0] ?? '';
+        if (runId === '') throw new Error('Usage: bughunter fix-summary <runId>');
         fixSummaryCommand(projectDir, runId);
         break;
       }

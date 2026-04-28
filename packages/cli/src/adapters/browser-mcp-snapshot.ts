@@ -28,11 +28,11 @@ export function parseSnapshot(snapshot: string): SnapshotNode[] {
   const nodes: SnapshotNode[] = [];
   for (const rawLine of snapshot.split('\n')) {
     const line = rawLine.trim();
-    if (!line) continue;
+    if (line === '') continue;
 
     // Extract ref: either [ref=eN] or trailing [eN]
     const refMatch = /\bref=(e\d+)\b/.exec(line) ?? /\[(e\d+)\]/.exec(line);
-    if (!refMatch) continue;
+    if (refMatch === null) continue;
     const ref = refMatch[1];
 
     // Role is the first word (stripping leading "- ")
@@ -108,9 +108,9 @@ export function parsePlaywrightHasText(
   selector: string
 ): { tag: string; text: string } | null {
   const dq = /^(\w+):has-text\("([^"]+)"\)$/.exec(selector);
-  if (dq) return { tag: dq[1], text: dq[2] };
+  if (dq !== null) return { tag: dq[1], text: dq[2] };
   const sq = /^(\w+):has-text\('([^']+)'\)$/.exec(selector);
-  if (sq) return { tag: sq[1], text: sq[2] };
+  if (sq !== null) return { tag: sq[1], text: sq[2] };
   return null;
 }
 
@@ -138,7 +138,7 @@ function resolveStringSelector(selector: string, nodes: SnapshotNode[]): string 
 
   // Step 4: tag[attr="value"] selector
   const attrSelectorMatch = /^(\w+)\[([\w-]+)="([^"]*)"\]$/.exec(selector);
-  if (attrSelectorMatch) {
+  if (attrSelectorMatch !== null) {
     const [, tag, attr, value] = attrSelectorMatch;
     return resolveAttrSelector(tag, attr, value, nodes);
   }
@@ -150,7 +150,7 @@ function resolveStringSelector(selector: string, nodes: SnapshotNode[]): string 
 
   // Playwright :has-text() extension
   const hasText = parsePlaywrightHasText(selector);
-  if (hasText) {
+  if (hasText !== null) {
     return resolveHasText(hasText.tag, hasText.text, nodes);
   }
 
@@ -198,21 +198,21 @@ export function resolveByHtml(
   // Text content: strip tags, take first 80 chars
   const textContent = html.replace(/<[^>]+>/g, '').trim().slice(0, 80);
 
-  if (ariaLabel) candidates.push(ariaLabel);
-  if (placeholder) candidates.push(placeholder);
-  if (title) candidates.push(title);
-  if (alt) candidates.push(alt);
-  if (textContent) candidates.push(textContent);
+  if (ariaLabel !== undefined) candidates.push(ariaLabel);
+  if (placeholder !== undefined) candidates.push(placeholder);
+  if (title !== undefined) candidates.push(title);
+  if (alt !== undefined) candidates.push(alt);
+  if (textContent !== '') candidates.push(textContent);
 
   const roleToMatch = tag.toLowerCase();
 
   for (const candidate of candidates) {
-    if (!candidate) continue;
+    if (candidate === '') continue;
     const found = nodes.find(n => {
       const roleMatch = roleToMatch === 'div' || n.role === roleToMatch;
       return roleMatch && (n.name ?? '').toLowerCase().includes(candidate.toLowerCase());
     });
-    if (found) return found.ref;
+    if (found !== undefined) return found.ref;
   }
   return null;
 }

@@ -1,7 +1,7 @@
 // Adapter for SurfaceMCP § 4.1 tool surface.
 // All negative-test palette calls must pass noAutoRelogin: true (§ 3.4.3).
 
-import type { ToolMeta, JsonSchema } from '../types.js';
+import type { ToolMeta, JsonSchema, TriggerSelectorHint } from '../types.js';
 
 export type PageSource = 'static' | 'crawl_seed';
 
@@ -39,6 +39,52 @@ export type SurfaceDescribeSelfResult = {
     listPages: boolean;
     /** Optional — absent on SurfaceMCP < 0.2.1. Signals that seed pages may be returned. */
     crawlSeed?: boolean;
+    /** Optional — absent on SurfaceMCP < 0.2.2. Present when surface_list_navigations is available. */
+    listNavigations?: boolean;
+    /** Optional — absent on SurfaceMCP < 0.2.2. Present when surface_enumerate_routes_runtime is available. */
+    enumerateRoutesRuntime?: boolean;
+  };
+};
+
+export type SurfaceNavigation = {
+  label: string;
+  method: 'link' | 'router-link' | 'router-push' | 'state-setter';
+  target: string;
+  kind: 'url' | 'state' | 'hash';
+  stateVar?: string;
+  triggerSelectorHint: TriggerSelectorHint;
+  sourceFile: string;
+  sourceLine: number;
+  confidence: 'high' | 'medium' | 'low';
+};
+
+export type SurfaceListNavigationsResult = {
+  revision: number;
+  navigations: SurfaceNavigation[];
+  skips: Array<{ reason: string; detail?: string; declaredAt?: { file: string; line: number } }>;
+};
+
+export type SurfaceRuntimeEnumScript = {
+  version: number;
+  script: string;
+  timeoutMs: number;
+  expectedSchema: unknown;
+};
+
+export type SurfacePostprocessedRoute = {
+  path: string;
+  params: string[];
+  source: 'tanstack-router' | 'react-router-v6' | 'react-router-v5' | 'wouter' | 'vue-router' | 'next-router' | 'none';
+};
+
+export type SurfacePostprocessResult = {
+  routes: SurfacePostprocessedRoute[];
+  summary: {
+    detectedRouters: string[];
+    errorCount: number;
+    totalRoutes: number;
+    dedupedRoutes: number;
+    fellBackToNone: boolean;
   };
 };
 
@@ -151,6 +197,12 @@ export interface SurfaceMcpAdapter {
   surface_describe_self(): Promise<SurfaceDescribeSelfResult>;
 
   surface_describe_auth(args: { role: string }): Promise<DescribeAuthResult>;
+
+  surface_list_navigations(filter?: { method?: string; kind?: string }): Promise<SurfaceListNavigationsResult>;
+
+  surface_enumerate_routes_runtime(): Promise<SurfaceRuntimeEnumScript>;
+
+  surface_postprocess_runtime_routes(args: { raw: unknown }): Promise<SurfacePostprocessResult>;
 }
 
 // HTTP-based implementation targeting a live SurfaceMCP instance.
@@ -188,17 +240,17 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
       if (dataLines.length === 0) throw new Error('Empty SSE stream from SurfaceMCP');
       const last = dataLines[dataLines.length - 1].slice(6);
       const parsed = JSON.parse(last) as { result?: { content?: Array<{ text?: string }>; isError?: boolean }; error?: unknown };
-      if (parsed.error) throw new Error(`SurfaceMCP error: ${JSON.stringify(parsed.error)}`);
+      if (parsed.error !== undefined && parsed.error !== null) throw new Error(`SurfaceMCP error: ${JSON.stringify(parsed.error)}`);
       const content = parsed.result?.content?.[0]?.text;
-      if (!content) throw new Error('No content in SurfaceMCP response');
-      if (parsed.result?.isError) throw new Error(`SurfaceMCP tool error (${tool}): ${content}`);
+      if (content === undefined || content === '') throw new Error('No content in SurfaceMCP response');
+      if (parsed.result?.isError === true) throw new Error(`SurfaceMCP tool error (${tool}): ${content}`);
       return JSON.parse(content) as T;
     }
     const json = await res.json() as { result?: { content?: Array<{ text?: string }>; isError?: boolean }; error?: unknown };
-    if (json.error) throw new Error(`SurfaceMCP error: ${JSON.stringify(json.error)}`);
+    if (json.error !== undefined && json.error !== null) throw new Error(`SurfaceMCP error: ${JSON.stringify(json.error)}`);
     const content = json.result?.content?.[0]?.text;
-    if (!content) throw new Error('No content in SurfaceMCP response');
-    if (json.result?.isError) throw new Error(`SurfaceMCP tool error (${tool}): ${content}`);
+    if (content === undefined || content === '') throw new Error('No content in SurfaceMCP response');
+    if (json.result?.isError === true) throw new Error(`SurfaceMCP tool error (${tool}): ${content}`);
     return JSON.parse(content) as T;
   }
 
@@ -249,5 +301,17 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
 
   async surface_describe_auth(args: { role: string }): Promise<DescribeAuthResult> {
     return this.mcpCall<DescribeAuthResult>('surface_describe_auth', args);
+  }
+
+  async surface_list_navigations(filter?: { method?: string; kind?: string }): Promise<SurfaceListNavigationsResult> {
+    return this.mcpCall<SurfaceListNavigationsResult>('surface_list_navigations', { filter });
+  }
+
+  async surface_enumerate_routes_runtime(): Promise<SurfaceRuntimeEnumScript> {
+    return this.mcpCall<SurfaceRuntimeEnumScript>('surface_enumerate_routes_runtime', {});
+  }
+
+  async surface_postprocess_runtime_routes(args: { raw: unknown }): Promise<SurfacePostprocessResult> {
+    return this.mcpCall<SurfacePostprocessResult>('surface_postprocess_runtime_routes', args);
   }
 }

@@ -64,19 +64,25 @@ async function executeStep(
       break;
 
     case 'click':
-      if (entry.selector) await browser.click(entry.selector);
+      if (entry.selector === undefined) throw new Error('replay: click action missing selector');
+      if (entry.selector === '') throw new Error('replay: click action has empty selector — corrupted log?');
+      await browser.click(entry.selector);
       break;
 
     case 'fill':
-      if (entry.selector) await browser.type(entry.selector, String(entry.value ?? ''));
+      if (entry.selector === undefined) throw new Error('replay: fill action missing selector');
+      if (entry.selector === '') throw new Error('replay: fill action has empty selector — corrupted log?');
+      await browser.type(entry.selector, String(entry.value ?? ''));
       break;
 
     case 'submit':
-      if (entry.selector) await browser.click(entry.selector);
+      if (entry.selector === undefined) throw new Error('replay: submit action missing selector');
+      if (entry.selector === '') throw new Error('replay: submit action has empty selector — corrupted log?');
+      await browser.click(entry.selector);
       break;
 
     case 'api_call':
-      if (entry.toolId) {
+      if (entry.toolId !== undefined && entry.toolId !== '') {
         await surface.surface_call({
           toolId: entry.toolId,
           role,
