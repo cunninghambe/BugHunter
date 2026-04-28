@@ -50,7 +50,6 @@ function findCluster(projectDir: string, runId: string, clusterId: string): BugC
 }
 
 function applySchemaChanges(actionLog: ActionLog, toolMap: Map<string, ToolMeta>): { log: ActionLog; via: 'verbatim' | 'regenerated' } {
-  let regenerated = false;
   const updatedActions = actionLog.actions.map(entry => {
     if (!entry.toolId || !entry.inputSchemaHash) return entry;
     const newTool = toolMap.get(entry.toolId);
@@ -59,10 +58,10 @@ function applySchemaChanges(actionLog: ActionLog, toolMap: Map<string, ToolMeta>
 
     const palette = (entry.palette ?? 'happy') as PaletteVariant;
     const newInput = buildApiInput(newTool, palette, entry.input, undefined);
-    regenerated = true;
     return { ...entry, input: newInput };
   });
 
+  const regenerated = updatedActions.some((a, i) => a !== actionLog.actions[i]);
   return { log: { ...actionLog, actions: updatedActions }, via: regenerated ? 'regenerated' : 'verbatim' };
 }
 

@@ -77,7 +77,7 @@ export function expandDynamicRoute(
   fixtures: Record<string, string[]>
 ): string[] {
   if (!isDynamicRoute(route)) return [route];
-  const ids = fixtures[route];
+  const ids = fixtures[route] as string[] | undefined;
   if (!ids || ids.length === 0) return [];
   return ids.map(id => {
     let r = route.replace(/\[([^\]]+)\]/g, id); // Next.js style [param]

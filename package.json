@@ -10,12 +10,15 @@
     "build": "npm run build -w packages/cli && npm run build -w packages/mcp",
     "typecheck": "npm run typecheck -w packages/cli && npm run typecheck -w packages/mcp",
     "test": "npm run test -w packages/cli",
-    "lint": "eslint packages/*/src --max-warnings 0"
+    "lint": "eslint packages/*/src --max-warnings 0",
+    "lint:fast": "ESLINT_FAST=1 eslint packages/*/src --max-warnings 0"
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "8.32.1",
-    "@typescript-eslint/parser": "8.32.1",
+    "@typescript-eslint/eslint-plugin": "8.59.1",
+    "@typescript-eslint/parser": "8.59.1",
     "eslint": "9.27.0",
+    "eslint-import-resolver-typescript": "4.4.4",
+    "eslint-plugin-import": "2.32.0",
     "typescript": "^5.9.3",
     "vitest": "4.1.5"
   },

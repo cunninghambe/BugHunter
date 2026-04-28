@@ -39,7 +39,7 @@ export async function runDiscover(
   const loginCfg = config.browserLogin;
   const browserLoginEnabled = (loginCfg?.enabled ?? true) && !!browser;
 
-  if (browserLoginEnabled && browser) {
+  if (browserLoginEnabled) {
     const loginRole = loginCfg?.role ?? roles[0];
     if (!loginRole) {
       log.info('browser_login: no roles configured; skipping');

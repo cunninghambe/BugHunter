@@ -320,7 +320,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
 
   async listTabs(): Promise<ListTabsResult> {
     const result = await this.mcpCall<CamofoxListTabsResult>('list_tabs', {});
-    const tabs = (result.tabs ?? []).map(t => ({
+    const tabs = result.tabs.map(t => ({
       id: t.tabId ?? t.id ?? '',
       url: t.url,
       title: t.title,

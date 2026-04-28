@@ -124,7 +124,7 @@ export async function walkDom(
     links: string[];
   };
 
-  const elements: Element[] = (raw.elements ?? []).map(e => ({
+  const elements: Element[] = raw.elements.map(e => ({
     tag: e.tag,
     roleAttr: e.roleAttr,
     typeAttr: e.typeAttr,
@@ -136,7 +136,7 @@ export async function walkDom(
     text: e.text,
   }));
 
-  const forms: DiscoveredForm[] = (raw.forms ?? []).map(f => ({
+  const forms: DiscoveredForm[] = raw.forms.map(f => ({
     formSelector: f.formSelector,
     fields: f.fields.map(field => ({
       name: field.name,
@@ -148,7 +148,7 @@ export async function walkDom(
     method: f.method,
   }));
 
-  return { elements, forms, links: raw.links ?? [] };
+  return { elements, forms, links: raw.links };
 }
 
 function normalizeInputType(t: string): FormField['type'] {

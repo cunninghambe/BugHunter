@@ -286,7 +286,7 @@ async function executeUiTestInner(
   }
 
   const mutResult = await scope.evaluate(MUTATION_OBSERVER_STOP_SCRIPT).catch(() => null);
-  const mutWindowMs = (mutResult?.value as { durationMs?: number })?.durationMs ?? 0;
+  const mutWindowMs = (mutResult?.value as { durationMs?: number } | undefined)?.durationMs ?? 0;
 
   const consoleResult = await scope.evaluate(
     '(window.__bhConsoleErrors || []).map(e => ({ level: "error", text: e.text, stack: e.stack }))'

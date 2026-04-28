@@ -44,8 +44,7 @@ function bugsFilePath(projectDir: string, runId: string): string {
   return `${projectDir}/.bughunter/runs/${runId}/bugs.jsonl`;
 }
 
-// Dynamic import of the bughunter CLI module at runtime only (not at type-check time).
-async function importCli(): Promise<{
+type CliModule = {
   runCommand: (opts: {
     projectDir: string;
     route?: string;
@@ -54,10 +53,12 @@ async function importCli(): Promise<{
     budget?: number;
   }) => Promise<void>;
   replayCommand: (projectDir: string, occurrenceId: string) => Promise<void>;
-}> {
+};
+
+// Dynamic import of the bughunter CLI module at runtime only (not at type-check time).
+function importCli(): Promise<CliModule> {
   // In production: bughunter is installed as a workspace package
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return import('bughunter/src/cli/run.js') as any;
+  return import('bughunter/src/cli/run.js') as Promise<CliModule>;
 }
 
 export function registerTools(server: McpServer): void {
@@ -71,12 +72,13 @@ export function registerTools(server: McpServer): void {
       maxBugs: z.number().int().optional().describe('Stop-and-emit at N clusters'),
       budget: z.number().int().optional().describe('Budget in ms'),
     },
+    // eslint-disable-next-line @typescript-eslint/require-await -- MCP tool handler interface contract; work is deferred via setImmediate
     async (args) => {
       try {
         const jobId = createId();
         jobs.set(jobId, { state: 'queued' });
 
-        setImmediate(async () => {
+        const runJob = async (): Promise<void> => {
           jobs.set(jobId, { state: 'running' });
           try {
             const cli = await importCli();
@@ -93,7 +95,8 @@ export function registerTools(server: McpServer): void {
           } catch (e) {
             jobs.set(jobId, { state: 'failed', error: String(e) });
           }
-        });
+        };
+        setImmediate(() => { void runJob(); });
 
         return toolOk({ jobId });
       } catch (e) {
@@ -106,6 +109,7 @@ export function registerTools(server: McpServer): void {
     'bughunt_status',
     'Get status of a BugHunter job.',
     { jobId: z.string().min(1) },
+    // eslint-disable-next-line @typescript-eslint/require-await -- MCP tool handler interface contract; synchronous lookup
     async (args) => {
       const job = jobs.get(args.jobId);
       if (!job) return toolErr('not_found', `Job ${args.jobId} not found`);
@@ -121,6 +125,7 @@ export function registerTools(server: McpServer): void {
       limit: z.number().int().optional(),
       kind: z.string().optional(),
     },
+    // eslint-disable-next-line @typescript-eslint/require-await -- MCP tool handler interface contract; uses synchronous file I/O
     async (args) => {
       try {
         const runIds = listRunIds(args.project).sort().reverse();

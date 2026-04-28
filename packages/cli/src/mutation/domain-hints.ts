@@ -12,7 +12,7 @@ export async function resolveDomainHint(
 ): Promise<unknown | undefined> {
   if (toolId) {
     const samples = await surface.surface_sample_inputs({ toolId }).catch(() => null);
-    if (samples?.samples?.length) {
+    if (samples?.samples.length) {
       for (const s of samples.samples) {
         const obj = s.input as Record<string, unknown> | null;
         if (obj && typeof obj === 'object') {
