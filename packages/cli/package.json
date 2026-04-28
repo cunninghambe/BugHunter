@@ -21,6 +21,7 @@
     "glob": "11.0.2",
     "micromatch": "4.0.8",
     "picocolors": "1.1.1",
+    "playwright-core": "1.52.0",
     "zod": "3.25.76"
   },
   "devDependencies": {
