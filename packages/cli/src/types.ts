@@ -363,6 +363,18 @@ export type VisionConfig = {
    * Default: 2500. Must be a positive integer. Minimum effective value is VISION_BASELINE_SETTLE_MS (1500).
    */
   preScreenshotSettleMs?: number;
+  /**
+   * Number of times to run each unique screenshot through the classifier.
+   * Default: 2. Max: 5. Set to 1 to disable consistency checking.
+   */
+  consistencyRuns?: number;
+  /**
+   * How to aggregate anomalies across the N consistency runs.
+   * - 'strict': all N runs must agree on the anomaly (unanimous).
+   * - 'majority': >= ceil(N/2) runs must agree.
+   * Default: 'strict' when consistencyRuns >= 2; ignored when consistencyRuns === 1.
+   */
+  agreementMode?: 'strict' | 'majority';
 };
 
 export type VisualBaselineEntry = {
@@ -393,6 +405,19 @@ export type VisionBaselineTelemetry = {
   screenshotsTooSmall: number;
 };
 
+/** Accumulated consistency telemetry across all screenshots in a run phase. */
+export type VisionConsistencyTelemetry = {
+  runsPerScreenshot: number;
+  agreementMode: 'strict' | 'majority';
+  totalCalls: number;
+  totalSucceeded: number;
+  droppedByDisagreement: number;
+  /** Weighted average agreement rate across screenshots that had ≥1 anomaly in any run. */
+  agreementRate: number;
+  screenshotsWithAnomalies: number;
+  screenshotsClean: number;
+};
+
 export type DiscoveryOutput = {
   pages: DiscoveredPage[];
   apiTools: ToolMeta[];
@@ -405,6 +430,8 @@ export type DiscoveryOutput = {
   probe?: { telemetry: ProbeTelemetryRecord };
   /** Vision baseline pass telemetry — present when vision is enabled. */
   visionBaselineTelemetry?: VisionBaselineTelemetry;
+  /** v0.15 consistency telemetry — present when vision is enabled. */
+  visionConsistencyTelemetry?: VisionConsistencyTelemetry;
 };
 
 export type SkippedItem = {
@@ -980,6 +1007,16 @@ export type RunSummary = {
     costCapUsd?: number;
     /** Which auth path was used for vision. */
     authMode?: 'apiKey' | 'claudeCli';
+    consistency?: {
+      runsPerScreenshot: number;
+      agreementMode: 'strict' | 'majority';
+      totalCalls: number;
+      totalSucceeded: number;
+      droppedByDisagreement: number;
+      agreementRate: number;
+      screenshotsWithAnomalies: number;
+      screenshotsClean: number;
+    };
   };
   discovery?: {
     seedRoutes: number;

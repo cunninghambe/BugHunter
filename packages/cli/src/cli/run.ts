@@ -475,6 +475,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       costUsd: visionBudget !== undefined ? Math.round(visionBudget.costUsd * 10000) / 10000 : 0,
       costCapUsd: visionBudget?.costCapUsd,
       authMode: visionAuthMode,
+      consistency: discovery.visionConsistencyTelemetry,
     } : undefined;
 
     // v0.6: build perf summary from collected artifacts

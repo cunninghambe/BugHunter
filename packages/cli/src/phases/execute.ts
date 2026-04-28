@@ -19,7 +19,7 @@ import type { XssContext } from '../types.js';
 import { classifyConsoleErrors } from '../classify/console.js';
 import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
-import { classifyVisualAnomalies } from '../classify/vision.js';
+import { classifyVisualAnomaliesConsistent } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
 import type { VisionConfig } from '../types.js';
@@ -678,7 +678,7 @@ async function executeUiTestInner(
       // screenshot missing — still try vision (will fail gracefully inside classify)
     }
     if (hashOk) {
-      const visualDetections = await classifyVisualAnomalies({
+      const consistent = await classifyVisualAnomaliesConsistent({
         screenshotPath,
         url: tc.page,
         action: tc.action,
@@ -686,11 +686,15 @@ async function executeUiTestInner(
         config: visionConfig,
         client: visionClient,
         budget: visionBudget,
+        consistencyRuns: visionConfig?.consistencyRuns ?? 2,
+        agreementMode: visionConfig?.agreementMode ?? 'strict',
       }).catch(err => {
         log.warn('vision: classification failed', { occurrenceId, err: String(err) });
-        return [] as BugDetection[];
+        return null;
       });
-      bugs.push(...visualDetections);
+      if (consistent !== null) {
+        bugs.push(...consistent.detections);
+      }
     }
   }
 

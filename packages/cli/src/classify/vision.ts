@@ -114,6 +114,8 @@ export function resolveVisionConfig(c: VisionConfig | undefined, apiKey: string)
   concurrency: number;
   severityThreshold: VisionSeverity;
   preScreenshotSettleMs: number;
+  consistencyRuns: number;
+  agreementMode: 'strict' | 'majority';
 } {
   return {
     enabled: c?.enabled ?? false,
@@ -124,6 +126,8 @@ export function resolveVisionConfig(c: VisionConfig | undefined, apiKey: string)
     concurrency: c?.concurrency ?? 4,
     severityThreshold: c?.severityThreshold ?? 'major',
     preScreenshotSettleMs: c?.preScreenshotSettleMs ?? DEFAULT_PRE_SCREENSHOT_SETTLE_MS,
+    consistencyRuns: c?.consistencyRuns ?? 2,
+    agreementMode: c?.agreementMode ?? 'strict',
   };
 }
 
@@ -167,6 +171,195 @@ export function hashScreenshot(imagePath: string): string {
   const buf = fs.readFileSync(imagePath);
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
+
+// ---- v0.15: consistency aggregation ----
+
+/**
+ * Compute Jaccard similarity between two lowercased, whitespace-split token sets.
+ * Returns 0 when both are empty to avoid false-positive matches.
+ */
+function elementJaccard(a: string, b: string): number {
+  const ta = new Set(a.toLowerCase().split(/\s+/).filter(t => t.length > 0));
+  const tb = new Set(b.toLowerCase().split(/\s+/).filter(t => t.length > 0));
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let intersection = 0;
+  for (const t of ta) {
+    if (tb.has(t)) intersection++;
+  }
+  const union = ta.size + tb.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Returns true when two anomalies represent the same finding.
+ * Matching criteria:
+ *   - Same visualCategory (required in both modes)
+ *   - Element Jaccard >= 0.5 on lowercased tokens (required in both modes)
+ *   - Same visualSeverity (only in 'strict' mode)
+ */
+export function anomalyMatches(
+  a: BugDetection,
+  b: BugDetection,
+  mode: 'strict' | 'majority',
+): boolean {
+  if (a.visualCategory !== b.visualCategory) return false;
+  const elementA = a.rootCause.split(':')[0] ?? '';
+  const elementB = b.rootCause.split(':')[0] ?? '';
+  if (elementJaccard(elementA, elementB) < 0.5) return false;
+  if (mode === 'strict' && a.visualSeverity !== b.visualSeverity) return false;
+  return true;
+}
+
+export type AggregateConsistencyResult = {
+  kept: BugDetection[];
+  droppedByDisagreement: number;
+  agreementRate: number;
+};
+
+/**
+ * Aggregate N runs of vision results into a consistency-filtered list.
+ *
+ * Algorithm (per spec §4.3):
+ *   1. Dedupe within each run (keep first occurrence by rootCause).
+ *   2. For each anomaly in run-0, greedily match one anomaly per subsequent run.
+ *   3. Cluster size = number of runs where a matching anomaly was found.
+ *   4. Filter by mode: strict requires clusterSize === N; majority requires >= ceil(N/2).
+ *   5. Canonical representation: run-0 occurrence; most-common severity (ties → max).
+ */
+export function aggregateConsistencyResults(
+  results: BugDetection[][],
+  mode: 'strict' | 'majority',
+): AggregateConsistencyResult {
+  const N = results.length;
+  if (N === 0) return { kept: [], droppedByDisagreement: 0, agreementRate: 1 };
+
+  // Dedupe within each run
+  const runs = results.map(run => {
+    const seen = new Set<string>();
+    return run.filter(d => {
+      if (seen.has(d.rootCause)) return false;
+      seen.add(d.rootCause);
+      return true;
+    });
+  });
+
+  const run0 = runs[0] ?? [];
+  if (run0.length === 0 && runs.every(r => r.length === 0)) {
+    return { kept: [], droppedByDisagreement: 0, agreementRate: 1 };
+  }
+
+  const threshold = mode === 'strict' ? N : Math.ceil(N / 2);
+
+  // For each anomaly in run-0, find matching anomalies in runs 1..N-1
+  type ClusterEntry = { runIndex: number; detection: BugDetection };
+  const clusters: ClusterEntry[][] = run0.map(d => [{ runIndex: 0, detection: d }]);
+
+  for (let ri = 1; ri < N; ri++) {
+    const remaining = [...(runs[ri] ?? [])];
+    for (const cluster of clusters) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- clusters[ci] always has at least one entry (seeded from run-0)
+      const canonical = cluster[0]!.detection;
+      const matchIdx = remaining.findIndex(d => anomalyMatches(canonical, d, mode));
+      if (matchIdx !== -1) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- matchIdx !== -1 guarantees element exists
+        cluster.push({ runIndex: ri, detection: remaining[matchIdx]! });
+        remaining.splice(matchIdx, 1);
+      }
+    }
+  }
+
+  const kept: BugDetection[] = [];
+  let keptClusterSizeSum = 0;
+  let allClusterSizeSum = 0;
+
+  for (const cluster of clusters) {
+    const clusterSize = cluster.length;
+    allClusterSizeSum += clusterSize;
+
+    if (clusterSize < threshold) continue;
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- cluster always has at least one entry (seeded from run-0)
+    const canonical = cluster[0]!.detection;
+
+    // Choose most-common severity; ties → max
+    const severityCounts: Partial<Record<VisionSeverity, number>> = {};
+    for (const entry of cluster) {
+      const sev = entry.detection.visualSeverity;
+      if (sev !== undefined) {
+        severityCounts[sev] = (severityCounts[sev] ?? 0) + 1;
+      }
+    }
+    const severityOrder: Record<VisionSeverity, number> = { minor: 0, major: 1, critical: 2 };
+    const chosenSeverity = (Object.entries(severityCounts) as Array<[VisionSeverity, number]>)
+      .reduce<VisionSeverity | undefined>((best, [sev, count]) => {
+        if (best === undefined) return sev;
+        const bestCount = severityCounts[best] ?? 0;
+        if (count > bestCount) return sev;
+        if (count === bestCount && severityOrder[sev] > severityOrder[best]) return sev;
+        return best;
+      }, undefined);
+
+    kept.push({ ...canonical, visualSeverity: chosenSeverity ?? canonical.visualSeverity });
+    keptClusterSizeSum += clusterSize;
+  }
+
+  // droppedByDisagreement: anomalies seen in any run but NOT part of a kept cluster
+  const totalSeen = runs.reduce((sum, r) => sum + r.length, 0);
+  const droppedByDisagreement = totalSeen - keptClusterSizeSum;
+
+  // agreementRate: average cluster-size / N for all run-0 anomalies (1.0 = perfect agreement)
+  const agreementRate = clusters.length > 0
+    ? allClusterSizeSum / (clusters.length * N)
+    : 1;
+
+  return { kept, droppedByDisagreement: Math.max(0, droppedByDisagreement), agreementRate };
+}
+
+export type ConsistentClassifyInput = ClassifyVisualInput & {
+  consistencyRuns: number;
+  agreementMode: 'strict' | 'majority';
+};
+
+export type ConsistentClassifyResult = {
+  detections: BugDetection[];
+  perRunDetections: BugDetection[][];
+  callsAttempted: number;
+  callsSucceeded: number;
+  droppedByDisagreement: number;
+  agreementRate: number;
+};
+
+/**
+ * Run the vision classifier N times sequentially and aggregate results.
+ * The caller is responsible for calling `visionBudget.tryConsume()` before
+ * invoking this function (just as with the single-call path). Budget for
+ * cost tracking (`recordUsage`) is forwarded to each inner call.
+ * EC-1: when consistencyRuns === 1, equivalent to single-call behavior.
+ */
+export async function classifyVisualAnomaliesConsistent(
+  input: ConsistentClassifyInput,
+): Promise<ConsistentClassifyResult> {
+  const { consistencyRuns, agreementMode, ...baseInput } = input;
+  const perRun: BugDetection[][] = [];
+
+  for (let i = 0; i < consistencyRuns; i++) {
+    const dets = await classifyVisualAnomalies(baseInput);
+    perRun.push(dets);
+  }
+
+  const { kept, droppedByDisagreement, agreementRate } = aggregateConsistencyResults(perRun, agreementMode);
+
+  return {
+    detections: kept,
+    perRunDetections: perRun,
+    callsAttempted: consistencyRuns,
+    callsSucceeded: consistencyRuns,
+    droppedByDisagreement,
+    agreementRate,
+  };
+}
+
+// ---- end v0.15 ----
 
 function parseVisionResponse(rawText: string, screenshotPath: string): BugDetection[] {
   // Strip markdown fences if present
