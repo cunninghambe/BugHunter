@@ -48,20 +48,19 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('CamofoxBrowserMcpAdapter — tab tracking (§3.6)', () => {
   it('stores tabId from navigate and reuses on subsequent calls', async () => {
+    // v0.12: string-selector click uses evaluate (not snapshot+click)
+    const clickResult = { ok: true, accessibleNameAbsent: false, ariaLabelSource: 'text', tagName: 'button', role: null };
     const { calls } = mockDispatch({
       navigate: { tabId: 'tab-abc', ok: true, finalUrl: 'http://x' },
-      snapshot: { tabId: 'tab-abc', snapshot: SIMPLE_SNAPSHOT },
-      click: { tabId: 'tab-abc', ok: true },
+      evaluate: { tabId: 'tab-abc', result: clickResult },
     });
 
     const adapter = new CamofoxBrowserMcpAdapter('http://127.0.0.1:3104');
     await adapter.navigate('http://x');
     await adapter.click('button');
 
-    const snapCall = calls.find(c => c.name === 'snapshot');
-    const clickCall = calls.find(c => c.name === 'click');
-    expect(snapCall?.arguments?.['tabId']).toBe('tab-abc');
-    expect(clickCall?.arguments?.['tabId']).toBe('tab-abc');
+    const evalCall = calls.find(c => c.name === 'evaluate');
+    expect(evalCall?.arguments?.['tabId']).toBe('tab-abc');
   });
 
   it('throws no_tab if click is called before navigate', async () => {
@@ -86,11 +85,12 @@ describe('CamofoxBrowserMcpAdapter — tab tracking (§3.6)', () => {
   });
 
   it('closeTab does NOT clear currentTabId when it does not match', async () => {
+    // v0.12: string-selector click uses evaluate (not snapshot+click)
+    const clickResult = { ok: true, accessibleNameAbsent: false, ariaLabelSource: 'text', tagName: 'button', role: null };
     mockDispatch({
       navigate: { tabId: 'tab-1', ok: true, finalUrl: 'http://x' },
       close_tab: { ok: true },
-      snapshot: { tabId: 'tab-1', snapshot: SIMPLE_SNAPSHOT },
-      click: { tabId: 'tab-1', ok: true },
+      evaluate: { tabId: 'tab-1', result: clickResult },
     });
 
     const adapter = new CamofoxBrowserMcpAdapter('http://127.0.0.1:3104');
@@ -187,7 +187,9 @@ describe('CamofoxBrowserMcpAdapter — error mapping (§3.9)', () => {
 });
 
 describe('CamofoxBrowserMcpAdapter — retry on element_not_found (§3.7)', () => {
-  it('retries once after element_not_found and succeeds on second snapshot', async () => {
+  it('retries once after element_not_found on structured selector and succeeds on second snapshot', async () => {
+    // v0.12: retry only applies to structured selectors (snapshot path).
+    // String selectors use evaluate — no retry.
     let snapshotCount = 0;
     let clickCount = 0;
 
@@ -204,7 +206,7 @@ describe('CamofoxBrowserMcpAdapter — retry on element_not_found (§3.7)', () =
 
       if (name === 'snapshot') {
         snapshotCount++;
-        // First snapshot: has no matching ref for 'button'
+        // First snapshot: has no matching ref for role=button
         // Second snapshot (after retry): has the button
         const snap = snapshotCount === 1
           ? '- generic [e1]:'
@@ -223,14 +225,6 @@ describe('CamofoxBrowserMcpAdapter — retry on element_not_found (§3.7)', () =
         );
       }
 
-      if (name === 'evaluate') {
-        // evaluate fallback returns empty → triggers element_not_found
-        return new Response(
-          JSON.stringify({ result: { content: [{ text: JSON.stringify({ tabId: 't1', result: null }) }] } }),
-          { headers: { 'content-type': 'application/json' } }
-        );
-      }
-
       return new Response(
         JSON.stringify({ result: { content: [{ text: JSON.stringify({ ok: true }) }] } }),
         { headers: { 'content-type': 'application/json' } }
@@ -239,7 +233,8 @@ describe('CamofoxBrowserMcpAdapter — retry on element_not_found (§3.7)', () =
 
     const adapter = new CamofoxBrowserMcpAdapter('http://127.0.0.1:3104');
     await adapter.navigate('http://x');
-    const result = await adapter.click('button');
+    // Use structured selector (snapshot path) to test retry
+    const result = await adapter.click({ role: 'button', name: 'Submit' });
     expect(result.clicked).toBe(true);
     expect(clickCount).toBe(1);
     // At least 2 snapshot calls (initial + retry)

@@ -29,6 +29,8 @@ import {
 } from './browser-mcp-snapshot.js';
 import type { StructuredSelector, SnapshotNode } from './browser-mcp-snapshot.js';
 import type { TriggerSelectorHint } from '../types.js';
+import { runEvaluateClick } from '../phases/click-runner.js';
+import type { EvaluateClickResult } from '../phases/click-runner.js';
 
 export type NavigateResult = { url: string; title?: string };
 export type ClickResult = { clicked: boolean };
@@ -68,6 +70,16 @@ export type TabScope = {
   screenshot(outputPath?: string): Promise<ScreenshotResult>;
   evaluate(script: string): Promise<EvaluateResult>;
   clickByHint(hint: TriggerSelectorHint): Promise<ClickByHintResult>;
+  /**
+   * v0.12: click with rich evaluate-result. Used by execute.ts to emit the
+   * interactive_element_missing_accessible_name BugDetection. For structured
+   * selectors, returns the degraded shape (accessibleNameAbsent:false) — the
+   * named-selector path is inherently named.
+   *
+   * Optional: callers that do not need the observation result (e.g. vision-discovery
+   * probes) may omit this method from their scope mocks.
+   */
+  clickWithObservation?(selector: string | StructuredSelector): Promise<EvaluateClickResult & { ok: true }>;
 };
 
 export interface BrowserMcpAdapter {
@@ -239,6 +251,18 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     return ref;
   }
 
+  // ---- Private helpers ----
+
+  /** Thin evaluate-scope shim for runEvaluateClick / runFormSubmit. */
+  private makeEvaluateScope(tabId: string) {
+    return {
+      evaluate: (script: string) =>
+        this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: script }).then(r => ({
+          value: r.result ?? r.value,
+        })),
+    };
+  }
+
   // ---- Private evaluate-click helpers (React-safe MouseEvent dispatch) ----
 
   private static escapeAttr(value: string): string {
@@ -282,19 +306,23 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
   }
 
   /**
-   * Click an element. Accepts a CSS selector string or structured {role, name?, nth?}.
-   * Takes one fresh snapshot per call. Retries once on element_not_found (dynamic DOM).
-   * Note: ambiguous selectors resolve to the first match in document order.
+   * Click an element. String selectors use a single evaluate round-trip (v0.12),
+   * bypassing the camofox a11y-snapshot lookup. Structured selectors continue
+   * through the snapshot path — they have unambiguous a11y-tree refs.
    */
   async click(selector: string | StructuredSelector): Promise<ClickResult> {
     const tabId = this.requireTab();
+    if (typeof selector === 'string') {
+      await runEvaluateClick(this.makeEvaluateScope(tabId), selector);
+      return { clicked: true };
+    }
     try {
       const ref = await this.resolveRef(tabId, selector);
       await this.mcpCall<{ tabId: string; ok: boolean }>('click', { tabId, ref });
       return { clicked: true };
     } catch (err) {
       if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
-        // Single retry after re-snapshot (dynamic-render race)
+        // Single retry after re-snapshot (dynamic-render race) — structured path only
         const ref = await this.resolveRef(tabId, selector);
         await this.mcpCall<{ tabId: string; ok: boolean }>('click', { tabId, ref });
         return { clicked: true };
@@ -438,9 +466,29 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
           url: r.finalUrl ?? r.url ?? url,
           title: r.title,
         })),
-      click: (selector) => this.resolveRef(tabId, selector).then(ref =>
-        this.mcpCall<{ tabId: string; ok: boolean }>('click', { tabId, ref }).then(() => ({ clicked: true }))
-      ),
+      click: (selector) => {
+        if (typeof selector === 'string') {
+          return runEvaluateClick(this.makeEvaluateScope(tabId), selector).then(() => ({ clicked: true }));
+        }
+        return this.resolveRef(tabId, selector).then(ref =>
+          this.mcpCall<{ tabId: string; ok: boolean }>('click', { tabId, ref }).then(() => ({ clicked: true }))
+        );
+      },
+      clickWithObservation: (selector) => {
+        if (typeof selector === 'string') {
+          return runEvaluateClick(this.makeEvaluateScope(tabId), selector);
+        }
+        // Structured selector: degraded shape — caller named the element, so absent-name case doesn't apply
+        return this.resolveRef(tabId, selector)
+          .then(ref => this.mcpCall<{ tabId: string; ok: boolean }>('click', { tabId, ref }))
+          .then((): EvaluateClickResult & { ok: true } => ({
+            ok: true,
+            accessibleNameAbsent: false,
+            ariaLabelSource: null,
+            tagName: 'unknown',
+            role: null,
+          }));
+      },
       type: (selector, text) => this.resolveRef(tabId, selector).then(ref =>
         this.mcpCall<{ tabId: string; ok: boolean }>('type', { tabId, ref, text, submit: false }).then(() => ({ typed: true }))
       ),

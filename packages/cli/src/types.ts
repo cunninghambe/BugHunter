@@ -76,6 +76,8 @@ export type BugKind =
   | 'focus_lost_after_action'
   | 'image_missing_alt'
   | 'form_input_unlabeled'
+  // v0.12 click-evaluate kinds
+  | 'interactive_element_missing_accessible_name'
   // v0.6 SEO hygiene kinds
   | 'seo_title_missing'
   | 'seo_title_duplicate_across_routes'

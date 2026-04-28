@@ -484,11 +484,28 @@ async function executeUiTestInner(
 
   try {
     switch (tc.action.kind) {
-      case 'click':
+      case 'click': {
         if (tc.action.selector === undefined) throw new Error('execute: click action missing selector');
         if (tc.action.selector === '') throw new Error('execute: click action has empty selector — planning bug?');
-        await scope.click(tc.action.selector);
+        if (scope.clickWithObservation !== undefined) {
+          const obs = await scope.clickWithObservation(tc.action.selector);
+          if (obs.accessibleNameAbsent === true) {
+            bugs.push({
+              kind: 'interactive_element_missing_accessible_name',
+              rootCause: `Interactive <${obs.tagName}${obs.role !== null ? ` role="${obs.role}"` : ''}> has no accessible name on ${tc.page}`,
+              pageRoute: tc.page,
+              selectorClass: tc.action.selector,
+              a11yContext: {
+                triggeringSelector: tc.action.selector,
+                activeElementTag: obs.tagName,
+              },
+            });
+          }
+        } else {
+          await scope.click(tc.action.selector);
+        }
         break;
+      }
       case 'submit': {
         if (tc.action.selector === undefined) throw new Error('execute: submit action missing selector');
         if (tc.action.selector === '') throw new Error('execute: submit action has empty selector — planning bug?');

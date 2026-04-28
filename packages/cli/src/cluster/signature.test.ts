@@ -194,3 +194,47 @@ describe('clusterSignature — v0.7 auth-flow kinds', () => {
     }
   });
 });
+
+describe('clusterSignature — v0.12 interactive_element_missing_accessible_name', () => {
+  it('5 occurrences on same page+selector collapse into 1 cluster key', () => {
+    const detection = make('interactive_element_missing_accessible_name', {
+      pageRoute: '/?setTab=settings',
+      selectorClass: 'button[aria-label="Refresh AI usage history"]',
+    });
+    const sigs = Array.from({ length: 5 }, () => clusterSignature(detection));
+    expect(new Set(sigs).size).toBe(1);
+  });
+
+  it('3 occurrences on different pages produce 3 distinct cluster keys', () => {
+    const pages = ['/', '/?setTab=settings', '/onboarding'];
+    const sigs = pages.map(page =>
+      clusterSignature(make('interactive_element_missing_accessible_name', {
+        pageRoute: page,
+        selectorClass: 'button:nth-of-type(3)',
+      })),
+    );
+    expect(new Set(sigs).size).toBe(3);
+  });
+
+  it('2 occurrences with different selectorClass on same page produce 2 cluster keys', () => {
+    const a = make('interactive_element_missing_accessible_name', {
+      pageRoute: '/',
+      selectorClass: 'button:nth-of-type(3)',
+    });
+    const b = make('interactive_element_missing_accessible_name', {
+      pageRoute: '/',
+      selectorClass: 'button[onclick]',
+    });
+    expect(clusterSignature(a)).not.toBe(clusterSignature(b));
+  });
+
+  it('signature includes pageRoute and selectorClass', () => {
+    const sig = clusterSignature(make('interactive_element_missing_accessible_name', {
+      pageRoute: '/dashboard',
+      selectorClass: 'button.icon',
+    }));
+    expect(sig).toContain('/dashboard');
+    expect(sig).toContain('button.icon');
+    expect(sig).toContain('interactive_element_missing_accessible_name');
+  });
+});
