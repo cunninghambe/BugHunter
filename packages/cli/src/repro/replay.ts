@@ -4,6 +4,7 @@
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { ActionLog, ActionLogEntry } from './action-log.js';
+import { runFormSubmit, isStringKeyedRecord } from '../phases/form-submit-runner.js';
 import { log } from '../log.js';
 
 export type ReplayResult = {
@@ -27,6 +28,19 @@ export async function replayActionLog(
   const networkRequests: unknown[] = [];
 
   try {
+    // Re-establish state-page context before replaying actions.
+    // The action log's baseUrl is the synthetic route (dedup key); the real
+    // navigation target is stateContext.baseRoute + clickByHint(triggerHint).
+    if (actionLog.stateContext !== undefined) {
+      const { baseRoute, triggerHint } = actionLog.stateContext;
+      await browser.navigate(baseRoute, { 'X-BugHunter-Run': runId });
+      const clicked = await browser.clickByHint(triggerHint);
+      if (!clicked.clicked) {
+        log.warn('replay: state trigger not found', { occurrenceId: actionLog.occurrenceId, triggerHint });
+      }
+      await new Promise<void>(r => { setTimeout(r, 250); });
+    }
+
     for (const entry of actionLog.actions) {
       await executeStep(entry, browser, surface, actionLog.role, runId);
     }
@@ -78,7 +92,7 @@ async function executeStep(
     case 'submit':
       if (entry.selector === undefined) throw new Error('replay: submit action missing selector');
       if (entry.selector === '') throw new Error('replay: submit action has empty selector — corrupted log?');
-      await browser.click(entry.selector);
+      await runFormSubmit(browser, entry.selector, isStringKeyedRecord(entry.input) ? entry.input : {});
       break;
 
     case 'api_call':

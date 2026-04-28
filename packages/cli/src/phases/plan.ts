@@ -45,15 +45,17 @@ export async function runPlan(
 
     // Per-page tests
     for (const page of discovery.pages) {
+      const pageStateCtx = page.kind === 'state' ? page.stateContext : undefined;
+
       // Render test (always)
-      testCases.push(renderTestCase(runId, role, page.route));
+      testCases.push(renderTestCase(runId, role, page.route, pageStateCtx));
 
       // Navigate tests per distinct link target
       const seenLinks = new Set<string>();
       for (const link of page.links) {
         if (!seenLinks.has(link)) {
           seenLinks.add(link);
-          testCases.push(navigateTestCase(runId, role, page.route, link));
+          testCases.push(navigateTestCase(runId, role, page.route, link, pageStateCtx));
         }
       }
 
@@ -63,7 +65,7 @@ export async function runPlan(
         if (el.tag === 'button' || el.roleAttr === 'button') {
           if (!elSigs.has(el.selector)) {
             elSigs.add(el.selector);
-            testCases.push(clickTestCase(runId, role, page.route, el.selector));
+            testCases.push(clickTestCase(runId, role, page.route, el.selector, pageStateCtx));
           }
         }
       }
@@ -77,12 +79,12 @@ export async function runPlan(
         );
         if (!seenFormSigs.has(sig)) {
           seenFormSigs.add(sig);
-          const cases = formTestCases(runId, role, page.route, form, runId, config.domainHints);
+          const cases = formTestCases(runId, role, page.route, form, runId, config.domainHints, pageStateCtx);
           testCases.push(...cases);
 
           // XSS canary injection for this form
           if (xssEnabled && xssCount < xssMaxTestCases) {
-            const xssCases = xssFormTestCases(runId, role, page.route, form, xssDepth);
+            const xssCases = xssFormTestCases(runId, role, page.route, form, xssDepth, pageStateCtx);
             const allowed = Math.min(xssCases.length, xssMaxTestCases - xssCount);
             testCases.push(...xssCases.slice(0, allowed));
             xssCount += allowed;
@@ -189,7 +191,9 @@ async function enrichToolSchemas(
   return result;
 }
 
-function renderTestCase(runId: string, role: string, route: string): TestCase {
+type StateContext = NonNullable<TestCase['stateContext']>;
+
+function renderTestCase(runId: string, role: string, route: string, stateContext?: StateContext): TestCase {
   return {
     id: createId(),
     runId,
@@ -198,10 +202,11 @@ function renderTestCase(runId: string, role: string, route: string): TestCase {
     action: { kind: 'render', via: 'ui', expectedOutcome: 'success', palette: 'happy' },
     expectedOutcome: 'success',
     palette: 'happy',
+    stateContext,
   };
 }
 
-function navigateTestCase(runId: string, role: string, page: string, target: string): TestCase {
+function navigateTestCase(runId: string, role: string, page: string, target: string, stateContext?: StateContext): TestCase {
   return {
     id: createId(),
     runId,
@@ -210,10 +215,11 @@ function navigateTestCase(runId: string, role: string, page: string, target: str
     action: { kind: 'navigate', via: 'ui', expectedOutcome: 'unknown', palette: 'happy', selector: target },
     expectedOutcome: 'unknown',
     palette: 'happy',
+    stateContext,
   };
 }
 
-function clickTestCase(runId: string, role: string, page: string, selector: string): TestCase {
+function clickTestCase(runId: string, role: string, page: string, selector: string, stateContext?: StateContext): TestCase {
   return {
     id: createId(),
     runId,
@@ -222,5 +228,6 @@ function clickTestCase(runId: string, role: string, page: string, selector: stri
     action: { kind: 'click', via: 'ui', expectedOutcome: 'success', palette: 'happy', selector },
     expectedOutcome: 'success',
     palette: 'happy',
+    stateContext,
   };
 }
