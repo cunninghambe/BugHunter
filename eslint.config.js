@@ -22,6 +22,8 @@ const typeAwareRules = TYPE_AWARE ? {
 } : {};
 
 export default [
+  // In fast mode, disable reporting of unused-disable-directives (some disables target type-aware rules that are off in fast mode)
+  ...(TYPE_AWARE ? [] : [{ linterOptions: { reportUnusedDisableDirectives: false } }]),
   {
     ignores: [
       '**/dist/**',

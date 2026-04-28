@@ -17,9 +17,7 @@ export function listCommand(projectDir: string): void {
     if (!fileExists(paths.stateFile)) continue;
 
     const state = readJsonFile<RunState>(paths.stateFile);
-    const clusterCount = state.clusterCount ?? 0;
-    const phase = state.phase ?? 'unknown';
-    const started = state.startedAt ?? '';
+    const { clusterCount, phase, startedAt: started } = state;
 
     process.stdout.write(`  ${runId}  phase=${phase}  clusters=${clusterCount}  started=${started}\n`);
   }

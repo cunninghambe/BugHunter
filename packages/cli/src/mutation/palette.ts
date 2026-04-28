@@ -70,8 +70,8 @@ function numberCases(schema: NumberSchema, sampleValue?: unknown): MutationCase[
   return [
     { variant: 'null', value: undefined },
     { variant: 'happy', value: sampleValue ?? 1 },
-    { variant: 'edge', value: minimum !== undefined ? minimum : 0 },
-    { variant: 'edge', value: maximum !== undefined ? maximum : 0 },
+    { variant: 'edge', value: minimum ?? 0 },
+    { variant: 'edge', value: maximum ?? 0 },
     { variant: 'out_of_bounds', value: Number.MAX_SAFE_INTEGER + 1 },
     { variant: 'out_of_bounds', value: NaN },
   ];

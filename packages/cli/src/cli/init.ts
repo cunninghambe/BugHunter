@@ -24,7 +24,7 @@ export async function initCommand(projectDir: string, opts?: InitOptions): Promi
   }
 
   const config = opts?.noInteractive
-    ? await resolveNonInteractive(projectDir, opts)
+    ? resolveNonInteractive(projectDir, opts)
     : await resolveInteractive(projectDir);
 
   saveConfig(projectDir, config);
@@ -49,7 +49,7 @@ async function resolveInteractive(_projectDir: string): Promise<BugHunterConfig>
     surfaceMcpUrl,
     browserMcpUrl: browserMcpUrl || undefined,
     resetCommand: resetCommand || undefined,
-    resetPolicy: (resetPolicy as BugHunterConfig['resetPolicy']) || 'per-page',
+    resetPolicy: resetPolicy as BugHunterConfig['resetPolicy'],
     maxBugs: 200,
     discoveryFixtures: {},
     domainHints: {},
@@ -57,7 +57,7 @@ async function resolveInteractive(_projectDir: string): Promise<BugHunterConfig>
   };
 }
 
-async function resolveNonInteractive(projectDir: string, opts: InitOptions): Promise<BugHunterConfig> {
+function resolveNonInteractive(projectDir: string, opts: InitOptions): BugHunterConfig {
   const env = process.env;
   const projectName =
     opts.projectName ??

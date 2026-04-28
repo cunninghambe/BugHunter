@@ -39,7 +39,7 @@ export async function replayCommand(projectDir: string, occurrenceId: string): P
 
   const result = await replayActionLog(
     actionLog,
-    browser ?? ({ navigate: async () => ({ url: '' }), click: async () => ({ clicked: false }), type: async () => ({ typed: false }), scroll: async () => ({ scrolled: false }), snapshot: async () => ({ snapshot: '' }), screenshot: async () => ({ path: '' }), evaluate: async () => ({ value: null }), listTabs: async () => ({ tabs: [] }), closeTab: async () => ({ closed: false }), openTab: async () => ({ tabId: '', finalUrl: '' }), closeTabExplicit: async () => {}, withTab: async (_u: string, _h: Record<string,string> | undefined, fn: (s: never) => Promise<never>) => fn({} as never), cookies: async () => ({ tabId: '', cookies: [] }) }),
+    browser ?? ({ navigate: async () => ({ url: '' }), click: async () => ({ clicked: false }), type: async () => ({ typed: false }), scroll: async () => ({ scrolled: false }), snapshot: async () => ({ snapshot: '' }), screenshot: async () => ({ path: '' }), evaluate: async () => ({ value: null }), listTabs: async () => ({ tabs: [] }), closeTab: async () => ({ closed: false }), openTab: async () => ({ tabId: '', finalUrl: '' }), closeTabExplicit: async () => {}, withTab: async (_u: string, _h: Record<string,string> | undefined, fn: (s: never) => Promise<never>) => fn({} as never), cookies: async () => ({ tabId: '', cookies: [] }) }), // eslint-disable-line @typescript-eslint/require-await -- interface contract: BrowserMcpAdapter methods must return Promise
     surface,
     actionLog.runId
   );
