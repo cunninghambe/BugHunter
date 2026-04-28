@@ -20,11 +20,11 @@ import { runCrossUser } from '../phases/cross-user.js';
 import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { BugDetection, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry } from '../types.js';
+import type { BugDetection, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry } from '../types.js';
 import { runEmit } from '../phases/emit.js';
 import { log } from '../log.js';
-import { createCdpSession } from '../adapters/cdp-session.js';
-import { createPerfCollector } from '../perf/perf-collector.js';
+import { createCdpSession, type CdpSession } from '../adapters/cdp-session.js';
+import { createPerfCollector, type PerfCollector } from '../perf/perf-collector.js';
 import { runBundleProbe } from '../phases/bundle-probe.js';
 import type { RunSummary } from '../types.js';
 
@@ -232,8 +232,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const pageUrls = discovery.pages.map(p => p.route);
 
   // v0.6: create perf collector when --enable-perf is set
-  let perfCollector: import('../perf/perf-collector.js').PerfCollector | undefined;
-  let cdpSessionHandle: import('../adapters/cdp-session.js').CdpSession | undefined;
+  let perfCollector: PerfCollector | undefined;
+  let cdpSessionHandle: CdpSession | undefined;
 
   if (perfEnabled) {
     const cdpResult = await createCdpSession();
@@ -241,7 +241,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       const rPaths = runPaths(opts.projectDir, runId);
       const perfDir = `${rPaths.runDir}/perf`;
       try {
-        perfCollector = await createPerfCollector({
+        perfCollector = createPerfCollector({
           cdpSession: cdpResult.session,
           perfDir,
           networkDir: rPaths.networkDir,
@@ -419,13 +419,13 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 }
 
 function buildPerfSummary(
-  perfArtifacts: Map<string, import('../types.js').PerfArtifacts> | undefined
+  perfArtifacts: Map<string, PerfArtifacts> | undefined
 ): RunSummary['perfSummary'] {
   if (perfArtifacts === undefined || perfArtifacts.size === 0) return undefined;
 
   const vitalsByPage: Record<string, { lcp?: number; inp?: number; cls?: number }> = {};
   let longestTaskMs = 0;
-  let totalNetworkRequests = 0;
+  const totalNetworkRequests = 0;
 
   for (const perf of perfArtifacts.values()) {
     for (const vital of perf.webVitals) {

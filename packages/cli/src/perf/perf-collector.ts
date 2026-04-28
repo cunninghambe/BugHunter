@@ -26,7 +26,7 @@ export type PerfCollectorOptions = {
   heapSampling?: boolean;
 };
 
-export async function createPerfCollector(opts: PerfCollectorOptions): Promise<PerfCollector> {
+export function createPerfCollector(opts: PerfCollectorOptions): PerfCollector {
   const { cdpSession, perfDir, networkDir, heapSampling = false } = opts;
   fs.mkdirSync(perfDir, { recursive: true });
   fs.mkdirSync(networkDir, { recursive: true });
@@ -59,7 +59,7 @@ export async function createPerfCollector(opts: PerfCollectorOptions): Promise<P
     },
 
     async drain(occurrenceId: string): Promise<{ perf: PerfArtifacts; har: HarLog }> {
-      let drained = await cdpSession.drain();
+      const drained = await cdpSession.drain();
 
       // Optionally sample heap after action
       if (heapSampling && currentTab !== null) {

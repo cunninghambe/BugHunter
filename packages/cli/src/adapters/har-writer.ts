@@ -94,7 +94,7 @@ export function eventsToHar(events: NetworkEvent[], creatorVersion = '0.6'): Har
       if (state !== undefined) {
         state.encodedDataLength = ev.event.encodedDataLength;
       }
-    } else if (ev.type === 'loadingFailed') {
+    } else {
       const state = requests.get(ev.event.requestId);
       if (state !== undefined) {
         state.failed = true;
@@ -110,11 +110,11 @@ export function eventsToHar(events: NetworkEvent[], creatorVersion = '0.6'): Har
     const startMs = cdpTimestampToMs(request.timestamp);
     const startedDateTime = new Date(startMs).toISOString();
 
-    const waitMs = response?.timing
+    const waitMs = response?.timing != null
       ? Math.max(0, response.timing.receiveHeadersEnd - response.timing.sendEnd)
       : 0;
 
-    const totalMs = response?.timing
+    const totalMs = response?.timing != null
       ? Math.max(0, response.timing.receiveHeadersEnd)
       : 0;
 

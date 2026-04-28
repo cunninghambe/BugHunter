@@ -18,7 +18,7 @@ const typeAwareRules = TYPE_AWARE ? {
   '@typescript-eslint/no-unnecessary-condition': 'warn',
   '@typescript-eslint/prefer-nullish-coalescing': 'warn',
   '@typescript-eslint/prefer-optional-chain': 'warn',
-  '@typescript-eslint/strict-boolean-expressions': ['warn', {
+  '@typescript-eslint/strict-boolean-expressions': ['error', {
     allowString: false,
     allowNumber: false,
     allowNullableObject: false,
@@ -42,6 +42,7 @@ export default [
       'fixtures/**',
       'packages/cli/tests/e2e/fixtures/**',
       '**/*.test.ts',
+      '**/web-vitals-vendored/**',
     ],
   },
   js.configs.recommended,

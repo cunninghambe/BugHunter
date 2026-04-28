@@ -174,7 +174,7 @@ class CdpSessionImpl implements CdpSession {
           headers: ev.request.headers as Record<string, string>,
           timestamp: ev.timestamp,
           type: ev.type ?? 'Other',
-          initiator: ev.initiator ? { type: ev.initiator.type } : undefined,
+          initiator: { type: ev.initiator.type },
           postData: ev.request.postData ?? undefined,
         },
         actionWindowId: this.collected.currentActionWindowId,
@@ -192,7 +192,7 @@ class CdpSessionImpl implements CdpSession {
           headers: ev.response.headers as Record<string, string>,
           mimeType: ev.response.mimeType,
           timestamp: ev.timestamp,
-          timing: ev.response.timing ? {
+          timing: ev.response.timing != null ? {
             requestTime: ev.response.timing.requestTime,
             sendStart: ev.response.timing.sendStart,
             sendEnd: ev.response.timing.sendEnd,
