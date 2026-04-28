@@ -25,6 +25,8 @@ import { runEmit } from '../phases/emit.js';
 import { log } from '../log.js';
 import { createCdpSession } from '../adapters/cdp-session.js';
 import { createPerfCollector } from '../perf/perf-collector.js';
+import { runBundleProbe } from '../phases/bundle-probe.js';
+import type { RunSummary } from '../types.js';
 
 function aggregateDiscoverySkips(skipList: SkippedItem[]): Array<{ reason: string; count: number }> {
   const counts = new Map<string, number>();
@@ -256,7 +258,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   }
 
   // Phase 3: execute
-  const { results, abortReason, skipReasons, headerProbeDetections } = await runExecute({
+  const { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts } = await runExecute({
     testCases,
     runState,
     browser,
@@ -387,16 +389,58 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     authMode: visionAuthMode,
   } : undefined;
 
+  // v0.6: build perf summary from collected artifacts
+  const perfSummary: RunSummary['perfSummary'] = buildPerfSummary(perfArtifacts);
+
+  // v0.6: run bundle probe sidecar
+  const bundleProbeResult = bundleProbeConfig !== undefined
+    ? runBundleProbe({ projectDir: opts.projectDir, config: bundleProbeConfig })
+    : undefined;
+  const bundleSummary: RunSummary['bundleSummary'] = bundleProbeResult !== undefined
+    ? {
+        initialJsBytesGzipped: bundleProbeResult.totalInitialJsGzip,
+        initialCssBytesGzipped: bundleProbeResult.totalInitialCssGzip,
+        budgetExceeded: bundleProbeResult.budgetExceeded,
+      }
+    : undefined;
+
   runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
     testsPlanned: testCases.length,
     testsRan: results.length,
     testsSkipped: testCases.length - results.length,
     skipReasons: allSkipReasons,
     vision: visionSummary,
+    ...(perfSummary !== undefined ? { perfSummary } : {}),
+    ...(bundleSummary !== undefined ? { bundleSummary } : {}),
   });
   runState.emitted = true;
   runState.phase = 'done';
   saveRunState(runState);
+}
+
+function buildPerfSummary(
+  perfArtifacts: Map<string, import('../types.js').PerfArtifacts> | undefined
+): RunSummary['perfSummary'] {
+  if (perfArtifacts === undefined || perfArtifacts.size === 0) return undefined;
+
+  const vitalsByPage: Record<string, { lcp?: number; inp?: number; cls?: number }> = {};
+  let longestTaskMs = 0;
+  let totalNetworkRequests = 0;
+
+  for (const perf of perfArtifacts.values()) {
+    for (const vital of perf.webVitals) {
+      const page = vitalsByPage[perf.occurrenceId] ?? {};
+      if (vital.name === 'LCP') page.lcp = vital.value;
+      if (vital.name === 'INP') page.inp = vital.value;
+      if (vital.name === 'CLS') page.cls = vital.value;
+      vitalsByPage[perf.occurrenceId] = page;
+    }
+    for (const task of perf.longTasks) {
+      if (task.duration > longestTaskMs) longestTaskMs = task.duration;
+    }
+  }
+
+  return { vitalsByPage, longestTaskMs, totalNetworkRequests };
 }
 
 /**
