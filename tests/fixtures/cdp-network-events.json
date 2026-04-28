@@ -1,0 +1,185 @@
+[
+  {
+    "type": "requestWillBeSent",
+    "actionWindowId": "action-1",
+    "event": {
+      "requestId": "req-1",
+      "url": "https://example.com/api/trades",
+      "method": "GET",
+      "headers": { "accept": "application/json", "user-agent": "bughunter" },
+      "timestamp": 1714320000.001,
+      "type": "XHR"
+    }
+  },
+  {
+    "type": "responseReceived",
+    "actionWindowId": "action-1",
+    "event": {
+      "requestId": "req-1",
+      "url": "https://example.com/api/trades",
+      "status": 200,
+      "statusText": "OK",
+      "headers": { "content-type": "application/json" },
+      "mimeType": "application/json",
+      "timestamp": 1714320000.100,
+      "timing": {
+        "requestTime": 1714320000.001,
+        "sendStart": 5,
+        "sendEnd": 10,
+        "receiveHeadersEnd": 95
+      }
+    }
+  },
+  {
+    "type": "loadingFinished",
+    "actionWindowId": "action-1",
+    "event": {
+      "requestId": "req-1",
+      "timestamp": 1714320000.110,
+      "encodedDataLength": 1234
+    }
+  },
+  {
+    "type": "requestWillBeSent",
+    "actionWindowId": "action-1",
+    "event": {
+      "requestId": "req-2",
+      "url": "https://example.com/api/trades/123",
+      "method": "GET",
+      "headers": { "accept": "application/json" },
+      "timestamp": 1714320000.120,
+      "type": "XHR"
+    }
+  },
+  {
+    "type": "responseReceived",
+    "actionWindowId": "action-1",
+    "event": {
+      "requestId": "req-2",
+      "url": "https://example.com/api/trades/123",
+      "status": 200,
+      "statusText": "OK",
+      "headers": { "content-type": "application/json" },
+      "mimeType": "application/json",
+      "timestamp": 1714320000.180,
+      "timing": {
+        "requestTime": 1714320000.120,
+        "sendStart": 5,
+        "sendEnd": 10,
+        "receiveHeadersEnd": 55
+      }
+    }
+  },
+  {
+    "type": "loadingFinished",
+    "actionWindowId": "action-1",
+    "event": {
+      "requestId": "req-2",
+      "timestamp": 1714320000.185,
+      "encodedDataLength": 512
+    }
+  },
+  {
+    "type": "requestWillBeSent",
+    "actionWindowId": "action-2",
+    "event": {
+      "requestId": "req-3",
+      "url": "https://example.com/api/save",
+      "method": "POST",
+      "headers": { "content-type": "application/json" },
+      "timestamp": 1714320001.000,
+      "type": "XHR",
+      "postData": "{\"name\":\"test\"}"
+    }
+  },
+  {
+    "type": "responseReceived",
+    "actionWindowId": "action-2",
+    "event": {
+      "requestId": "req-3",
+      "url": "https://example.com/api/save",
+      "status": 201,
+      "statusText": "Created",
+      "headers": { "content-type": "application/json", "location": "/api/saves/99" },
+      "mimeType": "application/json",
+      "timestamp": 1714320001.050,
+      "timing": {
+        "requestTime": 1714320001.000,
+        "sendStart": 2,
+        "sendEnd": 5,
+        "receiveHeadersEnd": 48
+      }
+    }
+  },
+  {
+    "type": "loadingFinished",
+    "actionWindowId": "action-2",
+    "event": {
+      "requestId": "req-3",
+      "timestamp": 1714320001.055,
+      "encodedDataLength": 64
+    }
+  },
+  {
+    "type": "requestWillBeSent",
+    "actionWindowId": "action-2",
+    "event": {
+      "requestId": "req-4",
+      "url": "https://example.com/api/user",
+      "method": "GET",
+      "headers": { "accept": "application/json" },
+      "timestamp": 1714320001.060,
+      "type": "XHR"
+    }
+  },
+  {
+    "type": "loadingFailed",
+    "actionWindowId": "action-2",
+    "event": {
+      "requestId": "req-4",
+      "timestamp": 1714320001.070,
+      "canceled": true,
+      "errorText": "net::ERR_ABORTED"
+    }
+  },
+  {
+    "type": "requestWillBeSent",
+    "actionWindowId": "action-3",
+    "event": {
+      "requestId": "req-5",
+      "url": "https://example.com/static/bundle.js",
+      "method": "GET",
+      "headers": { "accept": "*/*" },
+      "timestamp": 1714320002.000,
+      "type": "Script"
+    }
+  },
+  {
+    "type": "responseReceived",
+    "actionWindowId": "action-3",
+    "event": {
+      "requestId": "req-5",
+      "url": "https://example.com/static/bundle.js",
+      "status": 200,
+      "statusText": "OK",
+      "headers": { "content-type": "application/javascript", "cache-control": "max-age=3600" },
+      "mimeType": "application/javascript",
+      "timestamp": 1714320002.200,
+      "timing": {
+        "requestTime": 1714320002.000,
+        "sendStart": 1,
+        "sendEnd": 3,
+        "receiveHeadersEnd": 198
+      }
+    }
+  },
+  {
+    "type": "loadingFinished",
+    "actionWindowId": "action-3",
+    "event": {
+      "requestId": "req-5",
+      "timestamp": 1714320002.350,
+      "encodedDataLength": 153600
+    }
+  }
+]
