@@ -121,6 +121,22 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     // Hallucinated route
     case 'hallucinated_route':
       return `hallucinated_route|${detection.targetPath ?? ''}`;
+
+    // v0.7 XSS kinds
+    case 'xss_reflected': {
+      const route = detection.endpoint ?? detection.pageRoute ?? '';
+      const field = detection.xssContext?.fieldName ?? '';
+      return `xss_reflected|${route}|${field}`;
+    }
+    case 'xss_dom': {
+      const route = detection.pageRoute ?? '';
+      const field = detection.xssContext?.fieldName ?? '';
+      const sink = detection.xssContext?.sink ?? '';
+      return `xss_dom|${route}|${field}|${sink}`;
+    }
+    case 'xss_stored':
+      // v0.8 placeholder — never fires in v0.7. Kept for cluster-collation forward-compat.
+      return `xss_stored|${detection.endpoint ?? ''}|${detection.xssContext?.fieldName ?? ''}`;
   }
 }
 

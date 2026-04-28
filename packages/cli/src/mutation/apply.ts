@@ -3,6 +3,8 @@
 import type { FormField, TestCase, DiscoveredForm, ToolMeta, PaletteVariant, InputType } from '../types.js';
 import { generatePaletteCases } from './palette.js';
 import { createId } from '@paralleldrive/cuid2';
+import { generateCanaries } from '../security/injection-palette.js';
+import type { CanaryPayload } from '../security/injection-palette.js';
 
 // Generate test cases for a form (fill-and-submit, 4 palette variants).
 export function formTestCases(
@@ -151,4 +153,129 @@ function schemaToInputType(schema: { type?: string; format?: string }): InputTyp
 
 export function formSignature(form: DiscoveredForm): string {
   return form.fields.map(f => `${f.name}:${f.type}`).join(',');
+}
+
+/**
+ * Generate XSS canary test cases for a form.
+ * One test case per text-injectable field per canary variant.
+ * Returns empty array when form has no injectable fields.
+ */
+export function xssFormTestCases(
+  runId: string,
+  role: string,
+  page: string,
+  form: DiscoveredForm,
+  depth: 'minimal' | 'full' = 'minimal',
+): TestCase[] {
+  const textFields = form.fields.filter(f => isTextInjectable(f.type));
+  if (textFields.length === 0) return [];
+
+  const canaries = generateCanaries(depth);
+  const formSig = formSignature(form);
+  const results: TestCase[] = [];
+
+  for (const field of textFields) {
+    for (const canary of canaries) {
+      results.push(mintCanaryFormCase(runId, role, page, form, formSig, field, canary));
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Generate XSS canary test cases for an API tool.
+ * One test case per string field per canary variant.
+ * Returns empty array when tool has no injectable fields.
+ */
+export function xssApiTestCases(
+  runId: string,
+  role: string,
+  tool: ToolMeta,
+  depth: 'minimal' | 'full' = 'minimal',
+  mutateJsonBodies = true,
+): TestCase[] {
+  if (tool.inputSchema.properties === undefined) return [];
+  if (!mutateJsonBodies) return [];
+
+  const stringFields = Object.entries(tool.inputSchema.properties)
+    .filter(([, schema]) => schema.type === 'string' || schema.type === undefined)
+    .map(([key]) => key);
+
+  if (stringFields.length === 0) return [];
+
+  const canaries = generateCanaries(depth);
+  const results: TestCase[] = [];
+
+  for (const fieldName of stringFields) {
+    for (const canary of canaries) {
+      results.push(mintCanaryApiCase(runId, role, tool, fieldName, canary));
+    }
+  }
+
+  return results;
+}
+
+function mintCanaryFormCase(
+  runId: string,
+  role: string,
+  page: string,
+  form: DiscoveredForm,
+  formSig: string,
+  field: FormField,
+  canary: CanaryPayload,
+): TestCase {
+  const input: Record<string, unknown> = {};
+  for (const f of form.fields) {
+    input[f.name] = f.name === field.name ? canary.value : '';
+  }
+  return {
+    id: createId(),
+    runId,
+    role,
+    page,
+    formSignature: formSig,
+    action: {
+      kind: 'submit',
+      via: 'ui',
+      expectedOutcome: 'expected_failure',
+      palette: 'xss_inject',
+      input,
+      injectionNonce: canary.nonce,
+    },
+    expectedOutcome: 'expected_failure',
+    palette: 'xss_inject',
+  };
+}
+
+function mintCanaryApiCase(
+  runId: string,
+  role: string,
+  tool: ToolMeta,
+  fieldName: string,
+  canary: CanaryPayload,
+): TestCase {
+  const input: Record<string, unknown> = { [fieldName]: canary.value };
+  return {
+    id: createId(),
+    runId,
+    role,
+    page: tool.path,
+    action: {
+      kind: 'api_call',
+      via: 'api',
+      expectedOutcome: 'expected_failure',
+      palette: 'xss_inject',
+      toolId: tool.toolId,
+      input,
+      injectionNonce: canary.nonce,
+    },
+    expectedOutcome: 'expected_failure',
+    palette: 'xss_inject',
+  };
+}
+
+/** Returns true for InputTypes that can receive arbitrary text injection. */
+function isTextInjectable(type: InputType): boolean {
+  return type === 'text' || type === 'email' || type === 'url' || type === 'tel' || type === 'slug';
 }
