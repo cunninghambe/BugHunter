@@ -119,10 +119,14 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const effectiveRoles = roles ?? discoveredRoles;
 
   // Run resetCommand if --reset or per-run policy
-  if (opts.reset && resolved.resetCommand) {
-    const { execSync } = await import('node:child_process');
-    log.info(`Running resetCommand: ${resolved.resetCommand}`);
-    execSync(resolved.resetCommand, { cwd: opts.projectDir, stdio: 'inherit' });
+  if (opts.reset === true) {
+    if (resolved.resetCommand === undefined || resolved.resetCommand === '') {
+      log.warn('--reset specified but no resetCommand configured; ignoring');
+    } else {
+      const { execSync } = await import('node:child_process');
+      log.info(`Running resetCommand: ${resolved.resetCommand}`);
+      execSync(resolved.resetCommand, { cwd: opts.projectDir, stdio: 'inherit' });
+    }
   }
 
   const runState = resumeState ?? initRunState(opts.projectDir, runId, resolved);

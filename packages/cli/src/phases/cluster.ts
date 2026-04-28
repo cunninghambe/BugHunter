@@ -5,6 +5,7 @@ import { clusterSignature, extractNormalizedFields } from '../cluster/signature.
 import { computeFullArtifactSet } from '../store/artifact-budget.js';
 import { normalizePath } from '../classify/network.js';
 import { createId } from '@paralleldrive/cuid2';
+import { log } from '../log.js';
 
 export type ClusterOptions = {
   detections: Array<{ testId: string; detection: BugDetection }>;
@@ -120,7 +121,12 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
 
 function upgradeToFull(occ: Occurrence, opts: ClusterOptions): OccurrenceFull {
   const { actionLogsDir, screenshotsDir, domDir, consoleDir, networkDir, stateByTestId } = opts;
-  const captured = occ.testId ? stateByTestId?.get(occ.testId) : undefined;
+  // B-8: empty testId silently degrades — be explicit. occId throws on empty (cluster.ts:77);
+  // testId should do the same. Log a warning for the inconsistency when testId is present but lookup misses.
+  const captured = (occ.testId !== undefined && occ.testId !== '') ? stateByTestId?.get(occ.testId) : undefined;
+  if (occ.testId !== undefined && occ.testId !== '' && captured === undefined) {
+    log.warn('cluster: testId present but stateByTestId lookup missed', { testId: occ.testId, occurrenceId: occ.occurrenceId });
+  }
 
   const preState: PreState = captured?.preState ?? { url: occ.page, title: '', consoleErrorCount: 0 };
   const postState: PostState = captured?.postState ?? {
@@ -201,7 +207,8 @@ function routeKeyOf(cluster: BugCluster): string | null {
 
   if (cluster.kind === '404_for_linked_route') {
     const match = /links to (\S+) which returned/.exec(cluster.rootCause);
-    if (match?.[1]) return `path:${normalizePath(match[1])}`;
+    // Regex requires \S+ — match[1] is non-empty when it's defined (B-5: mechanical fix).
+    if (match?.[1] !== undefined) return `path:${normalizePath(match[1])}`;
   }
 
   return null;

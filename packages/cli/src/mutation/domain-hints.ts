@@ -25,8 +25,9 @@ export async function resolveDomainHint(
     }
   }
   const hint = domainHints?.[type]?.[0];
-  if (!hint) {
+  if (hint === undefined || hint === '') {
     log.warn(`No domain hint for ${type} — skipping happy-path value`);
+    return undefined;
   }
   return hint;
 }

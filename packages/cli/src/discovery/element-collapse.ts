@@ -6,7 +6,12 @@ import type { Element } from '../types.js';
 export type CollapseSignature = string;
 
 export function elementCollapseSignature(el: Element): CollapseSignature {
-  const testIdPrefix = el.testId ? el.testId.split(':')[0] : '';
+  // B-10: distinguish undefined (no data-testid) from '' (data-testid="").
+  // Both collapsed to '' before, causing deduplication false-positives.
+  let testIdPrefix: string;
+  if (el.testId === undefined) testIdPrefix = '';
+  else if (el.testId === '') testIdPrefix = '<empty>';
+  else testIdPrefix = el.testId.split(':')[0] ?? '';
   return [
     el.tag.toLowerCase(),
     el.roleAttr ?? '',

@@ -289,8 +289,9 @@ async function verifySuccess(
         return { ok: true, cookies, finalUrl: currentUrl };
       }
     } else {
-      // status-based: URL changed + no error alert
-      if (currentUrl && currentUrl !== loginUrl) {
+      // status-based: URL changed + no error alert.
+      // Empty currentUrl means page is in a transient/unready state — treat as "still on login".
+      if (currentUrl !== '' && currentUrl !== loginUrl) {
         try {
           const alertResult = await browser.evaluate(
             `document.querySelector('[role="alert"]')?.textContent??''`

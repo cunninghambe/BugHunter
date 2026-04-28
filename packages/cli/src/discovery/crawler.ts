@@ -162,7 +162,7 @@ async function runRuntimeEnum(browser: BrowserMcpAdapter, surface: SurfaceMcpAda
   }
 
   const post = await surface.surface_postprocess_runtime_routes({ raw });
-  log.info(`runtime_enum: ${post.summary.detectedRouters.join(',') || 'none'}, ${post.routes.length} routes (${post.summary.dedupedRoutes} after dedup)`);
+  log.info(`runtime_enum: ${post.summary.detectedRouters.length === 0 ? 'none' : post.summary.detectedRouters.join(',')}, ${post.routes.length} routes (${post.summary.dedupedRoutes} after dedup)`);
   return post.routes;
 }
 

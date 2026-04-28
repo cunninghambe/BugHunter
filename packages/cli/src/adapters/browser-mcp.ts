@@ -304,7 +304,8 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     const tabId = this.requireTab();
     const result = await this.mcpCall<CamofoxScreenshotResult>('screenshot', { tabId, fullPage: false }, 'image');
     const base64 = result.dataUrl ?? '';
-    if (outputPath) {
+    if (outputPath !== undefined) {
+      if (outputPath === '') throw new Error('screenshot: outputPath is empty — caller bug?');
       const pngData = base64.replace(/^data:image\/\w+;base64,/, '');
       fs.writeFileSync(outputPath, Buffer.from(pngData, 'base64'));
       return { path: outputPath, data: base64 };
@@ -403,7 +404,8 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
       screenshot: (outputPath?) =>
         this.mcpCall<CamofoxScreenshotResult>('screenshot', { tabId, fullPage: false }, 'image').then(r => {
           const base64 = r.dataUrl ?? '';
-          if (outputPath) {
+          if (outputPath !== undefined) {
+            if (outputPath === '') throw new Error('screenshot: outputPath is empty — caller bug?');
             const pngData = base64.replace(/^data:image\/\w+;base64,/, '');
             fs.writeFileSync(outputPath, Buffer.from(pngData, 'base64'));
             return { path: outputPath, data: base64 };

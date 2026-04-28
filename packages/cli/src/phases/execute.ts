@@ -222,18 +222,24 @@ async function executeUiTestInner(
   try {
     switch (tc.action.kind) {
       case 'click':
-        if (tc.action.selector) await scope.click(tc.action.selector);
+        if (tc.action.selector === undefined) throw new Error('execute: click action missing selector');
+        if (tc.action.selector === '') throw new Error('execute: click action has empty selector — planning bug?');
+        await scope.click(tc.action.selector);
         break;
       case 'submit':
-        if (tc.action.selector) await scope.click(tc.action.selector);
+        if (tc.action.selector === undefined) throw new Error('execute: submit action missing selector');
+        if (tc.action.selector === '') throw new Error('execute: submit action has empty selector — planning bug?');
+        await scope.click(tc.action.selector);
         break;
       case 'fill':
-        if (tc.action.selector) {
-          await scope.type(tc.action.selector, String(tc.action.input ?? ''));
-        }
+        if (tc.action.selector === undefined) throw new Error('execute: fill action missing selector');
+        if (tc.action.selector === '') throw new Error('execute: fill action has empty selector — planning bug?');
+        await scope.type(tc.action.selector, String(tc.action.input ?? ''));
         break;
       case 'navigate':
-        if (tc.action.selector) {
+        if (tc.action.selector === undefined) throw new Error('execute: navigate action missing selector');
+        if (tc.action.selector === '') throw new Error('execute: navigate action has empty selector — planning bug?');
+        {
           const target = tc.action.selector.startsWith('http')
             ? tc.action.selector
             : `${appBaseUrl ?? ''}${tc.action.selector}`;

@@ -36,7 +36,7 @@ export const ConfigSchema = z.object({
   surfaceMcpUrl: z.string().url(),
   browserMcpUrl: z.string().url().optional(),
   roles: z.array(z.string()).optional(),
-  resetCommand: z.string().optional(),
+  resetCommand: z.string().min(1).optional(),
   resetPolicy: z.enum(['transactional', 'per-test', 'per-page', 'per-run']).optional(),
   paletteOverridePath: z.string().optional(),
   domainHints: z.record(z.array(z.string())).optional(),
