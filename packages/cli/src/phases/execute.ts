@@ -12,6 +12,7 @@ import type {
 } from '../types.js';
 import { probeHeaders, analyzeProbeResult } from '../security/header-probe.js';
 import { extractIdsFromBody, mergeDiscoveredIds } from '../security/resource-id-extractor.js';
+import { harvestIdsFromDom } from '../security/dom-id-harvester.js';
 import { classifyConsoleErrors } from '../classify/console.js';
 import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
@@ -110,7 +111,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     try {
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
-        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget)
+        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds)
         : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds);
       return result;
     } catch (err) {
@@ -226,6 +227,7 @@ async function executeUiTestInner(
   visionConfig?: VisionConfig,
   visionClient?: VisionClientInterface,
   visionBudget?: VisionBudget,
+  discoveredIds?: DiscoveredIds,
 ): Promise<TestResult> {
   const bugs: BugDetection[] = [];
   const preConsoleErrors: ConsoleError[] = [];
@@ -322,6 +324,14 @@ async function executeUiTestInner(
 
   const postSnapshot = await scope.snapshot().catch(() => null);
 
+  // DOM-side ID harvest for cross-user IDOR phase.
+  if (postSnapshot?.snapshot !== undefined && discoveredIds !== undefined) {
+    const uiIds = harvestIdsFromDom(postSnapshot.snapshot, []);
+    if (uiIds.length > 0) {
+      mergeDiscoveredIds(discoveredIds, tc.role, '__ui_dom__', uiIds);
+    }
+  }
+
   const preState: PreState = {
     url: tc.page,
     title: '',
@@ -398,6 +408,7 @@ async function executeUiTest(
   visionConfig?: VisionConfig,
   visionClient?: VisionClientInterface,
   visionBudget?: VisionBudget,
+  discoveredIds?: DiscoveredIds,
 ): Promise<TestResult> {
   const start = Date.now();
   const occurrenceId = createId();
@@ -428,7 +439,7 @@ async function executeUiTest(
   let result: TestResult;
   try {
     result = await browser.withTab(pageUrl, headers, (scope) =>
-      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget)
+      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds)
     );
   } catch (err) {
     // withTab itself failed (openTab or closeTab threw, or fn re-threw after unexpected error)
@@ -589,9 +600,103 @@ async function executeApiTest(
   return result!;
 }
 
+type ProbedOriginState = { count: number; routes: Set<string> };
+const MAX_PROBES_PER_ORIGIN = 2;
+
+/**
+ * Build the absolute URL from a page route and a base URL.
+ * Returns null if the absolute URL cannot be parsed.
+ */
+function buildAbsoluteUrl(pageRoute: string, baseUrl: string): string | null {
+  const abs = pageRoute.startsWith('http') ? pageRoute : `${baseUrl}${pageRoute}`;
+  try {
+    new URL(abs);
+    return abs;
+  } catch {
+    log.debug('header-probe: skipped (URL parse failed)', { absoluteUrl: abs });
+    return null;
+  }
+}
+
+/**
+ * For each origin, select up to MAX_PROBES_PER_ORIGIN representative routes:
+ * prefer '/', then the longest pathname, then alphabetically first.
+ */
+function dedupeRoutesPerOrigin(
+  urls: string[],
+  baseUrl: string,
+  maxProbes: number,
+): Array<{ absoluteUrl: string; origin: string }> {
+  const originRoutes = new Map<string, string[]>();
+
+  for (const pageRoute of urls) {
+    const abs = buildAbsoluteUrl(pageRoute, baseUrl);
+    if (abs === null) continue;
+    const origin = new URL(abs).origin;
+    const existing = originRoutes.get(origin) ?? [];
+    existing.push(abs);
+    originRoutes.set(origin, existing);
+  }
+
+  const result: Array<{ absoluteUrl: string; origin: string }> = [];
+
+  for (const [origin, routes] of originRoutes) {
+    if (result.length >= maxProbes) break;
+
+    const sorted = [...new Set(routes)].sort((a, b) => {
+      const pa = new URL(a).pathname;
+      const pb = new URL(b).pathname;
+      if (pa === '/') return -1;
+      if (pb === '/') return 1;
+      if (pb.length !== pa.length) return pb.length - pa.length;
+      return pa.localeCompare(pb);
+    });
+
+    const selected = sorted.slice(0, MAX_PROBES_PER_ORIGIN);
+    for (const absoluteUrl of selected) {
+      result.push({ absoluteUrl, origin });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Probe a single URL, retrying once on network error or 5xx (250ms backoff).
+ */
+async function probeAndAnalyze(
+  absoluteUrl: string,
+  config: BugHunterConfig,
+): Promise<{ detections: BugDetection[]; status: number; durationMs: number }> {
+  const analyzeOpts = {
+    cspLocalhostMode: config.headers?.csp?.localhostMode,
+    cookieLocalhostMode: config.headers?.cookies?.localhostMode,
+    csrfCookieNamePatterns: config.headers?.csrf?.cookieNamePatterns,
+    stackTraceFingerprintLength: config.headers?.stackTrace?.frameFingerprintLength,
+  };
+
+  const delay250 = (): Promise<void> => new Promise<void>(resolve => { setTimeout(resolve, 250); });
+  const attempt = async (): Promise<ReturnType<typeof probeHeaders>> => probeHeaders({ url: absoluteUrl, method: 'GET' });
+
+  let probeResult: Awaited<ReturnType<typeof probeHeaders>>;
+  try {
+    probeResult = await attempt();
+    if (probeResult.status >= 500) {
+      await delay250();
+      probeResult = await attempt();
+    }
+  } catch {
+    await delay250();
+    probeResult = await attempt();
+  }
+
+  const detections = analyzeProbeResult(probeResult, absoluteUrl, analyzeOpts);
+  return { detections, status: probeResult.status, durationMs: probeResult.durationMs };
+}
+
 /**
  * Probe security headers for each unique origin in the given page URL list.
- * Deduped by origin — 100 max per run (config.headers.maxHeaderProbes).
+ * Up to MAX_PROBES_PER_ORIGIN routes per origin; capped by config.headers.maxHeaderProbes.
  */
 async function runHeaderProbes(
   pageUrls: string[] | undefined,
@@ -599,45 +704,54 @@ async function runHeaderProbes(
   enabled: boolean | undefined,
   config: BugHunterConfig,
 ): Promise<BugDetection[]> {
-  if (enabled === false) return [];
+  const totalPageUrls = pageUrls?.length ?? 0;
+  const maxProbes = config.headers?.maxHeaderProbes ?? 100;
+
+  log.info('header-probe: starting', { enabled: enabled !== false, totalPageUrls, appBaseUrl, maxProbes });
+
+  if (enabled === false) {
+    log.info('header-probe: complete', { originsAttempted: 0, originsSucceeded: 0, totalDetections: 0 });
+    return [];
+  }
 
   const urls = pageUrls ?? [];
   const baseUrl = appBaseUrl ?? '';
-  const maxProbes = config.headers?.maxHeaderProbes ?? 100;
-  const probedOrigins = new Set<string>();
+  const probeTargets = dedupeRoutesPerOrigin(urls, baseUrl, maxProbes);
+
   const detections: BugDetection[] = [];
+  const probedOrigins = new Map<string, ProbedOriginState>();
+  let originsSucceeded = 0;
 
-  for (const pageRoute of urls) {
-    if (probedOrigins.size >= maxProbes) break;
-
-    const absoluteUrl = pageRoute.startsWith('http') ? pageRoute : `${baseUrl}${pageRoute}`;
-    let origin: string;
-    try {
-      origin = new URL(absoluteUrl).origin;
-    } catch {
+  for (const { absoluteUrl, origin } of probeTargets) {
+    const state = probedOrigins.get(origin);
+    if (state !== undefined && state.count >= MAX_PROBES_PER_ORIGIN) {
+      log.debug('header-probe: skipped (origin already probed)', { absoluteUrl, origin });
       continue;
     }
 
-    if (probedOrigins.has(origin)) continue;
-    probedOrigins.add(origin);
+    log.info('header-probe: probing origin', { origin, absoluteUrl });
 
     try {
-      const probeResult = await probeHeaders({ url: absoluteUrl, method: 'GET' });
-      const found = analyzeProbeResult(probeResult, absoluteUrl, {
-        cspLocalhostMode: config.headers?.csp?.localhostMode,
-        cookieLocalhostMode: config.headers?.cookies?.localhostMode,
-        csrfCookieNamePatterns: config.headers?.csrf?.cookieNamePatterns,
-        stackTraceFingerprintLength: config.headers?.stackTrace?.frameFingerprintLength,
-      });
+      const { detections: found, status, durationMs } = await probeAndAnalyze(absoluteUrl, config);
       detections.push(...found);
+      originsSucceeded++;
+
+      const entry = probedOrigins.get(origin) ?? { count: 0, routes: new Set<string>() };
+      entry.count++;
+      entry.routes.add(absoluteUrl);
+      probedOrigins.set(origin, entry);
+
+      log.info('header-probe: origin probed', { origin, status, durationMs, detectionCount: found.length });
     } catch (err) {
-      log.warn('header-probe: request failed', { url: absoluteUrl, err: String(err) });
+      log.warn('header-probe: request failed', { absoluteUrl, err: String(err) });
     }
   }
 
-  if (detections.length > 0) {
-    log.info(`header-probe: found ${detections.length} detection(s) across ${probedOrigins.size} origin(s)`);
-  }
+  log.info('header-probe: complete', {
+    originsAttempted: probedOrigins.size,
+    originsSucceeded,
+    totalDetections: detections.length,
+  });
 
   return detections;
 }

@@ -49,16 +49,11 @@ export async function runCrossUser(opts: CrossUserOptions): Promise<CrossUserRes
     return { detections, testCases };
   }
 
-  if (discoveredIds === undefined || discoveredIds.size === 0) {
-    log.info('cross-user: no discoveredIds available; phase produced 0 candidates');
-    return { detections, testCases };
-  }
-
-  // Catalog of all tools
-  let toolCatalog: Map<string, { method: string; requiresAdmin?: boolean }>;
+  // Catalog of all tools — needed for both anonymous sweep and cross-user matrix
+  let toolCatalog: Map<string, { method: string; requiresAdmin?: boolean; sideEffectClass?: string }>;
   try {
     const { tools } = await surface.surface_list_tools();
-    toolCatalog = new Map(tools.map(t => [t.toolId, { method: t.method, requiresAdmin: false }]));
+    toolCatalog = new Map(tools.map(t => [t.toolId, { method: t.method, requiresAdmin: false, sideEffectClass: t.sideEffectClass }]));
   } catch (err) {
     log.warn('cross-user: surface_list_tools failed', { err: String(err) });
     return { detections, testCases };
@@ -66,11 +61,36 @@ export async function runCrossUser(opts: CrossUserOptions): Promise<CrossUserRes
 
   let replayCount = 0;
   let abortReason: CrossUserResult['abortReason'];
-
   const clusterKeys = new Set<string>();
 
   function emitDetection(testId: string, detection: BugDetection): void {
     detections.push({ testId, detection });
+  }
+
+  if (discoveredIds === undefined || discoveredIds.size === 0) {
+    // Anonymous-only fallback: replay safe tools as anonymous when no IDs are available.
+    // Requires resetPolicy to be set — without a safety net, skip the sweep.
+    if (anonymousEnabled && config.resetPolicy !== undefined) {
+      await runAnonymousCatalogSweep({
+        toolCatalog,
+        surface,
+        runState,
+        roles,
+        maxReplays,
+        detections,
+        testCases,
+        clusterKeys,
+        onClusterFound,
+        maxClusters,
+      });
+      replayCount += testCases.length;
+    } else if (anonymousEnabled && config.resetPolicy === undefined) {
+      log.info('cross-user: anonymous sweep skipped (no resetPolicy)');
+    }
+    log.info(
+      `cross-user: ${replayCount} replays → ${detections.length} detections`
+    );
+    return { detections, testCases };
   }
 
   // Cross-role: for each source role A, replay as every other role B
@@ -83,7 +103,8 @@ export async function runCrossUser(opts: CrossUserOptions): Promise<CrossUserRes
 
       for (const [compositeKey, valueSet] of roleMap) {
         const { toolId, field } = decodeDiscoveredIdKey(compositeKey);
-        if (!toolCatalog.has(toolId)) continue;
+        // DOM-harvested IDs use synthetic toolId '__ui_dom__' — skip catalog check for these.
+        if (!toolId.startsWith('__ui_') && !toolCatalog.has(toolId)) continue;
 
         for (const idValue of valueSet) {
           if (replayCount >= maxReplays) {
@@ -249,6 +270,73 @@ export async function runCrossUser(opts: CrossUserOptions): Promise<CrossUserRes
   );
 
   return { detections, testCases, abortReason };
+}
+
+type AnonymousSweepOpts = {
+  toolCatalog: Map<string, { method: string; requiresAdmin?: boolean; sideEffectClass?: string }>;
+  surface: SurfaceMcpAdapter;
+  runState: RunState;
+  roles: string[];
+  maxReplays: number;
+  detections: Array<{ testId: string; detection: BugDetection }>;
+  testCases: TestCase[];
+  clusterKeys: Set<string>;
+  onClusterFound: (key: string) => number;
+  maxClusters: number;
+};
+
+/**
+ * Anonymous-only catalog sweep: replay safe, non-admin tools as 'anonymous' role.
+ * Used as a fallback when discoveredIds is empty. Only runs when resetPolicy is set.
+ * Capped at maxReplays / 2 to leave budget for the ID matrix when it does exist.
+ */
+async function runAnonymousCatalogSweep(opts: AnonymousSweepOpts): Promise<void> {
+  const { toolCatalog, surface, runState, maxReplays, detections, testCases, clusterKeys, onClusterFound, maxClusters } = opts;
+  const cap = Math.floor(maxReplays / 2);
+  let count = 0;
+
+  for (const [toolId, toolInfo] of toolCatalog) {
+    if (count >= cap) break;
+    if (toolInfo.requiresAdmin === true) continue;
+    if (toolInfo.sideEffectClass !== 'safe') continue;
+
+    count++;
+    const testId = createId();
+    const tc: TestCase = {
+      id: testId,
+      runId: runState.runId,
+      role: 'anonymous',
+      page: toolId,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'expected_failure', palette: 'happy', toolId, input: {} },
+      expectedOutcome: 'expected_failure',
+      palette: 'happy',
+    };
+    testCases.push(tc);
+
+    if (onClusterFound('') >= maxClusters) break;
+
+    try {
+      const result = await surface.surface_call({ toolId, role: 'anonymous', input: {}, noAutoRelogin: true });
+      const status = result.status ?? 0;
+      if (status === 200 && !isEmptyResult(result.body)) {
+        const key = `auth_bypass_via_unauthed_route|${toolId}`;
+        if (!clusterKeys.has(key)) {
+          clusterKeys.add(key);
+          detections.push({
+            testId,
+            detection: {
+              kind: 'auth_bypass_via_unauthed_route',
+              rootCause: `Route ${toolId} accessible without authentication`,
+              endpoint: toolId,
+              status,
+            },
+          });
+        }
+      }
+    } catch (err) {
+      log.warn('cross-user: anonymous sweep error', { toolId, err: String(err) });
+    }
+  }
 }
 
 function isEmptyResult(body: unknown): boolean {

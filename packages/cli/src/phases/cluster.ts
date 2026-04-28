@@ -124,8 +124,11 @@ function upgradeToFull(occ: Occurrence, opts: ClusterOptions): OccurrenceFull {
   // B-8: empty testId silently degrades — be explicit. occId throws on empty (cluster.ts:77);
   // testId should do the same. Log a warning for the inconsistency when testId is present but lookup misses.
   const captured = (occ.testId !== undefined && occ.testId !== '') ? stateByTestId?.get(occ.testId) : undefined;
-  if (occ.testId !== undefined && occ.testId !== '' && captured === undefined) {
-    log.warn('cluster: testId present but stateByTestId lookup missed', { testId: occ.testId, occurrenceId: occ.occurrenceId });
+  // Synthetic occurrences (header probe, static analysis, visual baseline, cross-user replay)
+  // intentionally lack pre/post states — suppress the warning for system/anonymous roles.
+  const isSyntheticOccurrence = occ.role === 'system' || occ.role === 'anonymous';
+  if (occ.testId !== undefined && occ.testId !== '' && captured === undefined && !isSyntheticOccurrence) {
+    log.warn('cluster: testId present but stateByTestId lookup missed', { testId: occ.testId, occurrenceId: occ.occurrenceId, role: occ.role });
   }
 
   const preState: PreState = captured?.preState ?? { url: occ.page, title: '', consoleErrorCount: 0 };

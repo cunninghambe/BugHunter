@@ -50,6 +50,19 @@ describe('CSP checks', () => {
     expect(cspDetection?.headerContext?.expectedShape).toBe('inline_scripts_allowed');
   });
 
+  it('emits inline_scripts_allowed for TraiderJo exact CSP (localhost, localhostMode=flag)', () => {
+    // TraiderJo's exact header: script-src 'self' 'unsafe-inline'
+    const traiderJoCsp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;";
+    const detections = analyzeProbeResult(
+      makeResult({ responseHeaders: { 'content-security-policy': traiderJoCsp } }),
+      'http://127.0.0.1:8787/',
+      { cspLocalhostMode: 'flag' },
+    );
+    const cspDetection = detections.find(d => d.kind === 'missing_csp_header');
+    expect(cspDetection).toBeDefined();
+    expect(cspDetection?.headerContext?.expectedShape).toBe('inline_scripts_allowed');
+  });
+
   it('no detection when CSP is properly set', () => {
     const detections = analyzeProbeResult(
       makeResult({ responseHeaders: { 'content-security-policy': "default-src 'self'" } }),

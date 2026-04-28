@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { runCrossUser } from './cross-user.js';
 import type { CrossUserOptions } from './cross-user.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
-import type { RunState } from '../types.js';
+import type { RunState, ToolMeta } from '../types.js';
 
 function makeRunState(overrides: Partial<RunState> = {}): RunState {
   return {
@@ -214,5 +214,87 @@ describe('runCrossUser', () => {
 
     const result = await runCrossUser(opts);
     expect(result.abortReason).toBe('budget');
+  });
+
+  it('runs anonymous-only sweep and emits auth_bypass_via_unauthed_route when discoveredIds is empty and resetPolicy is set', async () => {
+    const tools: ToolMeta[] = [
+      {
+        toolId: 'getPublic',
+        name: 'getPublic',
+        method: 'GET',
+        path: '/api/public',
+        inputSchema: {},
+        inputSchemaConfidence: 'introspected',
+        sideEffectClass: 'safe',
+        sourceFile: 'server/src/index.js',
+        sourceLine: 1,
+        isServerAction: false,
+      },
+      {
+        toolId: 'getAlsoPublic',
+        name: 'getAlsoPublic',
+        method: 'GET',
+        path: '/api/also-public',
+        inputSchema: {},
+        inputSchemaConfidence: 'introspected',
+        sideEffectClass: 'safe',
+        sourceFile: 'server/src/index.js',
+        sourceLine: 2,
+        isServerAction: false,
+      },
+      {
+        toolId: 'deleteAdmin',
+        name: 'deleteAdmin',
+        method: 'DELETE',
+        path: '/api/admin/delete',
+        inputSchema: {},
+        inputSchemaConfidence: 'introspected',
+        sideEffectClass: 'mutating',
+        sourceFile: 'server/src/index.js',
+        sourceLine: 3,
+        isServerAction: false,
+      },
+    ];
+
+    const surface: SurfaceMcpAdapter = {
+      surface_list_tools: vi.fn().mockResolvedValue({ revision: 1, tools }),
+      surface_call: vi.fn().mockImplementation(async (args: { toolId: string; role: string }) => {
+        // getPublic returns 200 with data, getAlsoPublic returns 403
+        if (args.toolId === 'getPublic') return { ok: true, status: 200, body: { id: 'x1', data: 'secret' }, durationMs: 1, revisionAtCall: 1 };
+        return { ok: false, status: 403, body: null, durationMs: 1, revisionAtCall: 1 };
+      }),
+      surface_describe_tool: vi.fn(),
+      surface_probe: vi.fn(),
+      surface_sample_inputs: vi.fn(),
+      surface_login_status: vi.fn(),
+      surface_relogin: vi.fn(),
+      surface_routes_for_page: vi.fn(),
+      surface_list_pages: vi.fn(),
+      surface_describe_self: vi.fn(),
+      surface_describe_auth: vi.fn(),
+      surface_list_navigations: vi.fn(),
+      surface_enumerate_routes_runtime: vi.fn(),
+      surface_postprocess_runtime_routes: vi.fn(),
+    } as unknown as SurfaceMcpAdapter;
+
+    const opts: CrossUserOptions = {
+      runState: makeRunState({
+        config: {
+          projectName: 'test',
+          surfaceMcpUrl: 'http://localhost:3100',
+          resetPolicy: 'per-run',
+        },
+      }),
+      surface,
+      roles: ['owner', 'anonymous'],
+      maxClusters: 50,
+      onClusterFound: () => 0,
+    };
+
+    const result = await runCrossUser(opts);
+    expect(result.detections.some(d => d.detection.kind === 'auth_bypass_via_unauthed_route')).toBe(true);
+    // Should not have attempted the mutating admin tool
+    const callArgs = (surface.surface_call as ReturnType<typeof vi.fn>).mock.calls as Array<[{ toolId: string }]>;
+    expect(callArgs.some(([a]) => a.toolId === 'deleteAdmin')).toBe(false);
   });
 });
