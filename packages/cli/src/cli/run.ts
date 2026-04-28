@@ -61,6 +61,10 @@ export type RunOptions = {
   nPlusOneThreshold?: number;
   bundleJsBudgetKb?: number;
   bundleCssBudgetKb?: number;
+  // v0.6 a11y/SEO flags
+  a11yStrict?: boolean;
+  seoEnabled?: boolean;
+  keyboardTrapMax?: number;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -95,6 +99,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     searchPaths: config.bundleProbe?.searchPaths,
   } : config.bundleProbe;
 
+  const a11yStrict = opts.a11yStrict === true || (config.a11yStrict ?? false);
+  const seoEnabled = opts.seoEnabled === true || (config.seoEnabled ?? false);
+  const keyboardTrapMaxPresses = opts.keyboardTrapMax ?? config.keyboardTrapMaxPresses ?? 20;
+
   const resolved = resolvedConfig({
     ...config,
     ...(opts.maxBugs !== undefined ? { maxBugs: opts.maxBugs } : {}),
@@ -103,7 +111,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(opts.concurrency !== undefined ? { concurrency: opts.concurrency } : {}),
     ...(opts.apiConcurrency !== undefined ? { apiConcurrency: opts.apiConcurrency } : {}),
     ...(opts.includeExternal !== undefined ? { externalIntegrationsAllowed: opts.includeExternal } : {}),
-    ...(opts.a11y !== undefined ? { enableA11y: opts.a11y } : {}),
+    // --a11y-strict implies --a11y
+    ...(opts.a11y !== undefined || a11yStrict ? { enableA11y: opts.a11y === true || a11yStrict } : {}),
+    ...(a11yStrict ? { a11yStrict } : {}),
+    ...(seoEnabled ? { seoEnabled } : {}),
+    ...(keyboardTrapMaxPresses !== 20 ? { keyboardTrapMaxPresses } : {}),
     ...(perfConfig !== undefined ? { perf: perfConfig } : {}),
     ...(bundleProbeConfig !== undefined ? { bundleProbe: bundleProbeConfig } : {}),
   });
@@ -258,7 +270,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   }
 
   // Phase 3: execute
-  const { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts } = await runExecute({
+  const { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts, a11yBaselineDetections, seoDetections } = await runExecute({
     testCases,
     runState,
     browser,
@@ -279,6 +291,9 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     headerProbeEnabled: resolved.headers?.enabled ?? true,
     pageUrls,
     perfCollector,
+    a11yStrict: resolved.a11yStrict ?? false,
+    seoEnabled: resolved.seoEnabled ?? false,
+    keyboardTrapMaxPresses: resolved.keyboardTrapMaxPresses ?? 20,
   });
 
   // Close CDP session after execute completes
@@ -330,6 +345,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(headerProbeDetections ?? []),
     ...crossUserDetections.map(d => d.detection),
     ...authFlowDetections.map(d => d.detection),
+    ...(a11yBaselineDetections ?? []),
+    ...(seoDetections ?? []),
   ];
   const { staticTestCases, staticResults } = synthesiseFakeDetectionCases(runId, staticDetectionList);
 

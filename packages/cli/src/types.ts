@@ -69,7 +69,20 @@ export type BugKind =
   | 'main_thread_blocked'
   | 'oversized_bundle'
   | 'excessive_re_renders'
-  | 'memory_leak_suspected';
+  | 'memory_leak_suspected'
+  // v0.6 a11y baseline kinds
+  | 'axe_color_contrast_strong'
+  | 'keyboard_trap'
+  | 'focus_lost_after_action'
+  | 'image_missing_alt'
+  | 'form_input_unlabeled'
+  // v0.6 SEO hygiene kinds
+  | 'seo_title_missing'
+  | 'seo_title_duplicate_across_routes'
+  | 'seo_meta_description_missing'
+  | 'seo_canonical_missing'
+  | 'seo_h1_missing_or_multiple'
+  | 'seo_robots_blocking_crawl';
 
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
 export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
@@ -545,6 +558,21 @@ export type BugDetection = {
   authFlowContext?: AuthFlowContext;
   /** Populated for v0.6 performance findings; shape varies by BugKind. */
   evidence?: Record<string, unknown>;
+  /** Populated for v0.6 SEO hygiene findings. */
+  seoContext?: {
+    field: 'title' | 'meta_description' | 'canonical' | 'h1' | 'robots_meta' | 'robots_txt';
+    observedValue: string | null;
+    expectedShape: string;
+    affectedRoutes?: string[];
+  };
+  /** Populated for v0.6 a11y baseline findings. */
+  a11yContext?: {
+    axeRuleId?: string;
+    observedFocusChain?: string[];
+    pressCount?: number;
+    triggeringSelector?: string;
+    activeElementTag?: string | null;
+  };
 };
 
 export type RunPhase =
@@ -812,6 +840,12 @@ export type BugHunterConfig = {
   };
   /** v0.6 bundle-size sidecar. */
   bundleProbe?: BundleProbeConfig;
+  /** v0.6 a11y-strict: enable baseline axe scan + keyboard trap + focus-lost per page. Implies enableA11y. */
+  a11yStrict?: boolean;
+  /** v0.6 SEO: enable SEO hygiene cluster. */
+  seoEnabled?: boolean;
+  /** v0.6 keyboard trap: max Tab presses during trap probe. Default 20. */
+  keyboardTrapMaxPresses?: number;
 };
 
 export type RunSummary = {
