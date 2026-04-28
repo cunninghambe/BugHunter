@@ -8,8 +8,10 @@ import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   TestCase, TestResult, BugDetection, InfrastructureFailure, PreState, PostState,
-  ConsoleError, NetworkRequest, RunState, ToolMeta
+  ConsoleError, NetworkRequest, RunState, ToolMeta, DiscoveredIds, BugHunterConfig
 } from '../types.js';
+import { probeHeaders, analyzeProbeResult } from '../security/header-probe.js';
+import { extractIdsFromBody, mergeDiscoveredIds } from '../security/resource-id-extractor.js';
 import { classifyConsoleErrors } from '../classify/console.js';
 import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
@@ -50,18 +52,31 @@ export type ExecuteOptions = {
   visionConfig?: VisionConfig;
   visionClient?: VisionClientInterface;
   visionBudget?: VisionBudget;
+  /**
+   * When true, probe each discovered page URL for security headers (CSP, CORS, cookies).
+   * Probes run once per unique origin before test execution. Default: true (matches config).
+   */
+  headerProbeEnabled?: boolean;
+  /** Discovered page URLs to probe (from DiscoveryOutput.pages). Probe deduped by origin. */
+  pageUrls?: string[];
 };
 
 export type ExecuteResult = {
   results: TestResult[];
   abortReason?: 'budget' | 'max_clusters' | 'max_infra_failures' | 'timeout';
   skipReasons: Array<{ reason: string; count: number }>;
+  /** Security header probe detections — emitted before test execution. */
+  headerProbeDetections?: BugDetection[];
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
+
+  // Initialize discoveredIds on runState for IDOR cross-user phase.
+  const discoveredIds: DiscoveredIds = runState.discoveredIds ?? new Map<string, Map<string, Set<string>>>();
+  runState.discoveredIds = discoveredIds;
 
   const uiQueue = testCases.filter(t => t.action.via === 'ui');
   const apiQueue = testCases.filter(t => t.action.via === 'api');
@@ -96,7 +111,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
         ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget)
-        : await executeApiTest(tc, surface, runState.runId, paths, toolMap);
+        : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds);
       return result;
     } catch (err) {
       const infra: InfrastructureFailure = {
@@ -160,7 +175,10 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     drainQueue(apiQueue, apiConcurrency),
   ]);
 
-  return { results, abortReason, skipReasons };
+  // Header probes: once per unique origin, after all tests so as not to inflate runtime at start.
+  const headerProbeDetections = await runHeaderProbes(pageUrls, appBaseUrl, headerProbeEnabled, runState.config);
+
+  return { results, abortReason, skipReasons, headerProbeDetections };
 }
 
 type ArtifactPaths = Pick<RunPaths, 'actionLogsDir' | 'screenshotsDir' | 'domDir' | 'consoleDir' | 'networkDir'>;
@@ -447,7 +465,8 @@ async function executeApiTest(
   surface: SurfaceMcpAdapter,
   runId: string,
   paths: ArtifactPaths,
-  toolMap?: Map<string, ToolMeta>
+  toolMap?: Map<string, ToolMeta>,
+  discoveredIds?: DiscoveredIds,
 ): Promise<TestResult> {
   const start = Date.now();
   const bugs: BugDetection[] = [];
@@ -485,6 +504,17 @@ async function executeApiTest(
         input: tc.action.input ?? {},
         noAutoRelogin: tc.action.palette !== 'happy',
       });
+
+      // Harvest resource IDs from successful responses for IDOR cross-user phase.
+      // tc.action.toolId is always set in this branch (checked above)
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const toolIdForHarvest = tc.action.toolId!;
+      if (callResult.ok === true && discoveredIds !== undefined) {
+        const ids = extractIdsFromBody(callResult.body);
+        if (ids.length > 0) {
+          mergeDiscoveredIds(discoveredIds, tc.role, toolIdForHarvest, ids);
+        }
+      }
 
       // surface_call_failed
       if (callResult.ok !== true && tc.action.palette === 'happy') {
@@ -557,4 +587,57 @@ async function executeApiTest(
   }
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- try+catch above always assigns result before finally
   return result!;
+}
+
+/**
+ * Probe security headers for each unique origin in the given page URL list.
+ * Deduped by origin — 100 max per run (config.headers.maxHeaderProbes).
+ */
+async function runHeaderProbes(
+  pageUrls: string[] | undefined,
+  appBaseUrl: string | undefined,
+  enabled: boolean | undefined,
+  config: BugHunterConfig,
+): Promise<BugDetection[]> {
+  if (enabled === false) return [];
+
+  const urls = pageUrls ?? [];
+  const baseUrl = appBaseUrl ?? '';
+  const maxProbes = config.headers?.maxHeaderProbes ?? 100;
+  const probedOrigins = new Set<string>();
+  const detections: BugDetection[] = [];
+
+  for (const pageRoute of urls) {
+    if (probedOrigins.size >= maxProbes) break;
+
+    const absoluteUrl = pageRoute.startsWith('http') ? pageRoute : `${baseUrl}${pageRoute}`;
+    let origin: string;
+    try {
+      origin = new URL(absoluteUrl).origin;
+    } catch {
+      continue;
+    }
+
+    if (probedOrigins.has(origin)) continue;
+    probedOrigins.add(origin);
+
+    try {
+      const probeResult = await probeHeaders({ url: absoluteUrl, method: 'GET' });
+      const found = analyzeProbeResult(probeResult, absoluteUrl, {
+        cspLocalhostMode: config.headers?.csp?.localhostMode,
+        cookieLocalhostMode: config.headers?.cookies?.localhostMode,
+        csrfCookieNamePatterns: config.headers?.csrf?.cookieNamePatterns,
+        stackTraceFingerprintLength: config.headers?.stackTrace?.frameFingerprintLength,
+      });
+      detections.push(...found);
+    } catch (err) {
+      log.warn('header-probe: request failed', { url: absoluteUrl, err: String(err) });
+    }
+  }
+
+  if (detections.length > 0) {
+    log.info(`header-probe: found ${detections.length} detection(s) across ${probedOrigins.size} origin(s)`);
+  }
+
+  return detections;
 }
