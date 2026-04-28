@@ -13,6 +13,9 @@ export type ClassifyResult = {
 // Security kinds rank between unhandled_exception and visual_anomaly.
 const KIND_PRIORITY: BugKind[] = [
   'unhandled_exception',
+  'xss_dom',         // confirmed JS exec
+  'xss_reflected',   // confirmed echo
+  'xss_stored',      // v0.8 placeholder, never fires
   'network_5xx',
   'react_error',
   'hydration_mismatch',

@@ -18,7 +18,7 @@ export type InputType =
   | 'slug'
   | 'foreign_id';
 
-export type PaletteVariant = 'null' | 'happy' | 'edge' | 'out_of_bounds';
+export type PaletteVariant = 'null' | 'happy' | 'edge' | 'out_of_bounds' | 'xss_inject';
 
 export type BugKind =
   | 'console_error'
@@ -50,7 +50,11 @@ export type BugKind =
   | 'no_rate_limit_on_login'
   | 'race_double_submit'
   | 'optimistic_update_divergence'
-  | 'hallucinated_route';
+  | 'hallucinated_route'
+  // v0.7 XSS kinds
+  | 'xss_reflected'
+  | 'xss_dom'
+  | 'xss_stored';   // placeholder; v0.8
 
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
 export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
@@ -69,6 +73,8 @@ export type Action = {
   palette: PaletteVariant;
   toolId?: string;
   input?: unknown;
+  /** When set, the test plants this nonce in input and expects no XSS reflection. */
+  injectionNonce?: string;
 };
 
 export type PreState = {
@@ -403,6 +409,20 @@ export type StaticContext = {
   sourceLine?: number;
 };
 
+/** Context populated by XSS detection. */
+export type XssContext = {
+  /** The canary variant that fired ('script_tag_basic', etc.). */
+  variant: string;
+  /** Where the canary was planted. */
+  injectionPoint: 'form_field' | 'url_param' | 'json_body';
+  /** Field name (form input name, URL param name, JSON key). */
+  fieldName: string;
+  /** Where the canary appeared / executed. */
+  sink: 'reflected_html' | 'reflected_attr' | 'reflected_script' | 'dom_inserted' | 'window_assign';
+  /** 16-char nonce for traceability. */
+  nonce: string;
+};
+
 export type BugDetection = {
   kind: BugKind;
   rootCause: string;
@@ -430,6 +450,8 @@ export type BugDetection = {
   idorContext?: IdorContext;
   /** Populated for static-analysis findings. */
   staticContext?: StaticContext;
+  /** Populated for XSS findings. */
+  xssContext?: XssContext;
 };
 
 export type RunPhase =
@@ -574,6 +596,19 @@ export type SyntheticConfig = {
   raceDoubleSubmit?: { intervalMs?: number };
 };
 
+export type XssConfig = {
+  /** Master switch. Default: true (opt-out). */
+  enabled?: boolean;
+  /** Palette depth. Default: 'minimal' (5 payloads). 'full' = 12. */
+  depth?: 'minimal' | 'full';
+  /** Cap on XSS test cases per run. Default: 200. */
+  maxTestCases?: number;
+  /** Routes to skip entirely (matched as glob). Default: []. */
+  excludedRoutes?: string[];
+  /** When true, also mutate JSON request body fields. Default: true. */
+  mutateJsonBodies?: boolean;
+};
+
 export type CrossUserConfig = {
   /** Enable cross-role IDOR probing. Default: true. */
   crossRoleProbeEnabled?: boolean;
@@ -640,6 +675,8 @@ export type BugHunterConfig = {
   synthetic?: SyntheticConfig;
   /** Cross-user IDOR probe config. Default: enabled. */
   crossUser?: CrossUserConfig;
+  /** XSS canary injection config. Default: enabled. */
+  xss?: XssConfig;
 };
 
 export type RunSummary = {

@@ -13,6 +13,9 @@ import type {
 import { probeHeaders, analyzeProbeResult } from '../security/header-probe.js';
 import { extractIdsFromBody, mergeDiscoveredIds } from '../security/resource-id-extractor.js';
 import { harvestIdsFromDom } from '../security/dom-id-harvester.js';
+import { canaryAppearsAsHtml, canaryAppearsAsAttribute, canaryAppearsInScriptTag } from '../security/injection-palette.js';
+import { XSS_OBSERVER_START_SCRIPT, XSS_OBSERVER_DRAIN_SCRIPT } from '../security/xss-observer.js';
+import type { XssContext } from '../types.js';
 import { classifyConsoleErrors } from '../classify/console.js';
 import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
@@ -239,6 +242,14 @@ async function executeUiTestInner(
     log.warn('MutationObserver start failed; mutWindowMs will be 0', { err: String(err), tcId: tc.id });
   }
 
+  if (tc.action.injectionNonce !== undefined) {
+    try {
+      await scope.evaluate(XSS_OBSERVER_START_SCRIPT);
+    } catch (err) {
+      log.debug('xss-observer start failed', { err: String(err), tcId: tc.id });
+    }
+  }
+
   try {
     switch (tc.action.kind) {
       case 'click':
@@ -329,6 +340,44 @@ async function executeUiTestInner(
     const uiIds = harvestIdsFromDom(postSnapshot.snapshot, []);
     if (uiIds.length > 0) {
       mergeDiscoveredIds(discoveredIds, tc.role, '__ui_dom__', uiIds);
+    }
+  }
+
+  // XSS detection: snapshot reflection + DOM observer drain
+  if (tc.action.injectionNonce !== undefined) {
+    const nonce = tc.action.injectionNonce;
+    const snapshot = postSnapshot?.snapshot ?? '';
+
+    // Reflected XSS: canary appears in the page HTML
+    if (snapshot !== '') {
+      const xssReflected = detectXssReflection(snapshot, nonce, tc.page, '', 'form_field');
+      if (xssReflected !== null) bugs.push(xssReflected);
+    }
+
+    // DOM XSS: observer fired
+    const drainResult = await scope.evaluate(XSS_OBSERVER_DRAIN_SCRIPT).catch(err => {
+      log.debug('xss-observer drain failed', { err: String(err), tcId: tc.id });
+      return null;
+    });
+    if (Array.isArray(drainResult?.value)) {
+      type DrainEntry = { nonce: string; fired: boolean; sink: string };
+      const entries = drainResult.value as DrainEntry[];
+      const fired = entries.find(e => e.nonce === nonce && e.fired === true);
+      if (fired !== undefined) {
+        const xssContext: XssContext = {
+          variant: 'dom_observer',
+          injectionPoint: 'form_field',
+          fieldName: '',
+          sink: fired.sink === 'dom_inserted' ? 'dom_inserted' : 'window_assign',
+          nonce,
+        };
+        bugs.push({
+          kind: 'xss_dom',
+          rootCause: `XSS DOM execution detected: canary nonce ${nonce} fired via ${fired.sink}`,
+          pageRoute: tc.page,
+          xssContext,
+        });
+      }
     }
   }
 
@@ -527,6 +576,16 @@ async function executeApiTest(
         }
       }
 
+      // XSS reflection check
+      if (tc.action.injectionNonce !== undefined) {
+        const nonce = tc.action.injectionNonce;
+        const bodyStr = typeof callResult.body === 'string'
+          ? callResult.body
+          : JSON.stringify(callResult.body ?? '');
+        const xssDetection = detectXssReflection(bodyStr, nonce, tc.page, tc.action.toolId ?? '', 'json_body');
+        if (xssDetection !== null) bugs.push(xssDetection);
+      }
+
       // surface_call_failed
       if (callResult.ok !== true && tc.action.palette === 'happy') {
         const status = callResult.status ?? 0;
@@ -598,6 +657,42 @@ async function executeApiTest(
   }
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- try+catch above always assigns result before finally
   return result!;
+}
+
+/**
+ * Check body for XSS canary reflection. Returns a BugDetection or null.
+ */
+function detectXssReflection(
+  body: string,
+  nonce: string,
+  pageRoute: string,
+  endpoint: string,
+  injectionPoint: XssContext['injectionPoint'],
+): BugDetection | null {
+  let sink: XssContext['sink'] | null = null;
+  if (canaryAppearsInScriptTag(body, nonce)) {
+    sink = 'reflected_script';
+  } else if (canaryAppearsAsAttribute(body, nonce)) {
+    sink = 'reflected_attr';
+  } else if (canaryAppearsAsHtml(body, nonce)) {
+    sink = 'reflected_html';
+  }
+  if (sink === null) return null;
+
+  const xssContext: XssContext = {
+    variant: 'canary_reflected',
+    injectionPoint,
+    fieldName: '',
+    sink,
+    nonce,
+  };
+  return {
+    kind: 'xss_reflected',
+    rootCause: `XSS reflected: canary nonce ${nonce} appeared as ${sink}`,
+    pageRoute: pageRoute !== '' ? pageRoute : undefined,
+    endpoint: endpoint !== '' ? endpoint : undefined,
+    xssContext,
+  };
 }
 
 type ProbedOriginState = { count: number; routes: Set<string> };

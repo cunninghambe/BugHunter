@@ -4,7 +4,7 @@ import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   BugHunterConfig, DiscoveryOutput, TestCase, ToolMeta,
 } from '../types.js';
-import { formTestCases, apiTestCases } from '../mutation/apply.js';
+import { formTestCases, apiTestCases, xssFormTestCases, xssApiTestCases } from '../mutation/apply.js';
 import { formCollapseSignature } from '../discovery/element-collapse.js';
 import { log } from '../log.js';
 import { createId } from '@paralleldrive/cuid2';
@@ -32,6 +32,12 @@ export async function runPlan(
   const testCases: TestCase[] = [];
   const seenFormSigs = new Set<string>(); // per-role, across pages
   const seenElementSigs = new Map<string, Set<string>>(); // role -> Set of sigs
+
+  const xssEnabled = config.xss?.enabled ?? true;
+  const xssDepth = config.xss?.depth ?? 'minimal';
+  const xssMaxTestCases = config.xss?.maxTestCases ?? 200;
+  const xssMutateJsonBodies = config.xss?.mutateJsonBodies ?? true;
+  let xssCount = 0;
 
   for (const role of roles) {
     seenFormSigs.clear();
@@ -73,6 +79,14 @@ export async function runPlan(
           seenFormSigs.add(sig);
           const cases = formTestCases(runId, role, page.route, form, runId, config.domainHints);
           testCases.push(...cases);
+
+          // XSS canary injection for this form
+          if (xssEnabled && xssCount < xssMaxTestCases) {
+            const xssCases = xssFormTestCases(runId, role, page.route, form, xssDepth);
+            const allowed = Math.min(xssCases.length, xssMaxTestCases - xssCount);
+            testCases.push(...xssCases.slice(0, allowed));
+            xssCount += allowed;
+          }
         }
       }
     }
@@ -93,7 +107,19 @@ export async function runPlan(
 
       const cases = apiTestCases(runId, role, tool, samples, config.domainHints, bodyFixture);
       testCases.push(...cases);
+
+      // XSS canary injection for this API tool
+      if (xssEnabled && xssCount < xssMaxTestCases) {
+        const xssCases = xssApiTestCases(runId, role, tool, xssDepth, xssMutateJsonBodies);
+        const allowed = Math.min(xssCases.length, xssMaxTestCases - xssCount);
+        testCases.push(...xssCases.slice(0, allowed));
+        xssCount += allowed;
+      }
     }
+  }
+
+  if (xssEnabled) {
+    log.info(`xss: planned ${xssCount} canary tests${xssCount >= xssMaxTestCases ? `, capped at ${xssMaxTestCases}` : ''}`);
   }
 
   // Orphan-fixture warning: bodyFixtures keys not in catalog

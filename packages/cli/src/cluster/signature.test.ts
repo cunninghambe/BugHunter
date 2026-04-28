@@ -103,3 +103,60 @@ describe('clusterSignature — v0.5 security kinds', () => {
     }
   });
 });
+
+describe('clusterSignature — v0.7 XSS kinds', () => {
+  it('xss_reflected collapses by route + fieldName', () => {
+    const a = make('xss_reflected', {
+      endpoint: '/login',
+      xssContext: { variant: 'script_tag_basic', injectionPoint: 'url_param', fieldName: 'next', sink: 'reflected_html', nonce: 'aaa111aaa111aaa1' },
+    });
+    const b = make('xss_reflected', {
+      endpoint: '/login',
+      xssContext: { variant: 'img_onerror', injectionPoint: 'url_param', fieldName: 'next', sink: 'reflected_attr', nonce: 'bbb222bbb222bbb2' },
+    });
+    // Same route+field → same signature despite different nonces
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+    expect(clusterSignature(a)).toBe('xss_reflected|/login|next');
+  });
+
+  it('xss_reflected differs by field name', () => {
+    const a = make('xss_reflected', {
+      endpoint: '/search',
+      xssContext: { variant: 'script_tag_basic', injectionPoint: 'url_param', fieldName: 'q', sink: 'reflected_html', nonce: 'aaa111aaa111aaa1' },
+    });
+    const b = make('xss_reflected', {
+      endpoint: '/search',
+      xssContext: { variant: 'script_tag_basic', injectionPoint: 'url_param', fieldName: 'redirect', sink: 'reflected_html', nonce: 'aaa111aaa111aaa1' },
+    });
+    expect(clusterSignature(a)).not.toBe(clusterSignature(b));
+  });
+
+  it('xss_dom collapses by pageRoute + field + sink', () => {
+    const a = make('xss_dom', {
+      pageRoute: '/dashboard',
+      xssContext: { variant: 'img_onerror', injectionPoint: 'form_field', fieldName: 'comment', sink: 'dom_inserted', nonce: 'aaa111aaa111aaa1' },
+    });
+    const b = make('xss_dom', {
+      pageRoute: '/dashboard',
+      xssContext: { variant: 'svg_onload', injectionPoint: 'form_field', fieldName: 'comment', sink: 'dom_inserted', nonce: 'bbb222bbb222bbb2' },
+    });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+    expect(clusterSignature(a)).toBe('xss_dom|/dashboard|comment|dom_inserted');
+  });
+
+  it('xss_stored returns a stable placeholder signature', () => {
+    const sig = clusterSignature(make('xss_stored', {
+      endpoint: '/api/comments',
+      xssContext: { variant: 'script_tag_basic', injectionPoint: 'json_body', fieldName: 'body', sink: 'reflected_html', nonce: 'aaa111aaa111aaa1' },
+    }));
+    expect(sig).toBe('xss_stored|/api/comments|body');
+  });
+
+  it('all XSS kinds return non-empty strings with pipes', () => {
+    for (const kind of ['xss_reflected', 'xss_dom', 'xss_stored'] as BugDetection['kind'][]) {
+      const sig = clusterSignature(make(kind));
+      expect(sig.length).toBeGreaterThan(0);
+      expect(sig).toContain('|');
+    }
+  });
+});
