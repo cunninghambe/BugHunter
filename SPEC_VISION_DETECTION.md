@@ -779,3 +779,24 @@ Live integration test (manual, not CI):
 11. Manual TraiderJo smoke (acceptance A9). Document in PR description.
 
 Each step is independently committable. Steps 1-6 are pure additions and break nothing. Steps 7-9 are the wiring — the vision flag must remain default-off through this whole sequence; only flip the smoke test on at step 11.
+
+---
+
+## Addendum — v0.13: singleton-tab auth survival in Phase-1 (2026-04-28)
+
+**See `SPEC_V13_VISION_BASELINE_AUTH.md` for the full implementation contract.**
+
+v0.13 changed Phase-1 (the per-route screenshot loop inside `runVisualBaseline`) from opening a fresh tab per route via `browser.withTab(url, ...)` to navigating the **singleton tab** that is already authenticated from the login step. The classifier contract (`classifyVisualAnomalies` signature, prompt template, severity gating, dedup) is **unchanged**.
+
+Root cause that motivated the change: on a 32-route auth-walled SPA, fresh tabs opened in the Vite dev-server cold-start window failed to hydrate the Zustand `persist` middleware in time. The `AuthGate` read `token === null` and redirected every tab to `/login`. All 32 screenshots hashed identically → 1 unique vision call instead of 32.
+
+The singleton-tab design (Design C in the spec) eliminates the cold-start race entirely: the tab is already authenticated, the bundle is already warm, and `navigate(url)` navigates within the existing session. Auth state survives by definition because the `BrowserContext` (and its `localStorage`) is shared across the entire BugHunter process lifetime.
+
+**What changed in `phases/discover.ts`:**
+- Phase-1 now uses `browser.navigate(url)` + `browser.screenshot(path)` on the singleton tab. `browser.withTab(...)` is no longer called inside `runVisualBaseline`.
+- A one-time auth-health probe (`probeAuthHealth`) runs before the loop to detect degraded session state early.
+- A per-iteration post-navigate URL check (EC-1) detects mid-loop auth loss and aborts the vision pass cleanly.
+- New config field `vision.preScreenshotSettleMs` (default 2500 ms) controls the settle delay before each screenshot. The previous hard-coded `VISION_BASELINE_SETTLE_MS` (1500 ms) remains as the floor.
+- New telemetry: `discovery.visionBaselineTelemetry.{uniqueScreenshots, dedupedScreenshots, authLostMidLoop, screenshotsTooSmall}` in `state.json`.
+
+**`withTab` is unchanged** — it is still used by `phases/execute.ts` and `cli/replay.ts` where tab isolation between tests is the desired property.

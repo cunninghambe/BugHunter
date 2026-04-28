@@ -86,6 +86,7 @@ export const ConfigSchema = z.object({
     maxCalls: z.number().int().positive().optional(),
     concurrency: z.number().int().positive().optional(),
     severityThreshold: z.enum(['minor', 'major', 'critical']).optional(),
+    preScreenshotSettleMs: z.number().int().positive().optional(),
   }).optional(),
   perf: z.object({
     enabled: z.boolean(),

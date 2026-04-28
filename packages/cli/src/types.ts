@@ -357,6 +357,12 @@ export type VisionConfig = {
    * minor anomalies are noisy by construction. 'critical' is for ultra-strict runs.
    */
   severityThreshold?: VisionSeverity;
+  /**
+   * Milliseconds to wait after navigating to a route before taking a screenshot.
+   * Covers Vite lazy-chunk cold-start, Zustand persist hydration, and SPA data fetches.
+   * Default: 2500. Must be a positive integer. Minimum effective value is VISION_BASELINE_SETTLE_MS (1500).
+   */
+  preScreenshotSettleMs?: number;
 };
 
 export type VisualBaselineEntry = {
@@ -380,6 +386,13 @@ export type ProbeTelemetryRecord = {
   durationMs: number;
 };
 
+export type VisionBaselineTelemetry = {
+  uniqueScreenshots: number;
+  dedupedScreenshots: number;
+  authLostMidLoop: boolean;
+  screenshotsTooSmall: number;
+};
+
 export type DiscoveryOutput = {
   pages: DiscoveredPage[];
   apiTools: ToolMeta[];
@@ -390,6 +403,8 @@ export type DiscoveryOutput = {
   staticDetections?: BugDetection[];
   /** Form-reachability probe telemetry — present when probe ran. */
   probe?: { telemetry: ProbeTelemetryRecord };
+  /** Vision baseline pass telemetry — present when vision is enabled. */
+  visionBaselineTelemetry?: VisionBaselineTelemetry;
 };
 
 export type SkippedItem = {

@@ -103,6 +103,8 @@ export type ClassifyVisualInput = {
   budget?: { recordUsage(model: string, inputTokens: number, outputTokens: number): void };
 };
 
+export const DEFAULT_PRE_SCREENSHOT_SETTLE_MS = 2500;
+
 export function resolveVisionConfig(c: VisionConfig | undefined, apiKey: string): {
   enabled: boolean;
   model: string;
@@ -111,6 +113,7 @@ export function resolveVisionConfig(c: VisionConfig | undefined, apiKey: string)
   maxCostUsd: number;
   concurrency: number;
   severityThreshold: VisionSeverity;
+  preScreenshotSettleMs: number;
 } {
   return {
     enabled: c?.enabled ?? false,
@@ -120,6 +123,7 @@ export function resolveVisionConfig(c: VisionConfig | undefined, apiKey: string)
     maxCostUsd: c?.maxCostUsd ?? 20,
     concurrency: c?.concurrency ?? 4,
     severityThreshold: c?.severityThreshold ?? 'major',
+    preScreenshotSettleMs: c?.preScreenshotSettleMs ?? DEFAULT_PRE_SCREENSHOT_SETTLE_MS,
   };
 }
 
