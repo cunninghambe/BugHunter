@@ -48,6 +48,7 @@ function makeMockBrowser(
     openTab: vi.fn(),
     closeTabExplicit: vi.fn(),
     withTab: vi.fn(),
+    clickByHint: vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' }),
   } as unknown as BrowserMcpAdapter;
 }
 
@@ -294,9 +295,9 @@ describe('SPA deep crawl — static navigation sources (C1–C2)', () => {
     expect(result.pages.length).toBe(2);
   });
 
-  // C2: static-navigation/state — browser.click is called for state nav.
-  it('C2: static-navigation state nav — click called, page shape correct', async () => {
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+  // C2: static-navigation/state — browser.clickByHint is called for state nav.
+  it('C2: static-navigation state nav — clickByHint called, page shape correct', async () => {
+    const clickByHintMock = vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' });
     const evaluateMock = vi.fn().mockImplementation(async (script: string) => {
       if (script === 'location.pathname') return { value: '/' };
       return { value: makeDomResult([]) };
@@ -306,7 +307,8 @@ describe('SPA deep crawl — static navigation sources (C1–C2)', () => {
       navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
       evaluate: evaluateMock,
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-      click: clickMock,
+      click: vi.fn(),
+      clickByHint: clickByHintMock,
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
     } as unknown as BrowserMcpAdapter;
@@ -329,8 +331,10 @@ describe('SPA deep crawl — static navigation sources (C1–C2)', () => {
 
     const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
 
-    // click should have been called with :has-text("Dashboard")
-    expect(clickMock).toHaveBeenCalledWith(':has-text("Dashboard")');
+    // clickByHint should have been called with the hint directly
+    expect(clickByHintMock).toHaveBeenCalledWith({ text: 'Dashboard' });
+    // browser.click should NOT have been called for state nav
+    expect(browser.click).not.toHaveBeenCalled();
     // 2 pages: seed / and state page
     expect(result.pages.length).toBe(2);
     const statePage = result.pages.find(p => p.kind === 'state');
@@ -343,7 +347,7 @@ describe('SPA deep crawl — static navigation sources (C1–C2)', () => {
 describe('SPA deep crawl — dedup and cap (C3–C4)', () => {
   // C3: same state nav from two sources → visited once.
   it('C3: state-navigation dedup — clicked once when queued twice', async () => {
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+    const clickByHintMock = vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' });
     const evaluateMock = vi.fn().mockImplementation(async (script: string) => {
       if (script === 'location.pathname') return { value: '/' };
       return { value: makeDomResult([]) };
@@ -353,7 +357,8 @@ describe('SPA deep crawl — dedup and cap (C3–C4)', () => {
       navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
       evaluate: evaluateMock,
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-      click: clickMock,
+      click: vi.fn(),
+      clickByHint: clickByHintMock,
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
     } as unknown as BrowserMcpAdapter;
@@ -377,14 +382,14 @@ describe('SPA deep crawl — dedup and cap (C3–C4)', () => {
     });
 
     const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
-    // click called once (deduped)
-    expect(clickMock).toHaveBeenCalledTimes(1);
+    // clickByHint called once (deduped)
+    expect(clickByHintMock).toHaveBeenCalledTimes(1);
     expect(result.pages.filter(p => p.kind === 'state').length).toBe(1);
   });
 
   // C4: maxStateNavigations cap — only first 2 of 5 state navs visited.
   it('C4: maxStateNavigations cap — drops excess state items', async () => {
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+    const clickByHintMock = vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' });
     const evaluateMock = vi.fn()
       .mockResolvedValue({ value: makeDomResult([]) });
 
@@ -392,7 +397,8 @@ describe('SPA deep crawl — dedup and cap (C3–C4)', () => {
       navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
       evaluate: evaluateMock,
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-      click: clickMock,
+      click: vi.fn(),
+      clickByHint: clickByHintMock,
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
     } as unknown as BrowserMcpAdapter;
@@ -422,26 +428,19 @@ describe('SPA deep crawl — dedup and cap (C3–C4)', () => {
   });
 });
 
-describe('SPA deep crawl — trigger resolution (C5–C9)', () => {
-  function makeTriggerBrowser(selectorPresent: Record<string, boolean>): BrowserMcpAdapter {
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+describe('SPA deep crawl — trigger resolution (C5–C9b)', () => {
+  type ClickByHintResult = { clicked: true; matchedBy: 'testId' | 'ariaLabel' | 'text' } | { clicked: false; reason: 'no_hint_fields' | 'not_found' };
+
+  function makeTriggerBrowser(clickByHintResult: ClickByHintResult): BrowserMcpAdapter {
     return {
       navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
-      evaluate: vi.fn(async (script: string) => {
-        // First call is location.pathname
+      evaluate: vi.fn().mockImplementation(async (script: string) => {
         if (script === 'location.pathname') return { value: '/' };
-        // DOM collect script
-        if (script.includes('querySelectorAll')) return { value: makeDomResult([]) };
-        // selectorExists check: extract selector from JSON.stringify'd script
-        const match = /document\.querySelector\((.+?)\)/.exec(script);
-        if (match) {
-          const sel = JSON.parse(match[1]) as string;
-          return { value: selectorPresent[sel] ?? false };
-        }
-        return { value: false };
+        return { value: makeDomResult([]) };
       }),
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-      click: clickMock,
+      click: vi.fn(),
+      clickByHint: vi.fn().mockResolvedValue(clickByHintResult),
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
     } as unknown as BrowserMcpAdapter;
@@ -465,57 +464,65 @@ describe('SPA deep crawl — trigger resolution (C5–C9)', () => {
     });
   }
 
-  // C5: testId priority over text.
-  it('C5: trigger-resolve testid-priority — testid selector used when present', async () => {
-    const browser = makeTriggerBrowser({ '[data-testid="nav-x"]': true });
+  // C5: testId priority — clickByHint called with hint, returns matchedBy:'testId', state page produced.
+  it('C5: trigger-resolve testid-priority — clickByHint called with full hint, state page produced', async () => {
+    const browser = makeTriggerBrowser({ clicked: true, matchedBy: 'testId' });
     const surface = makeTriggerSurface({ testId: 'nav-x', text: 'X label' });
     const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
-    const clickCalls = (browser.click as ReturnType<typeof vi.fn>).mock.calls;
-    expect(clickCalls.some(([sel]) => sel === '[data-testid="nav-x"]')).toBe(true);
-    const statePage = result.pages.find(p => p.kind === 'state');
-    expect(statePage).toBeDefined();
-  });
-
-  // C6: aria-label fallback when no testid.
-  it('C6: trigger-resolve aria-label fallback', async () => {
-    const browser = makeTriggerBrowser({ '[aria-label="X label"]': true });
-    const surface = makeTriggerSurface({ ariaLabel: 'X label', text: 'X' });
-    const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
-    const clickCalls = (browser.click as ReturnType<typeof vi.fn>).mock.calls;
-    expect(clickCalls.some(([sel]) => sel === '[aria-label="X label"]')).toBe(true);
-    const statePage = result.pages.find(p => p.kind === 'state');
-    expect(statePage).toBeDefined();
-  });
-
-  // C7: text-only hint — :has-text() returned.
-  it('C7: trigger-resolve text-fallback — :has-text() used', async () => {
-    const browser = makeTriggerBrowser({});
-    const surface = makeTriggerSurface({ text: 'X label' });
-    const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
-    const clickCalls = (browser.click as ReturnType<typeof vi.fn>).mock.calls;
-    expect(clickCalls.some(([sel]) => (sel as string).includes('has-text'))).toBe(true);
+    expect(browser.clickByHint).toHaveBeenCalledWith({ testId: 'nav-x', text: 'X label' });
+    expect((browser.clickByHint as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+    expect(browser.click).not.toHaveBeenCalled();
     expect(result.pages.find(p => p.kind === 'state')).toBeDefined();
   });
 
-  // C8: empty hint — returns null — page skipped with trigger_not_found.
+  // C6: aria-label fallback — clickByHint called with hint, returns matchedBy:'ariaLabel'.
+  it('C6: trigger-resolve aria-label fallback — clickByHint called with ariaLabel hint', async () => {
+    const browser = makeTriggerBrowser({ clicked: true, matchedBy: 'ariaLabel' });
+    const surface = makeTriggerSurface({ ariaLabel: 'X label', text: 'X' });
+    const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
+    expect(browser.clickByHint).toHaveBeenCalledWith({ ariaLabel: 'X label', text: 'X' });
+    expect(browser.click).not.toHaveBeenCalled();
+    expect(result.pages.find(p => p.kind === 'state')).toBeDefined();
+  });
+
+  // C7: text-only hint — clickByHint called, browser.click NOT called for state nav.
+  it('C7: trigger-resolve text-fallback — clickByHint used, browser.click NOT called', async () => {
+    const browser = makeTriggerBrowser({ clicked: true, matchedBy: 'text' });
+    const surface = makeTriggerSurface({ text: 'X label' });
+    const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
+    expect(browser.clickByHint).toHaveBeenCalledWith({ text: 'X label' });
+    // Regression guard: browser.click must NOT be called for text-only state nav
+    expect(browser.click).not.toHaveBeenCalled();
+    expect(result.pages.find(p => p.kind === 'state')).toBeDefined();
+  });
+
+  // C8: empty hint — clickByHint returns no_hint_fields — page skipped with trigger_not_found.
   it('C8: trigger-resolve none — trigger_not_found skip', async () => {
-    const browser = makeTriggerBrowser({});
+    const browser = makeTriggerBrowser({ clicked: false, reason: 'no_hint_fields' });
     const surface = makeTriggerSurface({});
     const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
     expect(result.skipped.some(s => s.reason === 'trigger_not_found')).toBe(true);
     expect(result.pages.find(p => p.kind === 'state')).toBeUndefined();
   });
 
-  // C9: testid present in hint but not in DOM — falls through to text.
-  it('C9: trigger-resolve missing element — testId absent in DOM, falls to text', async () => {
-    // testId not in DOM, text resolves via :has-text()
-    const browser = makeTriggerBrowser({});
+  // C9: all priorities miss → matchedBy:'text' (falls through from testId to text).
+  it('C9: trigger-resolve missing element — testId absent in DOM, falls to text, state page produced', async () => {
+    const browser = makeTriggerBrowser({ clicked: true, matchedBy: 'text' });
     const surface = makeTriggerSurface({ testId: 'nonexistent', text: 'X label' });
     const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
-    const clickCalls = (browser.click as ReturnType<typeof vi.fn>).mock.calls;
-    // should fall through to text since testId not found
-    expect(clickCalls.some(([sel]) => (sel as string).includes('has-text'))).toBe(true);
+    expect(browser.clickByHint).toHaveBeenCalledWith({ testId: 'nonexistent', text: 'X label' });
+    expect(browser.click).not.toHaveBeenCalled();
     expect(result.pages.find(p => p.kind === 'state')).toBeDefined();
+  });
+
+  // C9b: all priorities miss — not_found → trigger_not_found skip, no state page.
+  it('C9b: trigger-resolve not_found — all priorities miss, trigger_not_found skip', async () => {
+    const browser = makeTriggerBrowser({ clicked: false, reason: 'not_found' });
+    const surface = makeTriggerSurface({ text: 'Z' });
+    const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
+    expect(browser.clickByHint).toHaveBeenCalledWith({ text: 'Z' });
+    expect(result.skipped.some(s => s.reason === 'trigger_not_found')).toBe(true);
+    expect(result.pages.find(p => p.kind === 'state')).toBeUndefined();
   });
 });
 
@@ -626,7 +633,7 @@ describe('SPA deep crawl — collectDomOnly / page shape (C15–C16)', () => {
   // C15: collectDomOnly — navigate is NOT called for state items.
   it('C15: walk-collectDomOnly/no-navigate — no navigate on state items after first', async () => {
     const navigateMock = vi.fn().mockResolvedValue({ url: 'http://h:1/' });
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+    const clickByHintMock = vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' });
     const evaluateMock = vi.fn().mockImplementation(async (script: string) => {
       if (script === 'location.pathname') return { value: '/' };
       return { value: makeDomResult([]) };
@@ -636,7 +643,8 @@ describe('SPA deep crawl — collectDomOnly / page shape (C15–C16)', () => {
       navigate: navigateMock,
       evaluate: evaluateMock,
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-      click: clickMock,
+      click: vi.fn(),
+      clickByHint: clickByHintMock,
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
     } as unknown as BrowserMcpAdapter;
@@ -665,7 +673,7 @@ describe('SPA deep crawl — collectDomOnly / page shape (C15–C16)', () => {
 
   // C16: state page shape — kind:'state' and stateContext populated.
   it('C16: state-page-shape — pages have kind:state and stateContext', async () => {
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+    const clickByHintMock = vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' });
     const evaluateMock = vi.fn().mockImplementation(async (script: string) => {
       if (script === 'location.pathname') return { value: '/' };
       return { value: makeDomResult([]) };
@@ -675,7 +683,8 @@ describe('SPA deep crawl — collectDomOnly / page shape (C15–C16)', () => {
       navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
       evaluate: evaluateMock,
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-      click: clickMock,
+      click: vi.fn(),
+      clickByHint: clickByHintMock,
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
     } as unknown as BrowserMcpAdapter;
@@ -728,7 +737,7 @@ describe('SPA deep crawl — mixed sources and dedup (C17–C20)', () => {
       surface_postprocess_runtime_routes: vi.fn().mockResolvedValue(postprocessed),
     });
 
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+    const clickByHintMock = vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' });
     const evaluateMock = vi.fn().mockImplementation(async (script: string) => {
       if (script === 'location.pathname') return { value: '/' };
       return { value: makeDomResult(['/link-from-dom']) };
@@ -738,7 +747,8 @@ describe('SPA deep crawl — mixed sources and dedup (C17–C20)', () => {
       navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
       evaluate: evaluateMock,
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-      click: clickMock,
+      click: vi.fn(),
+      clickByHint: clickByHintMock,
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
     } as unknown as BrowserMcpAdapter;
@@ -752,7 +762,7 @@ describe('SPA deep crawl — mixed sources and dedup (C17–C20)', () => {
 
   // C18: same state (baseRoute+stateVar+stateValue) from two sources → visited once.
   it('C18: dedup/state-equals-existing-state — same state queued twice, clicked once', async () => {
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+    const clickByHintMock = vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' });
     const evaluateMock = vi.fn().mockImplementation(async (script: string) => {
       if (script === 'location.pathname') return { value: '/' };
       return { value: makeDomResult([]) };
@@ -762,7 +772,8 @@ describe('SPA deep crawl — mixed sources and dedup (C17–C20)', () => {
       navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
       evaluate: evaluateMock,
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-      click: clickMock,
+      click: vi.fn(),
+      clickByHint: clickByHintMock,
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
     } as unknown as BrowserMcpAdapter;
@@ -777,13 +788,13 @@ describe('SPA deep crawl — mixed sources and dedup (C17–C20)', () => {
     });
 
     const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
-    expect(clickMock).toHaveBeenCalledTimes(1);
+    expect(clickByHintMock).toHaveBeenCalledTimes(1);
     expect(result.pages.filter(p => p.kind === 'state').length).toBe(1);
   });
 
   // C19: state nav and url nav with same path-like string → different keys, both visited.
   it('C19: dedup/state-vs-url — state and url navs with same target string have different keys', async () => {
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+    const clickByHintMock = vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' });
     const evaluateMock = vi.fn().mockImplementation(async (script: string) => {
       if (script === 'location.pathname') return { value: '/' };
       return { value: makeDomResult([]) };
@@ -793,7 +804,8 @@ describe('SPA deep crawl — mixed sources and dedup (C17–C20)', () => {
       navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
       evaluate: evaluateMock,
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-      click: clickMock,
+      click: vi.fn(),
+      clickByHint: clickByHintMock,
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
     } as unknown as BrowserMcpAdapter;
@@ -849,10 +861,11 @@ describe('SPA deep crawl — mixed sources and dedup (C17–C20)', () => {
 });
 
 describe('SPA deep crawl — tab-state-only integration', () => {
-  // Integration: surface_list_pages returns only the crawl_seed; surface_list_navigations
-  // returns N kind:'state' navs. After SPEC_PAGE_KIND_FIX this matches a real tab-state app.
-  // Asserts: N+1 DiscoveredPages, each state page carries stateContext, click called N times.
-  it('seed + 3 state navs → 4 DiscoveredPages, one URL + three state', async () => {
+  // Integration: surface_list_navigations returns N kind:'state' navs.
+  // After SPEC_CRAWLER_STATE_CLICK this uses clickByHint (not browser.click).
+  // Asserts: N+1 DiscoveredPages, each state page carries stateContext,
+  // clickByHint called N times, browser.click called 0 times for state navs.
+  it('seed + 3 state navs → 4 DiscoveredPages, clickByHint called 3×, click called 0×', async () => {
     const surface = makeSurface({
       surface_describe_self: vi.fn().mockResolvedValue({
         name: 'tab-state-app', stack: 'vite', baseUrl: 'http://h:1',
@@ -876,16 +889,16 @@ describe('SPA deep crawl — tab-state-only integration', () => {
       }),
     });
 
-    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+    const clickByHintMock = vi.fn().mockResolvedValue({ clicked: true, matchedBy: 'text' });
+    const clickMock = vi.fn();
     const browser: BrowserMcpAdapter = {
       navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
       evaluate: vi.fn().mockImplementation(async (script: string) => {
         if (script === 'location.pathname') return { value: '/' };
-        const match = /document\.querySelector\((.+?)\)/.exec(script);
-        if (match) return { value: true };
         return { value: makeDomResult([]) };
       }),
       click: clickMock,
+      clickByHint: clickByHintMock,
       scroll: vi.fn().mockResolvedValue({ scrolled: true }),
       type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
       listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
@@ -902,7 +915,9 @@ describe('SPA deep crawl — tab-state-only integration', () => {
     expect(dashboard!.stateContext!.stateVar).toBe('tab');
     expect(dashboard!.stateContext!.triggerHint.text).toBe('Dashboard');
 
-    expect(clickMock).toHaveBeenCalledTimes(3);
+    // clickByHint called once per state nav; browser.click never called for state navs
+    expect(clickByHintMock).toHaveBeenCalledTimes(3);
+    expect(clickMock).not.toHaveBeenCalled();
 
     expect(result.telemetry.staticNavigations).toBe(3);
     expect(result.telemetry.stateKindPages).toBe(3);

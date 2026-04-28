@@ -5,7 +5,6 @@ import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import type { SurfaceMcpAdapter, SurfacePostprocessedRoute } from '../adapters/surface-mcp.js';
 import type { DiscoveredPage, NavSource, TriggerSelectorHint, CrawlTelemetry } from '../types.js';
 import { walkDom, collectDomOnly, type DomWalkResult } from './dom-walker.js';
-import { resolveTriggerSelector } from './trigger-resolve.js';
 import { log } from '../log.js';
 
 export type QueueItem =
@@ -276,14 +275,12 @@ export async function crawlFromSeeds(
           currentPageUrl = opts.baseUrl + item.baseRoute;
         }
 
-        const selector = await resolveTriggerSelector(browser, item.trigger);
-        if (selector === null || selector === '') {
+        const clickRes = await browser.clickByHint(item.trigger);
+        if (!clickRes.clicked) {
           skipped.push({ url: key, reason: 'trigger_not_found' });
           visited.delete(key);
           continue;
         }
-
-        await browser.click(selector);
         await new Promise<void>(r => { setTimeout(r, opts.stateSettleMs ?? 250); });
         walkResult = await collectDomOnly(browser);
         stateKindVisited++;
