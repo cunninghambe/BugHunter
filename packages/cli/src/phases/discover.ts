@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
-import type { BugDetection, BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem, VisualBaselineEntry, VisionConfig, CrawlTelemetry, VisionBaselineTelemetry } from '../types.js';
+import type { BugDetection, BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem, VisualBaselineEntry, VisionConfig, CrawlTelemetry, VisionBaselineTelemetry, VisionConsistencyTelemetry } from '../types.js';
 import { runStaticAnalysis } from '../static/runner.js';
 import { gitleaksTool } from '../static/tools/gitleaks.js';
 import { npmAuditTool } from '../static/tools/npm-audit.js';
@@ -19,7 +19,7 @@ import { crawlFromSeeds } from '../discovery/crawler.js';
 import { loginInBrowser } from '../discovery/browser-login.js';
 import { crossRefForms } from '../discovery/form-cross-ref.js';
 import { collapseElements } from '../discovery/element-collapse.js';
-import { classifyVisualAnomalies } from '../classify/vision.js';
+import { classifyVisualAnomaliesConsistent } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
 import { log } from '../log.js';
@@ -242,6 +242,7 @@ export async function runDiscover(
     crawlTelemetry,
     staticDetections,
     visionBaselineTelemetry: visionResult.telemetry,
+    visionConsistencyTelemetry: visionResult.consistencyTelemetry,
   };
 }
 
@@ -345,6 +346,11 @@ async function screenshotPhase(
   return { entries, telemetry };
 }
 
+type ClassifyPhaseResult = {
+  entries: VisualBaselineEntry[];
+  consistencyTelemetry: VisionConsistencyTelemetry;
+};
+
 async function classifyPhase(
   screenshotEntries: Array<{ page: DiscoveredPage; screenshotPath: string }>,
   baseUrl: string,
@@ -352,13 +358,27 @@ async function classifyPhase(
   visionConfig: VisionConfig,
   visionClient: VisionClientInterface,
   visionBudget: VisionBudget,
-): Promise<VisualBaselineEntry[]> {
+): Promise<ClassifyPhaseResult> {
   const results: VisualBaselineEntry[] = [];
+  const consistencyRuns = visionConfig.consistencyRuns ?? 2;
+  const agreementMode = visionConfig.agreementMode ?? 'strict';
+  const telem: VisionConsistencyTelemetry = {
+    runsPerScreenshot: consistencyRuns,
+    agreementMode,
+    totalCalls: 0,
+    totalSucceeded: 0,
+    droppedByDisagreement: 0,
+    agreementRate: 1,
+    screenshotsWithAnomalies: 0,
+    screenshotsClean: 0,
+  };
+  let agreementRateSum = 0;
+
   const inFlight = new Set<Promise<void>>();
   const concurrency = visionConfig.concurrency ?? 4;
 
   for (const { page, screenshotPath } of screenshotEntries) {
-    const p = classifyVisualAnomalies({
+    const p = classifyVisualAnomaliesConsistent({
       screenshotPath,
       url: `${baseUrl}${page.route}`,
       action: { kind: 'render' },
@@ -366,8 +386,20 @@ async function classifyPhase(
       config: visionConfig,
       client: visionClient,
       budget: visionBudget,
-    }).then(detections => {
-      for (const detection of detections) {
+      consistencyRuns,
+      agreementMode,
+    }).then(consistent => {
+      telem.totalCalls += consistent.callsAttempted;
+      telem.totalSucceeded += consistent.callsSucceeded;
+      telem.droppedByDisagreement += consistent.droppedByDisagreement;
+      const hadAnomalies = consistent.perRunDetections.some(r => r.length > 0);
+      if (hadAnomalies) {
+        telem.screenshotsWithAnomalies++;
+        agreementRateSum += consistent.agreementRate;
+      } else {
+        telem.screenshotsClean++;
+      }
+      for (const detection of consistent.detections) {
         results.push({ page, detection, screenshotPath });
       }
       inFlight.delete(p);
@@ -383,12 +415,18 @@ async function classifyPhase(
   }
 
   await Promise.allSettled(inFlight);
-  return results;
+
+  telem.agreementRate = telem.screenshotsWithAnomalies > 0
+    ? agreementRateSum / telem.screenshotsWithAnomalies
+    : 1;
+
+  return { entries: results, consistencyTelemetry: telem };
 }
 
 type VisualBaselineResult = {
   entries: VisualBaselineEntry[];
   telemetry: VisionBaselineTelemetry | undefined;
+  consistencyTelemetry: VisionConsistencyTelemetry | undefined;
 };
 
 export async function runVisualBaseline(
@@ -400,7 +438,7 @@ export async function runVisualBaseline(
   visionBudget: VisionBudget | undefined,
 ): Promise<VisualBaselineResult> {
   if (browser === undefined || visionClient === undefined || visionBudget === undefined || config.vision?.enabled !== true) {
-    return { entries: [], telemetry: undefined };
+    return { entries: [], telemetry: undefined, consistencyTelemetry: undefined };
   }
 
   const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
@@ -417,6 +455,7 @@ export async function runVisualBaseline(
       return {
         entries: [],
         telemetry: { uniqueScreenshots: 0, dedupedScreenshots: 0, authLostMidLoop: true, screenshotsTooSmall: 0 },
+        consistencyTelemetry: undefined,
       };
     }
   }
@@ -426,11 +465,13 @@ export async function runVisualBaseline(
     pages, browser, visionBudget, baseUrl, DEFAULT_LOGIN_GLOBS, settleMs, loginEnabled,
   );
 
-  // Phase 2: classify in concurrency-bounded pool (unchanged from v0.12).
-  const entries = await classifyPhase(screenshotEntries, baseUrl, role, visionConfig, visionClient, visionBudget);
+  // Phase 2: classify with consistency aggregation in concurrency-bounded pool.
+  const { entries, consistencyTelemetry } = await classifyPhase(
+    screenshotEntries, baseUrl, role, visionConfig, visionClient, visionBudget,
+  );
 
   log.info(`vision baseline: found ${entries.length} anomaly/anomalies across ${screenshotEntries.length} page(s)`);
-  return { entries, telemetry };
+  return { entries, telemetry, consistencyTelemetry };
 }
 
 async function runStaticAnalysisPhase(

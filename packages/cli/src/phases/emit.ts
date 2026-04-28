@@ -1,6 +1,6 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
-import type { BugCluster, InfrastructureFailure, RunState, RunSummary, SeedHookExecution } from '../types.js';
+import type { BugCluster, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { log } from '../log.js';
 
@@ -17,6 +17,7 @@ export type TestCounters = {
     abortReason?: 'auth' | 'transport' | 'cost_cap';
     costUsd?: number;
     costCapUsd?: number;
+    consistency?: VisionConsistencyTelemetry;
   };
   /** v0.6 performance summary — present when perf subsystem was enabled. */
   perfSummary?: RunSummary['perfSummary'];

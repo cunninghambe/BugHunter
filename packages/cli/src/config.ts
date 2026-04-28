@@ -111,6 +111,8 @@ export const ConfigSchema = z.object({
     concurrency: z.number().int().positive().optional(),
     severityThreshold: z.enum(['minor', 'major', 'critical']).optional(),
     preScreenshotSettleMs: z.number().int().positive().optional(),
+    consistencyRuns: z.number().int().min(1).max(5).default(2),
+    agreementMode: z.enum(['strict', 'majority']).default('strict'),
   }).optional(),
   perf: z.object({
     enabled: z.boolean(),
