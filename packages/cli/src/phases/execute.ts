@@ -24,7 +24,7 @@ import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
 import type { VisionConfig } from '../types.js';
 import { writeActionLog } from '../repro/action-log.js';
-import { runFormSubmit, isStringKeyedRecord } from './form-submit-runner.js';
+import { runFormSubmit, waitForFormPresent, isStringKeyedRecord } from './form-submit-runner.js';
 import { hashSchema } from '../util/hash.js';
 import { runPaths, type RunPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
@@ -81,6 +81,8 @@ export type ExecuteOptions = {
   seoEnabled?: boolean;
   /** v0.6 keyboard trap: max Tab presses (default 20). */
   keyboardTrapMaxPresses?: number;
+  /** v0.11 max wait for form to appear after trigger click. Default 2000ms. */
+  asyncMaxWaitMs?: number;
 };
 
 export type ExecuteResult = {
@@ -98,7 +100,7 @@ export type ExecuteResult = {
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, keyboardTrapMaxPresses } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, keyboardTrapMaxPresses, asyncMaxWaitMs } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
@@ -235,7 +237,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     try {
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
-        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline)
+        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs)
         : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds);
 
       // Perf drain: collect vitals/HAR after the action completes
@@ -395,6 +397,7 @@ async function executeUiTestInner(
   visionBudget?: VisionBudget,
   discoveredIds?: DiscoveredIds,
   onPageBaseline?: (scope: TabScope, pageRoute: string) => Promise<FocusAfterActionResult | undefined>,
+  asyncMaxWaitMs?: number,
 ): Promise<TestResult> {
   const bugs: BugDetection[] = [];
   const preConsoleErrors: ConsoleError[] = [];
@@ -427,7 +430,33 @@ async function executeUiTestInner(
         durationMs: Date.now() - start,
       };
     }
-    await new Promise<void>(r => { setTimeout(r, 250); });
+    // For submit actions: replace the fixed 250ms sleep with a bounded form-present poll.
+    // For other actions: keep the 250ms settle to let DOM stabilize before the action.
+    if (tc.action.kind === 'submit' && tc.action.selector !== undefined) {
+      const waitMs = asyncMaxWaitMs ?? 2000;
+      const { present } = await waitForFormPresent(scope, tc.action.selector, waitMs);
+      if (!present) {
+        return {
+          testId: tc.id,
+          occurrenceId,
+          passed: false,
+          bugs: [],
+          infrastructureFailure: {
+            id: createId(),
+            runId,
+            timestamp: new Date().toISOString(),
+            kind: 'browser_element_not_found',
+            detail: `submit: form_never_rendered (formSelector=${tc.action.selector})`,
+            role: tc.role,
+            page: tc.page,
+            action: tc.action,
+          },
+          durationMs: Date.now() - start,
+        };
+      }
+    } else {
+      await new Promise<void>(r => { setTimeout(r, 250); });
+    }
   }
 
   // Per-page baseline hook (a11y-strict): runs once per route before any action.
@@ -464,7 +493,7 @@ async function executeUiTestInner(
         if (tc.action.selector === undefined) throw new Error('execute: submit action missing selector');
         if (tc.action.selector === '') throw new Error('execute: submit action has empty selector — planning bug?');
         const inputRecord = isStringKeyedRecord(tc.action.input) ? tc.action.input : {};
-        await runFormSubmit(scope, tc.action.selector, inputRecord);
+        await runFormSubmit(scope, tc.action.selector, inputRecord, { asyncMaxWaitMs: asyncMaxWaitMs ?? 2000 });
         break;
       }
       case 'fill':
@@ -673,6 +702,7 @@ async function executeUiTest(
   visionBudget?: VisionBudget,
   discoveredIds?: DiscoveredIds,
   onPageBaseline?: (scope: TabScope, pageRoute: string) => Promise<FocusAfterActionResult | undefined>,
+  asyncMaxWaitMs?: number,
 ): Promise<TestResult> {
   const start = Date.now();
   const occurrenceId = createId();
@@ -705,7 +735,7 @@ async function executeUiTest(
   let result: TestResult;
   try {
     result = await browser.withTab(pageUrl, headers, (scope) =>
-      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline)
+      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs)
     );
   } catch (err) {
     // withTab itself failed (openTab or closeTab threw, or fn re-threw after unexpected error)

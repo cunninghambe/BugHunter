@@ -22,6 +22,8 @@ import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
 import type { BugDetection, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry } from '../types.js';
 import { runEmit } from '../phases/emit.js';
+import { runFormReachabilityProbes } from '../phases/form-reachability-probe.js';
+import type { ProbeKey, ProbeResult } from '../phases/form-reachability-probe.js';
 import { log } from '../log.js';
 import { createCdpSession, type CdpSession } from '../adapters/cdp-session.js';
 import { createPerfCollector, type PerfCollector } from '../perf/perf-collector.js';
@@ -65,6 +67,8 @@ export type RunOptions = {
   a11yStrict?: boolean;
   seoEnabled?: boolean;
   keyboardTrapMax?: number;
+  // v0.11 form-reachability probe
+  formReachabilityTimeout?: number;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -228,13 +232,37 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   runState.phase = 'plan';
   saveRunState(runState);
 
+  // Phase 1.5: form-reachability probe (runs after discover, before plan)
+  let probeResults: Map<ProbeKey, ProbeResult> | undefined;
+  if (browser !== undefined && resolved.browserLogin?.enabled !== false) {
+    const asyncMaxWaitMs = opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs;
+    const appBaseUrl = resolved.appBaseUrl ?? new URL(resolved.surfaceMcpUrl).origin;
+    const { results, telemetry } = await runFormReachabilityProbes({
+      browser,
+      appBaseUrl,
+      pages: discovery.pages,
+      roles: effectiveRoles,
+      runId,
+      extraHeaders: resolved.extraHeaders,
+      asyncMaxWaitMs,
+      perProbeTimeoutMs: 5000,
+      budgetMs: 60_000,
+    });
+    probeResults = results;
+    // Attach telemetry to discovery so it lands in state.json
+    runState.discovery = { ...discovery, probe: { telemetry } };
+    saveRunState(runState);
+    log.info('form-reachability-probe: complete', { ...telemetry });
+  }
+
   // Phase 2: plan
-  const { testCases, projectedRuntimeMs } = await runPlan(
+  const { testCases, projectedRuntimeMs, skipReasons: planSkipReasons } = await runPlan(
     runId,
     discovery,
     resolved,
     effectiveRoles,
-    surface
+    surface,
+    probeResults,
   );
   runState.testCases = testCases;
   runState.phase = 'execute';
@@ -294,6 +322,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     a11yStrict: resolved.a11yStrict ?? false,
     seoEnabled: resolved.seoEnabled ?? false,
     keyboardTrapMaxPresses: resolved.keyboardTrapMaxPresses ?? 20,
+    asyncMaxWaitMs: opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs,
   });
 
   // Close CDP session after execute completes
@@ -391,9 +420,9 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   // Phase 6: emit
   const actualRuntimeMs = Date.now() - startMs;
 
-  // Merge discovery-phase skip reasons into the execute-phase skip reasons.
+  // Merge discovery-phase + plan-phase + execute-phase skip reasons.
   const discoverySkipReasons = aggregateDiscoverySkips(discovery.skipList);
-  const allSkipReasons = [...discoverySkipReasons, ...skipReasons];
+  const allSkipReasons = [...discoverySkipReasons, ...planSkipReasons, ...skipReasons];
 
   const visionSummary = visionEnabled ? {
     enabled: true,

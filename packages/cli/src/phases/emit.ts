@@ -58,6 +58,7 @@ export function runEmit(
   const skipReasons = counters?.skipReasons ?? [];
 
   const crawlTelemetry = runState.discovery?.crawlTelemetry;
+  const probeTelemetry = runState.discovery?.probe?.telemetry;
   const summary = {
     runId: runState.runId,
     bugs_filed: clusters.length,
@@ -76,9 +77,11 @@ export function runEmit(
     testsSkipped,
     skippedReasons: skipReasons,
     ...(counters?.vision !== undefined ? { vision: counters.vision } : {}),
-    ...(crawlTelemetry !== undefined ? { discovery: crawlTelemetry } : {}),
+    ...(crawlTelemetry !== undefined ? { discovery: { ...crawlTelemetry, ...(probeTelemetry !== undefined ? { probe: { telemetry: probeTelemetry } } : {}) } } : {}),
+    ...(probeTelemetry !== undefined && crawlTelemetry === undefined ? { discovery: { probe: { telemetry: probeTelemetry } } } : {}),
     ...(counters?.perfSummary !== undefined ? { perfSummary: counters.perfSummary } : {}),
     ...(counters?.bundleSummary !== undefined ? { bundleSummary: counters.bundleSummary } : {}),
+    ...(probeTelemetry !== undefined ? { formReachabilityProbes: buildProbeCounters(runState) } : {}),
   };
 
   writeJsonFile(paths.summaryFile, summary);
@@ -126,6 +129,11 @@ function buildPerfSummaryLines(perf: RunSummary['perfSummary']): string[] {
   const pageCount = Object.keys(perf.vitalsByPage).length;
   if (pageCount > 0) lines.push(`  Web vitals measured on ${pageCount} page(s)`);
   return lines;
+}
+
+function buildProbeCounters(runState: RunState): { run: number; skippedByBudget: number; durationMs: number } {
+  const t = runState.discovery?.probe?.telemetry;
+  return { run: t?.probesRun ?? 0, skippedByBudget: t?.skippedByBudget ?? 0, durationMs: t?.durationMs ?? 0 };
 }
 
 function buildBundleSummaryLines(bundle: RunSummary['bundleSummary']): string[] {
