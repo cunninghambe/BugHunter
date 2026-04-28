@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
-import type { BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem, VisualBaselineEntry, VisionConfig } from '../types.js';
+import type { BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem, VisualBaselineEntry, VisionConfig, CrawlTelemetry } from '../types.js';
 import { isDynamicRoute, expandDynamicRoute } from '../discovery/filesystem-pages.js';
 import { discoverPages } from '../discovery/pages.js';
 import { walkDom } from '../discovery/dom-walker.js';
@@ -14,6 +14,7 @@ import { crawlFromSeeds } from '../discovery/crawler.js';
 import { loginInBrowser } from '../discovery/browser-login.js';
 import { crossRefForms } from '../discovery/form-cross-ref.js';
 import { collapseElements } from '../discovery/element-collapse.js';
+import { resolveTriggerSelector } from '../discovery/trigger-resolve.js';
 import { classifyVisualAnomalies } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
@@ -76,6 +77,7 @@ export async function runDiscover(
 
   // Crawl-based discovery: triggered by seed pages
   const crawledPages: DiscoveredPage[] = [];
+  let crawlTelemetry: CrawlTelemetry | undefined;
   if (seedEntries.length > 0 && browser && config.crawl?.enabled !== false) {
     const seedRoutes = seedEntries.map(s => s.route);
     const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
@@ -90,13 +92,19 @@ export async function runDiscover(
       sameOriginOnly: config.crawl?.sameOriginOnly ?? true,
       runId,
       extraHeaders: config.extraHeaders,
+      surface,
+      includeLowConfidence: config.crawl?.includeLowConfidence ?? false,
+      stateSettleMs: config.crawl?.stateSettleMs ?? 250,
+      disableRuntimeEnum: config.crawl?.disableRuntimeEnum ?? false,
+      maxStateNavigations: config.crawl?.maxStateNavigations ?? 30,
     });
     log.info(
-      `crawl: visited ${result.pages.length} pages${ 
-      result.hitMaxPages ? ' (max-pages cap hit)' : '' 
+      `crawl: visited ${result.pages.length} pages${
+      result.hitMaxPages ? ' (max-pages cap hit)' : ''
       }${result.hitMaxDepth ? ' (max-depth cap hit)' : ''}`
     );
     crawledPages.push(...result.pages);
+    crawlTelemetry = result.telemetry;
     for (const s of result.skipped) {
       skipList.push({ route: s.url, reason: `crawl_skipped: ${s.reason}` });
     }
@@ -223,6 +231,7 @@ export async function runDiscover(
     apiTools: filteredApiTools,
     skipList: [...skipList, ...externalSkips],
     visualBaselineDetections,
+    crawlTelemetry,
   };
 }
 
@@ -250,10 +259,21 @@ async function runVisualBaseline(
     const screenshotPath = path.join(tmpDir, `vision-baseline-${routeSlug}.png`);
 
     try {
-      await browser.withTab(`${baseUrl}${page.route}`, undefined, async scope => {
-        await new Promise<void>(r => { setTimeout(r, VISION_BASELINE_SETTLE_MS); });
-        await scope.screenshot(screenshotPath);
-      });
+      if (page.kind === 'state' && page.stateContext) {
+        const ctx = page.stateContext;
+        await browser.withTab(`${baseUrl}${ctx.baseRoute}`, undefined, async scope => {
+          const sel = await resolveTriggerSelector(scope, ctx.triggerHint);
+          if (!sel) throw new Error('trigger_not_found_in_vision');
+          await scope.click(sel);
+          await new Promise<void>(r => { setTimeout(r, VISION_BASELINE_SETTLE_MS); });
+          await scope.screenshot(screenshotPath);
+        });
+      } else {
+        await browser.withTab(`${baseUrl}${page.route}`, undefined, async scope => {
+          await new Promise<void>(r => { setTimeout(r, VISION_BASELINE_SETTLE_MS); });
+          await scope.screenshot(screenshotPath);
+        });
+      }
     } catch (err) {
       log.warn(`vision baseline: failed to open/screenshot page ${page.route}`, { err: String(err) });
       continue;

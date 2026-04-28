@@ -234,12 +234,36 @@ export type DiscoveredForm = {
   apiToolIds?: string[];
 };
 
+export type NavSource =
+  | 'static-page'
+  | 'static-navigation'
+  | 'runtime-enum'
+  | 'crawl-link'
+  | 'crawl-seed';
+
+export type TriggerSelectorHint = {
+  text?: string;
+  testId?: string;
+  ariaLabel?: string;
+};
+
 export type DiscoveredPage = {
   route: string;
   sourceFile?: string;
   elements: Element[];
   forms: DiscoveredForm[];
   links: string[];
+  /** Discriminates URL-routed pages from tab-state click-to-reach pages. Default 'url'. */
+  kind?: 'url' | 'state';
+  /** Present iff kind === 'state'. */
+  stateContext?: {
+    baseRoute: string;
+    stateVar: string;
+    stateValue: string;
+    triggerHint: TriggerSelectorHint;
+  };
+  /** Telemetry: which source produced this page. */
+  navSource?: NavSource;
 };
 
 export type VisionSeverity = 'minor' | 'major' | 'critical';
@@ -275,11 +299,21 @@ export type VisualBaselineEntry = {
   screenshotPath: string;
 };
 
+export type CrawlTelemetry = {
+  seedRoutes: number;
+  staticNavigations: number;
+  runtimeEnumRoutes: number;
+  crawlLinkRoutes: number;
+  visitedPages: number;
+  stateKindPages: number;
+};
+
 export type DiscoveryOutput = {
   pages: DiscoveredPage[];
   apiTools: ToolMeta[];
   skipList: SkippedItem[];
   visualBaselineDetections?: VisualBaselineEntry[];
+  crawlTelemetry?: CrawlTelemetry;
 };
 
 export type SkippedItem = {
@@ -410,6 +444,14 @@ export type CrawlConfig = {
   walkTimeoutMs?: number;
   /** Same-origin only. Default: true. */
   sameOriginOnly?: boolean;
+  /** Include confidence:'low' navigations from surface_list_navigations. Default: false. */
+  includeLowConfidence?: boolean;
+  /** Settle delay (ms) after clicking a state-trigger before snapshotting. Default: 250. */
+  stateSettleMs?: number;
+  /** Disable runtime route enumeration. Default: false (enabled). */
+  disableRuntimeEnum?: boolean;
+  /** Cap on state-kind queue items to prevent runaway tab-state crawls. Default: 30. */
+  maxStateNavigations?: number;
 };
 
 export type BugHunterConfig = {
@@ -486,5 +528,13 @@ export type RunSummary = {
     abortReason?: 'auth' | 'transport' | 'cost_cap';
     costUsd?: number;
     costCapUsd?: number;
+  };
+  discovery?: {
+    seedRoutes: number;
+    staticNavigations: number;
+    runtimeEnumRoutes: number;
+    crawlLinkRoutes: number;
+    visitedPages: number;
+    stateKindPages: number;
   };
 };
