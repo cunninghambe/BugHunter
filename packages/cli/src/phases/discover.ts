@@ -14,7 +14,6 @@ import { crawlFromSeeds } from '../discovery/crawler.js';
 import { loginInBrowser } from '../discovery/browser-login.js';
 import { crossRefForms } from '../discovery/form-cross-ref.js';
 import { collapseElements } from '../discovery/element-collapse.js';
-import { resolveTriggerSelector } from '../discovery/trigger-resolve.js';
 import { classifyVisualAnomalies } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
@@ -236,7 +235,7 @@ export async function runDiscover(
   };
 }
 
-async function runVisualBaseline(
+export async function runVisualBaseline(
   pages: DiscoveredPage[],
   config: BugHunterConfig,
   roles: string[],
@@ -264,9 +263,10 @@ async function runVisualBaseline(
       if (page.kind === 'state' && page.stateContext !== undefined) {
         const ctx = page.stateContext;
         await browser.withTab(`${baseUrl}${ctx.baseRoute}`, undefined, async scope => {
-          const sel = await resolveTriggerSelector(scope, ctx.triggerHint);
-          if (sel === null || sel === '') throw new Error('trigger_not_found_in_vision');
-          await scope.click(sel);
+          const clickRes = await scope.clickByHint(ctx.triggerHint);
+          if (!clickRes.clicked) {
+            throw new Error(`trigger_not_clicked_in_vision: ${clickRes.reason}`);
+          }
           await new Promise<void>(r => { setTimeout(r, VISION_BASELINE_SETTLE_MS); });
           await scope.screenshot(screenshotPath);
         });
