@@ -30,6 +30,14 @@ import { log } from '../log.js';
 import { createId } from '@paralleldrive/cuid2';
 import { MAX_CONSECUTIVE_INFRA_FAILURES } from '../config.js';
 import type { PerfCollector } from '../perf/perf-collector.js';
+import { AXE_RUN_SCRIPT } from '../classify/accessibility.js';
+import type { A11yViolation } from '../classify/accessibility.js';
+import { classifyA11yBaseline } from '../classify/a11y-baseline.js';
+import { PlaywrightKeyboardTrapProbe } from '../adapters/keyboard-trap-probe.js';
+import { FocusTracker } from '../adapters/focus-tracker.js';
+import type { FocusAfterActionResult } from '../classify/a11y-baseline.js';
+import { classifySeoCorpus } from '../classify/seo.js';
+import type { SeoPageInput } from '../classify/seo.js';
 
 export type ExecuteOptions = {
   testCases: TestCase[];
@@ -66,6 +74,12 @@ export type ExecuteOptions = {
   pageUrls?: string[];
   /** v0.6 perf collector — when present, observes each UI occurrence via CDP. */
   perfCollector?: PerfCollector;
+  /** v0.6 a11y-strict: enable baseline axe scan + keyboard trap + focus-lost per page. */
+  a11yStrict?: boolean;
+  /** v0.6 SEO: enable SEO corpus pass after execute. */
+  seoEnabled?: boolean;
+  /** v0.6 keyboard trap: max Tab presses (default 20). */
+  keyboardTrapMaxPresses?: number;
 };
 
 export type ExecuteResult = {
@@ -76,16 +90,108 @@ export type ExecuteResult = {
   headerProbeDetections?: BugDetection[];
   /** v0.6 perf artifacts keyed by occurrenceId. Populated when perfCollector is set. */
   perfArtifacts?: Map<string, PerfArtifacts>;
+  /** v0.6 a11y baseline detections (per-page, once per route). */
+  a11yBaselineDetections?: BugDetection[];
+  /** v0.6 SEO corpus detections. */
+  seoDetections?: BugDetection[];
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, keyboardTrapMaxPresses } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
   // Initialize discoveredIds on runState for IDOR cross-user phase.
   const discoveredIds: DiscoveredIds = runState.discoveredIds ?? new Map<string, Map<string, Set<string>>>();
   runState.discoveredIds = discoveredIds;
+
+  // Per-page a11y baseline: track which routes have already been baselined.
+  const baselinedRoutes = new Set<string>();
+  const a11yBaselineDetections: BugDetection[] = [];
+  const seoPageInputs: SeoPageInput[] = [];
+
+  const keyboardProbe = new PlaywrightKeyboardTrapProbe();
+  const focusTracker = new FocusTracker();
+  const trapMaxPresses = keyboardTrapMaxPresses ?? 20;
+
+  /**
+   * Per-page baseline callback — runs once per unique pageRoute.
+   * Called from inside executeUiTestInner before the action executes.
+   * Returns a FocusAfterActionResult if the action is complete and focus should be tracked,
+   * or undefined to signal baseline-only (no focus observation this call).
+   */
+  async function onPageBaseline(scope: TabScope, pageRoute: string): Promise<FocusAfterActionResult | undefined> {
+    const isFirstVisit = !baselinedRoutes.has(pageRoute);
+    baselinedRoutes.add(pageRoute);
+
+    if (isFirstVisit) {
+      // Inject axe-core via a11y flag
+      if (a11yStrict === true || opts.enableA11y === true) {
+        const axeResult = await scope.evaluate(AXE_RUN_SCRIPT).catch(() => null);
+        const axeValue = axeResult?.value as { violations?: unknown } | null | undefined;
+        const violations: A11yViolation[] = Array.isArray(axeValue?.violations)
+          ? (axeValue.violations as A11yViolation[])
+          : [];
+
+        let keyboardTrap = undefined;
+        if (a11yStrict === true) {
+          keyboardTrap = await keyboardProbe.probe(scope, trapMaxPresses).catch(err => {
+            log.warn('keyboard-trap-probe: failed', { err: String(err), page: pageRoute });
+            return undefined;
+          });
+        }
+
+        const baselineDetections = classifyA11yBaseline({
+          pageRoute,
+          axeViolations: violations,
+          keyboardTrap,
+        });
+        a11yBaselineDetections.push(...baselineDetections);
+      }
+
+      // SEO scraping — always runs when seoEnabled (independent of a11y-strict)
+      if (seoEnabled === true) {
+        const seoData = await scope.evaluate(`
+          (function() {
+            var title = document.title || null;
+            var metaDesc = null;
+            var metaDescEl = document.querySelector('meta[name="description"]');
+            if (metaDescEl !== null) metaDesc = metaDescEl.getAttribute('content');
+            var canonicalHref = null;
+            var canonicalEl = document.querySelector('link[rel="canonical"]');
+            if (canonicalEl !== null) canonicalHref = canonicalEl.getAttribute('href');
+            var h1Count = document.querySelectorAll('h1').length;
+            var metaRobots = null;
+            var robotsEl = document.querySelector('meta[name="robots"]');
+            if (robotsEl !== null) metaRobots = robotsEl.getAttribute('content');
+            return { title: title || null, metaDescription: metaDesc, canonicalHref: canonicalHref, h1Count: h1Count, metaRobots: metaRobots };
+          })()
+        `).catch(() => null);
+
+        if (seoData?.value !== undefined && seoData.value !== null) {
+          const d = seoData.value as { title: string | null; metaDescription: string | null; canonicalHref: string | null; h1Count: number; metaRobots: string | null };
+          seoPageInputs.push({
+            pageRoute,
+            title: d.title,
+            metaDescription: d.metaDescription,
+            canonicalHref: d.canonicalHref,
+            h1Count: d.h1Count,
+            metaRobots: d.metaRobots,
+          });
+        }
+      }
+    }
+
+    // Focus tracking: call after every action if a11y-strict
+    if (a11yStrict === true) {
+      return focusTracker.observe(scope, 'page-action').catch(err => {
+        log.warn('focus-tracker: observe failed', { err: String(err), page: pageRoute });
+        return undefined;
+      });
+    }
+
+    return undefined;
+  }
 
   const uiQueue = testCases.filter(t => t.action.via === 'ui');
   const apiQueue = testCases.filter(t => t.action.via === 'api');
@@ -128,7 +234,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     try {
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
-        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds)
+        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline)
         : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds);
 
       // Perf drain: collect vitals/HAR after the action completes
@@ -206,7 +312,39 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   // Header probes: once per unique origin, after all tests so as not to inflate runtime at start.
   const headerProbeDetections = await runHeaderProbes(pageUrls, appBaseUrl, headerProbeEnabled, runState.config);
 
-  return { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts: perfArtifacts.size > 0 ? perfArtifacts : undefined };
+  // SEO corpus pass: classify across all scraped pages after execute completes.
+  let seoDetections: BugDetection[] | undefined;
+  if (seoEnabled === true && seoPageInputs.length > 0) {
+    const origin = appBaseUrl ?? (pageUrls?.[0] !== undefined ? new URL(pageUrls[0].startsWith('http') ? pageUrls[0] : `http://localhost${pageUrls[0]}`).origin : '');
+    const robotsTxt = await fetchRobotsTxt(origin);
+    seoDetections = classifySeoCorpus({ pages: seoPageInputs, robotsTxt, origin });
+    log.info('seo-corpus: complete', { pagesScraped: seoPageInputs.length, detections: seoDetections.length });
+  }
+
+  return {
+    results,
+    abortReason,
+    skipReasons,
+    headerProbeDetections,
+    perfArtifacts: perfArtifacts.size > 0 ? perfArtifacts : undefined,
+    a11yBaselineDetections: a11yBaselineDetections.length > 0 ? a11yBaselineDetections : undefined,
+    seoDetections: seoDetections !== undefined && seoDetections.length > 0 ? seoDetections : undefined,
+  };
+}
+
+/**
+ * Fetch robots.txt for the given origin. Returns null on any error.
+ * Cached in-memory for the life of the execute phase.
+ */
+async function fetchRobotsTxt(origin: string): Promise<string | null> {
+  if (origin === '') return null;
+  try {
+    const res = await fetch(`${origin}/robots.txt`);
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
 }
 
 type ArtifactPaths = Pick<RunPaths, 'actionLogsDir' | 'screenshotsDir' | 'domDir' | 'consoleDir' | 'networkDir'>;
@@ -255,10 +393,20 @@ async function executeUiTestInner(
   visionClient?: VisionClientInterface,
   visionBudget?: VisionBudget,
   discoveredIds?: DiscoveredIds,
+  onPageBaseline?: (scope: TabScope, pageRoute: string) => Promise<FocusAfterActionResult | undefined>,
 ): Promise<TestResult> {
   const bugs: BugDetection[] = [];
   const preConsoleErrors: ConsoleError[] = [];
   const preSnapshot = await scope.snapshot().catch(() => null);
+
+  // Per-page baseline hook (a11y-strict): runs once per route before any action.
+  let focusAfterThisAction: FocusAfterActionResult | undefined;
+  if (onPageBaseline !== undefined) {
+    focusAfterThisAction = await onPageBaseline(scope, tc.page).catch(err => {
+      log.warn('a11y-baseline: per-page hook failed', { err: String(err), page: tc.page });
+      return undefined;
+    });
+  }
 
   try {
     await scope.evaluate(MUTATION_OBSERVER_START_SCRIPT);
@@ -344,6 +492,15 @@ async function executeUiTestInner(
       };
     }
     throw new Error(`Browser action failed: ${String(err)}`);
+  }
+
+  // Focus-after-action probe: emit if focus landed on body/null after successful action.
+  if (focusAfterThisAction !== undefined) {
+    bugs.push(...classifyA11yBaseline({
+      pageRoute: tc.page,
+      axeViolations: [],
+      focusAfterAction: focusAfterThisAction,
+    }));
   }
 
   const mutResult = await scope.evaluate(MUTATION_OBSERVER_STOP_SCRIPT).catch(() => null);
@@ -482,6 +639,7 @@ async function executeUiTest(
   visionClient?: VisionClientInterface,
   visionBudget?: VisionBudget,
   discoveredIds?: DiscoveredIds,
+  onPageBaseline?: (scope: TabScope, pageRoute: string) => Promise<FocusAfterActionResult | undefined>,
 ): Promise<TestResult> {
   const start = Date.now();
   const occurrenceId = createId();
@@ -512,7 +670,7 @@ async function executeUiTest(
   let result: TestResult;
   try {
     result = await browser.withTab(pageUrl, headers, (scope) =>
-      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds)
+      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline)
     );
   } catch (err) {
     // withTab itself failed (openTab or closeTab threw, or fn re-threw after unexpected error)

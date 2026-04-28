@@ -109,6 +109,9 @@ export const ConfigSchema = z.object({
     cssThresholdGzipBytes: z.number().int().positive(),
     searchPaths: z.array(z.string()).optional(),
   }).optional(),
+  a11yStrict: z.boolean().optional(),
+  seoEnabled: z.boolean().optional(),
+  keyboardTrapMaxPresses: z.number().int().positive().optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

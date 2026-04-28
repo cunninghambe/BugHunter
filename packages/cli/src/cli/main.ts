@@ -44,6 +44,10 @@ Run options:
   --resume <runId>       Continue from saved state
   --force-resume         Resume even if SurfaceMCP revision differs
   --a11y                 Enable accessibility_critical checks
+  --a11y-strict          Enable a11y baseline + keyboard-trap + focus-lost (implies --a11y)
+  --seo                  Enable SEO hygiene cluster
+  --keyboard-trap-max=N  Max Tab presses during keyboard trap probe (default 20)
+  --no-seo-duplicate-titles  Suppress seo_title_duplicate_across_routes detections
   --include-external     Allow external side-effect API calls
 `;
 
@@ -131,6 +135,9 @@ async function main(): Promise<void> {
           nPlusOneThreshold: typeof flags['n-plus-one-threshold'] === 'string' ? parseInt(flags['n-plus-one-threshold'], 10) : undefined,
           bundleJsBudgetKb: typeof flags['bundle-js-budget'] === 'string' ? parseInt(flags['bundle-js-budget'], 10) : undefined,
           bundleCssBudgetKb: typeof flags['bundle-css-budget'] === 'string' ? parseInt(flags['bundle-css-budget'], 10) : undefined,
+          a11yStrict: flags['a11y-strict'] === true,
+          seoEnabled: flags['seo'] === true,
+          keyboardTrapMax: typeof flags['keyboard-trap-max'] === 'string' ? parseInt(flags['keyboard-trap-max'], 10) : undefined,
         });
         break;
       }
