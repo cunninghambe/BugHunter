@@ -31,6 +31,30 @@ export const CLUSTER_FULL_ARTIFACT_CAP = 50; // clusters larger than this use bo
 export const CLUSTER_FULL_ARTIFACT_HEAD = 3;
 export const CLUSTER_FULL_ARTIFACT_TAIL = 1;
 
+const SeedHookShellSchema = z.object({
+  kind: z.literal('shell'),
+  command: z.string().min(1),
+  cwd: z.string().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+  env: z.record(z.string()).optional(),
+  continueOnError: z.boolean().optional(),
+  description: z.string().optional(),
+});
+
+const SeedHookHttpSchema = z.object({
+  kind: z.literal('http'),
+  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
+  url: z.string().min(1),
+  headers: z.record(z.string()).optional(),
+  body: z.unknown().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+  expectedStatus: z.union([z.number().int(), z.array(z.number().int())]).optional(),
+  continueOnError: z.boolean().optional(),
+  description: z.string().optional(),
+});
+
+const SeedHookSchema = z.discriminatedUnion('kind', [SeedHookShellSchema, SeedHookHttpSchema]);
+
 export const ConfigSchema = z.object({
   projectName: z.string().min(1),
   surfaceMcpUrl: z.string().url(),
@@ -113,6 +137,13 @@ export const ConfigSchema = z.object({
   a11yStrict: z.boolean().optional(),
   seoEnabled: z.boolean().optional(),
   keyboardTrapMaxPresses: z.number().int().positive().optional(),
+  seedHooks: z.object({
+    beforeRun: z.array(SeedHookSchema).optional(),
+    afterLogin: z.array(SeedHookSchema).optional(),
+    perRole: z.record(z.array(SeedHookSchema)).optional(),
+    beforeExecute: z.array(SeedHookSchema).optional(),
+    cleanup: z.array(SeedHookSchema).optional(),
+  }).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {
