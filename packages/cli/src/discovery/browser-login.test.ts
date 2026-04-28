@@ -1,6 +1,6 @@
 // Unit tests for loginInBrowser — mocked adapters only
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loginInBrowser, fieldCandidates, looksLikeCssSelector } from './browser-login.js';
+import { loginInBrowser, fieldCandidates, looksLikeCssSelector, labelTextCandidates } from './browser-login.js';
 import type { BrowserMcpAdapter, CookieEntry } from '../adapters/browser-mcp.js';
 import type { SurfaceMcpAdapter, DescribeAuthResult } from '../adapters/surface-mcp.js';
 
@@ -78,8 +78,12 @@ function makeBrowser(opts: {
         return { value: { captcha: !!opts.captchaDetected, twoFa: !!opts.twoFaDetected } };
       }
       // waitForLoginFormReady poll — recognize and short-circuit so tests don't timeout.
-      if (script.includes('for(const s of sels)') || script.includes('for (const s of sels)')) {
+      if (script.includes('for(var i=0;i<sels.length;i++)') || script.includes('for(const s of sels)')) {
         return { value: !opts.fieldTypeFails };
+      }
+      // tryTypeByLabelText script (label-text fallback) — fails when fieldTypeFails.
+      if (script.includes("querySelectorAll('label')") && script.includes('htmlFor')) {
+        return { value: false };
       }
       // tryTypeByCssSelector script (native value setter) — fails when fieldTypeFails.
       if (script.includes('getOwnPropertyDescriptor')) {
@@ -407,8 +411,13 @@ function makeModalBrowser(opts: {
         return { value: { captcha: false, twoFa: false } };
       }
       // waitForLoginFormReady poll — recognize and short-circuit so tests don't timeout.
-      if (script.includes('for(const s of sels)') || script.includes('for (const s of sels)')) {
+      if (script.includes('for(var i=0;i<sels.length;i++)') || script.includes('for(const s of sels)')) {
         return { value: fieldFound };
+      }
+      // tryTypeByLabelText script (label-text fallback) — fail in modal tests so
+      // CSS-selector path is the one exercised.
+      if (script.includes("querySelectorAll('label')") && script.includes('htmlFor')) {
+        return { value: false };
       }
       // tryClickByText script — first call (with the plan's :has-text trigger
       // text) is the trigger; subsequent calls are submit-button attempts.
@@ -617,5 +626,40 @@ describe('fieldCandidates', () => {
 
   it('still emits input[type="email"] for email credKey', () => {
     expect(fieldCandidates('email', '#x')).toContain('input[type="email"]');
+  });
+
+  it('emits aria-label fallback for credKey', () => {
+    expect(fieldCandidates('password', 'password')).toContain('input[aria-label*="password" i]');
+  });
+
+  it('emits aria-label fallback for distinct domName', () => {
+    expect(fieldCandidates('password', 'user-pwd')).toContain('input[aria-label*="user-pwd" i]');
+  });
+
+  it('does not emit aria-label[domName] when domName is a CSS selector', () => {
+    const candidates = fieldCandidates('password', '#x');
+    expect(candidates).not.toContain('input[aria-label*="#x" i]');
+  });
+});
+
+describe('labelTextCandidates', () => {
+  it('includes credKey lowercased', () => {
+    expect(labelTextCandidates('password', 'password')).toContain('password');
+  });
+
+  it('includes humanized email aliases', () => {
+    const out = labelTextCandidates('email', 'email');
+    expect(out).toContain('email');
+    expect(out).toContain('email address');
+    expect(out).toContain('username');
+  });
+
+  it('skips CSS-selector-shaped domName', () => {
+    const out = labelTextCandidates('password', '#login-password');
+    expect(out).not.toContain('#login-password');
+  });
+
+  it('keeps non-selector domName when distinct from credKey', () => {
+    expect(labelTextCandidates('password', 'user-pwd')).toContain('user-pwd');
   });
 });
