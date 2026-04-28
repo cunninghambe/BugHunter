@@ -8,7 +8,7 @@ const EslintMessageSchema = z.object({
   message: z.string(),
   line: z.number().optional(),
   column: z.number().optional(),
-  nodeType: z.string().optional(),
+  nodeType: z.string().nullable().optional(),
 });
 
 export const EslintFileResultSchema = z.object({
