@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Contrast Failure Fixture</title>
+  <style>
+    /* Muted secondary text: very light gray on white — fails WCAG AA 4.5:1 */
+    .muted-text { color: #cccccc; background: #ffffff; }
+    .stat-card { color: #aaaaaa; background: #f5f5f5; padding: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Dashboard</h1>
+  <p class="muted-text">This text has insufficient color contrast (gray on white).</p>
+  <div class="stat-card">Stat value: 42</div>
+</body>
+</html>

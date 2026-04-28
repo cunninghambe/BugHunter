@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Focus Lost Fixture</title>
+  <script>
+    function handleClick() {
+      // Intentionally sends focus to body — loses focus
+      document.body.focus();
+    }
+  </script>
+</head>
+<body tabindex="-1">
+  <h1>Focus Lost Test</h1>
+  <p>Clicking the button below sends focus to body (lost).</p>
+  <button id="focus-killer" onclick="handleClick()">Click me (loses focus)</button>
+</body>
+</html>

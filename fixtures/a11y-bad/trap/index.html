@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Keyboard Trap Fixture</title>
+  <style>
+    #trap-input { display: block; }
+  </style>
+  <script>
+    // This script traps focus on the input by intercepting Tab keydown.
+    document.addEventListener('DOMContentLoaded', function() {
+      var el = document.getElementById('trap-input');
+      if (el !== null) {
+        el.addEventListener('keydown', function(e) {
+          if (e.key === 'Tab') {
+            e.preventDefault();
+            el.focus();
+          }
+        });
+        el.focus();
+      }
+    });
+  </script>
+</head>
+<body>
+  <h1>Keyboard Trap Test</h1>
+  <p>The input below traps focus on Tab key.</p>
+  <input id="trap-input" type="text" placeholder="Focus is trapped here" />
+  <button>This button is unreachable via Tab</button>
+</body>
+</html>
