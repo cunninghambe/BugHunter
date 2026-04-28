@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+// Fake claude binary for vision auth detection tests.
+// Responds to --version and --print flags with canned output.
+
+const args = process.argv.slice(2);
+
+if (args.includes('--version')) {
+  process.stdout.write('Claude CLI 1.0.0-fake\n');
+  process.exit(0);
+}
+
+if (args.includes('--print')) {
+  // Read stdin, ignore it, emit a canned response.
+  process.stdin.resume();
+  process.stdin.on('end', () => {
+    const response = {
+      result: 'FAKE_VISION_RESPONSE: The screenshot shows a normal UI state with no anomalies.',
+      usage: { input_tokens: 100, output_tokens: 20 },
+    };
+    process.stdout.write(JSON.stringify(response) + '\n');
+    process.exit(0);
+  });
+} else {
+  process.stderr.write(`fake-claude: unknown args: ${args.join(' ')}\n`);
+  process.exit(1);
+}
