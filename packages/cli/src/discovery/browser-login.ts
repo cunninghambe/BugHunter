@@ -5,6 +5,7 @@
 import type { BrowserMcpAdapter, CookieEntry } from '../adapters/browser-mcp.js';
 import type { DescribeAuthResult, SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { StructuredSelector } from '../adapters/browser-mcp-snapshot.js';
+import { parsePlaywrightHasText } from '../adapters/browser-mcp-snapshot.js';
 import { log } from '../log.js';
 
 export type LoginResult =
@@ -50,6 +51,132 @@ function fieldCandidates(credKey: string, domName: string): string[] {
 }
 
 const SUBMIT_LABELS = ['Sign in', 'Log in', 'Login', 'Continue', 'Submit'];
+
+// Settle delays for the evaluate-only modal flow (see §7 of spec).
+const MODAL_SETTLE_MS = 250;
+const FIELD_SETTLE_MS = 50;
+const SUBMIT_SETTLE_MS = 50;
+
+// ---------------------------------------------------------------------------
+// Evaluate-only helpers (used when uiTriggerSelector is a :has-text() form).
+//
+// IMPORTANT: These helpers MUST NOT call browser.snapshot(), browser.click(),
+// or browser.type() with a string selector. Camofox's snapshot tool
+// auto-dismisses overlay dialogs (clicking [aria-label="Close"]), which closes
+// the auth modal before the form can be filled. All DOM interaction during the
+// modal-open window must go through browser.evaluate() only.
+// ---------------------------------------------------------------------------
+
+/** Returns true if the selector is a Playwright :has-text() form. */
+export function isHasTextSelector(selector: string | undefined): boolean {
+  return selector !== undefined && parsePlaywrightHasText(selector) !== null;
+}
+
+/**
+ * Click the first visible element matching `tag` whose text content includes
+ * `text` (case-insensitive). Prefers an exact trim match; falls back to
+ * substring. Dispatches a real MouseEvent so React's delegated listeners fire.
+ * Returns true on success, false if no element matched.
+ */
+async function tryClickByText(
+  browser: BrowserMcpAdapter,
+  tag: string,
+  text: string
+): Promise<boolean> {
+  const script = `(function(){
+    var tag=${JSON.stringify(tag)};
+    var text=${JSON.stringify(text.toLowerCase())};
+    var els=Array.from(document.querySelectorAll(tag));
+    function visible(el){
+      var r=el.getBoundingClientRect();
+      return el.offsetParent!==null||(r.width>0&&r.height>0);
+    }
+    var candidates=els.filter(visible);
+    var target=candidates.find(function(el){
+      return (el.textContent||'').trim().toLowerCase()===text;
+    })||candidates.find(function(el){
+      return (el.textContent||'').toLowerCase().includes(text);
+    });
+    if(!target)return false;
+    target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window,button:0}));
+    return true;
+  })()`;
+  try {
+    const result = await browser.evaluate(script);
+    return result.value === true;
+  } catch (err) {
+    log.warn(`tryClickByText(${tag}, ${JSON.stringify(text)}) evaluate failed: ${String(err)}`);
+    return false;
+  }
+}
+
+/**
+ * Click the first visible element matching the given CSS selector via evaluate.
+ * Uses MouseEvent dispatch (not el.click()) for React compatibility.
+ */
+async function tryClickByCssSelector(
+  browser: BrowserMcpAdapter,
+  cssSelector: string
+): Promise<boolean> {
+  const script = `(function(){
+    var el=document.querySelector(${JSON.stringify(cssSelector)});
+    if(!el)return false;
+    el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window,button:0}));
+    return true;
+  })()`;
+  try {
+    const result = await browser.evaluate(script);
+    return result.value === true;
+  } catch (err) {
+    log.warn(`tryClickByCssSelector(${JSON.stringify(cssSelector)}) evaluate failed: ${String(err)}`);
+    return false;
+  }
+}
+
+/**
+ * Type into an input or textarea found by CSS selector. Uses the prototype's
+ * native value setter so React's input tracking sees the change, then fires
+ * synthetic input + change events. Returns true on success.
+ */
+async function tryTypeByCssSelector(
+  browser: BrowserMcpAdapter,
+  cssSelector: string,
+  value: string
+): Promise<boolean> {
+  const script = `(function(){
+    var el=document.querySelector(${JSON.stringify(cssSelector)});
+    if(!el)return false;
+    var proto=el instanceof HTMLTextAreaElement
+      ?HTMLTextAreaElement.prototype
+      :HTMLInputElement.prototype;
+    var setter=Object.getOwnPropertyDescriptor(proto,'value').set;
+    setter.call(el,${JSON.stringify(value)});
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    return true;
+  })()`;
+  try {
+    const result = await browser.evaluate(script);
+    return result.value === true;
+  } catch (err) {
+    log.warn(`tryTypeByCssSelector(${JSON.stringify(cssSelector)}) evaluate failed: ${String(err)}`);
+    return false;
+  }
+}
+
+/**
+ * Try each candidate label in order, clicking the first matching visible button.
+ * Used as submit fallback when no uiSubmitSelector is configured.
+ */
+async function tryClickFirstMatchingButton(
+  browser: BrowserMcpAdapter,
+  candidateTexts: string[]
+): Promise<boolean> {
+  for (const text of candidateTexts) {
+    if (await tryClickByText(browser, 'button', text)) return true;
+  }
+  return false;
+}
 
 async function tryClick(browser: BrowserMcpAdapter, selector: string | StructuredSelector): Promise<boolean> {
   try {
@@ -192,6 +319,84 @@ async function verifySuccess(
   };
 }
 
+/**
+ * Evaluate-only form fill + submit for :has-text() trigger selectors.
+ * Called from loginInBrowser when isHasTextSelector(plan.uiTriggerSelector) is true.
+ * Never calls browser.snapshot(), browser.click(), or browser.type() — only
+ * browser.evaluate() and browser.cookies() — so camofox's auto-dismiss does
+ * not close the modal between trigger-click and submit.
+ */
+async function loginViaModalEvaluate(
+  browser: BrowserMcpAdapter,
+  plan: BrowseableAuthPlan,
+  triggerSelector: string,
+  baseUrl: string,
+  loginUrl: string,
+  verifyTimeoutMs: number,
+  verifyPollMs: number
+): Promise<LoginResult> {
+  // Step 4: Click trigger via evaluate
+  const parsed = parsePlaywrightHasText(triggerSelector);
+  if (!parsed) {
+    return { ok: false, reason: 'trigger_not_found', detail: triggerSelector };
+  }
+  const triggerClicked = await tryClickByText(browser, parsed.tag, parsed.text);
+  if (!triggerClicked) {
+    return { ok: false, reason: 'trigger_not_found', detail: triggerSelector };
+  }
+  await sleep(MODAL_SETTLE_MS);
+
+  // Steps 5 & 6: Fill each field via evaluate
+  for (const [credKey, domName] of Object.entries(plan.fields)) {
+    const value = plan.values[domName] ?? '';
+    let typed = false;
+    for (const selector of fieldCandidates(credKey, domName)) {
+      if (await tryTypeByCssSelector(browser, selector, value)) {
+        typed = true;
+        break;
+      }
+    }
+    if (!typed) {
+      return {
+        ok: false,
+        reason: 'field_not_found',
+        detail: `No input matched any candidate selector for credential key "${credKey}" (domName "${domName}")`,
+      };
+    }
+    await sleep(FIELD_SETTLE_MS);
+  }
+
+  await sleep(SUBMIT_SETTLE_MS);
+
+  // Step 7 & 8: Click submit via evaluate
+  const submitOk = await clickSubmitEvaluate(browser, plan.uiSubmitSelector);
+  if (!submitOk) {
+    return {
+      ok: false,
+      reason: 'submit_not_found',
+      detail: 'Tried: uiSubmitSelector, SUBMIT_LABELS fallback',
+    };
+  }
+
+  // Step 9: Wait for success (evaluate-based; does not call snapshot)
+  return verifySuccess(browser, plan, baseUrl, loginUrl, verifyTimeoutMs, verifyPollMs);
+}
+
+async function clickSubmitEvaluate(
+  browser: BrowserMcpAdapter,
+  uiSubmitSelector: string | undefined
+): Promise<boolean> {
+  if (!uiSubmitSelector) {
+    return tryClickFirstMatchingButton(browser, SUBMIT_LABELS);
+  }
+  const hasText = parsePlaywrightHasText(uiSubmitSelector);
+  if (hasText) {
+    return tryClickByText(browser, hasText.tag, hasText.text);
+  }
+  // Plain CSS selector
+  return tryClickByCssSelector(browser, uiSubmitSelector);
+}
+
 export async function loginInBrowser(
   browser: BrowserMcpAdapter,
   surface: SurfaceMcpAdapter,
@@ -256,7 +461,23 @@ export async function loginInBrowser(
     if (val?.twoFa) return { ok: false, reason: 'two_factor_detected', detail: '2FA input detected on login page' };
   } catch { /* ignore detect errors */ }
 
-  // Step 4: Click trigger if configured
+  // Steps 4–8: Fill and submit the login form.
+  //
+  // When uiTriggerSelector is a Playwright :has-text() form, we use a fully
+  // evaluate-only path that never calls browser.snapshot(), browser.click(), or
+  // browser.type() with a string selector. Camofox's snapshot tool
+  // auto-dismisses overlay dialogs by clicking [aria-label="Close"], which
+  // would close the auth modal between trigger-click and form-fill. The only
+  // safe operations between modal-open and submit-verify are browser.evaluate()
+  // and browser.cookies().
+  if (isHasTextSelector(browseablePlan.uiTriggerSelector)) {
+    return loginViaModalEvaluate(
+      browser, browseablePlan, browseablePlan.uiTriggerSelector ?? '',
+      baseUrl, loginUrl, verifyTimeoutMs, verifyPollMs
+    );
+  }
+
+  // Step 4: Click trigger if configured (snapshot-driven path)
   if (browseablePlan.uiTriggerSelector) {
     const clicked = await tryClick(browser, browseablePlan.uiTriggerSelector);
     if (!clicked) {
