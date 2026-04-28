@@ -7,7 +7,9 @@ import { runPaths } from '../store/filesystem.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import { AnthropicVisionClient } from '../adapters/vision-client.js';
-import type { VisionAuth } from '../adapters/vision-client.js';
+import type { VisionClientInterface } from '../adapters/vision-client.js';
+import { ClaudeCliVisionClient } from '../adapters/vision-claude-cli.js';
+import { detectVisionAuth } from '../adapters/vision-auth-detect.js';
 import { runValidate } from '../phases/validate.js';
 import { runDiscover } from '../phases/discover.js';
 import { runPlan } from '../phases/plan.js';
@@ -61,23 +63,27 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
   const browser = resolved.browserMcpUrl !== undefined ? new CamofoxBrowserMcpAdapter(resolved.browserMcpUrl) : undefined;
 
-  // Resolve vision auth — Anthropic Messages API requires an API key.
-  // CLAUDE_CODE_OAUTH_TOKEN is NOT usable here (Messages API explicitly rejects OAuth tokens).
+  // Resolve vision auth — prefer Claude CLI subprocess (Q8); fall back to API key.
   const visionEnabled = resolved.vision?.enabled ?? false;
-  let visionAuth: VisionAuth | undefined;
+  let visionClient: VisionClientInterface | undefined;
+  let visionAuthMode: 'apiKey' | 'claudeCli' | undefined;
+  let visionAbortReason: 'auth' | undefined;
+
   if (visionEnabled) {
-    const apiKey =
-      resolved.vision?.apiKey ??
-      process.env['ANTHROPIC_API_KEY'] ??
-      process.env['CLAUDE_API_KEY'];
-    if (apiKey === undefined || apiKey === '') {
-      throw new Error(
-        'vision.enabled is true but no ANTHROPIC_API_KEY was found. ' +
-        'Set ANTHROPIC_API_KEY or vision.apiKey. ' +
-        'Note: CLAUDE_CODE_OAUTH_TOKEN does not work for the Messages API — provision a real API key at console.anthropic.com.'
-      );
+    // Inject config-level apiKey into the env so detectVisionAuth sees it.
+    const envWithKey = resolved.vision?.apiKey !== undefined
+      ? { ...process.env, ANTHROPIC_API_KEY: resolved.vision.apiKey }
+      : process.env;
+    const authResult = await detectVisionAuth(envWithKey);
+
+    if (authResult.kind === 'claudeCli') {
+      visionAuthMode = 'claudeCli';
+    } else if (authResult.kind === 'apiKey') {
+      visionAuthMode = 'apiKey';
+    } else {
+      log.warn('vision.enabled is true but no Claude CLI or ANTHROPIC_API_KEY found — vision disabled for this run');
+      visionAbortReason = 'auth';
     }
-    visionAuth = { kind: 'apiKey', apiKey };
   }
 
   // Resume or new run
@@ -96,11 +102,23 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const roles = opts.role !== undefined ? [opts.role] : undefined;
 
   // Construct vision budget + client (one per run; shared by discover + execute)
-  const resolvedVision = resolveVisionConfig(resolved.vision, visionAuth !== undefined ? '__present__' : '');
-  const visionBudget = visionEnabled ? makeVisionBudget(resolvedVision.maxCalls, resolvedVision.maxCostUsd) : undefined;
-  const visionClient = visionEnabled && visionAuth !== undefined
-    ? new AnthropicVisionClient(visionAuth, resolvedVision.model, 30_000)
+  const resolvedVision = resolveVisionConfig(resolved.vision, visionAuthMode !== undefined ? '__present__' : '');
+  const visionBudget = visionEnabled && visionAbortReason === undefined
+    ? makeVisionBudget(resolvedVision.maxCalls, resolvedVision.maxCostUsd)
     : undefined;
+
+  if (visionEnabled && visionAbortReason === undefined && visionAuthMode !== undefined) {
+    // Re-detect to get the concrete auth result for client construction
+    const envWithKey = resolved.vision?.apiKey !== undefined
+      ? { ...process.env, ANTHROPIC_API_KEY: resolved.vision.apiKey }
+      : process.env;
+    const authResult = await detectVisionAuth(envWithKey);
+    if (authResult.kind === 'claudeCli') {
+      visionClient = new ClaudeCliVisionClient(authResult.binaryPath, resolvedVision.model, 60_000);
+    } else if (authResult.kind === 'apiKey') {
+      visionClient = new AnthropicVisionClient({ kind: 'apiKey', apiKey: authResult.apiKey }, resolvedVision.model, 30_000);
+    }
+  }
 
   // Phase 0: validate
   const { revision, roles: discoveredRoles } = await runValidate({
@@ -244,14 +262,15 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const discoverySkipReasons = aggregateDiscoverySkips(discovery.skipList);
   const allSkipReasons = [...discoverySkipReasons, ...skipReasons];
 
-  const visionSummary = visionBudget !== undefined ? {
+  const visionSummary = visionEnabled ? {
     enabled: true,
-    called: visionBudget.consumed,
-    succeeded: visionBudget.consumed,
+    called: visionBudget?.consumed ?? 0,
+    succeeded: visionBudget?.consumed ?? 0,
     anomaliesFound: clusters.filter(c => c.kind === 'visual_anomaly').length,
-    abortReason: visionBudget.abortReason,
-    costUsd: Math.round(visionBudget.costUsd * 10000) / 10000,
-    costCapUsd: visionBudget.costCapUsd,
+    abortReason: visionAbortReason ?? visionBudget?.abortReason,
+    costUsd: visionBudget !== undefined ? Math.round(visionBudget.costUsd * 10000) / 10000 : 0,
+    costCapUsd: visionBudget?.costCapUsd,
+    authMode: visionAuthMode,
   } : undefined;
 
   runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {

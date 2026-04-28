@@ -1,6 +1,12 @@
-// React-specific error classification (§ 3.5).
+// React-specific error classification (§ 3.5) — extended for v0.5 T20 (hydration_mismatch).
 
 import type { BugDetection, ConsoleError } from '../types.js';
+
+const HYDRATION_PATTERNS = [
+  /Hydration failed because/i,
+  /Text content does not match server-rendered HTML/i,
+  /Did not match\. Server:.*Client:/i,
+];
 
 const REACT_PATTERNS = [
   /^Warning:/,
@@ -12,6 +18,10 @@ const REACT_PATTERNS = [
   /Invalid hook call/,
 ];
 
+export function isHydrationError(text: string): boolean {
+  return HYDRATION_PATTERNS.some(p => p.test(text));
+}
+
 export function isReactError(text: string): boolean {
   return REACT_PATTERNS.some(p => p.test(text));
 }
@@ -19,10 +29,21 @@ export function isReactError(text: string): boolean {
 export function classifyReactErrors(errors: ConsoleError[], pageRoute: string): BugDetection[] {
   return errors
     .filter(e => isReactError(e.text))
-    .map(e => ({
-      kind: 'react_error' as const,
-      rootCause: e.text,
-      stackTrace: e.stack,
-      pageRoute,
-    }));
+    .map(e => {
+      // Hydration errors are a more-specific subkind of react_error.
+      if (isHydrationError(e.text)) {
+        return {
+          kind: 'hydration_mismatch' as const,
+          rootCause: e.text,
+          stackTrace: e.stack,
+          pageRoute,
+        };
+      }
+      return {
+        kind: 'react_error' as const,
+        rootCause: e.text,
+        stackTrace: e.stack,
+        pageRoute,
+      };
+    });
 }

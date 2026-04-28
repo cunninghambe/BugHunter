@@ -32,7 +32,8 @@ export class VisionApiError extends Error {
 
 export type VisionAuth =
   | { kind: 'apiKey'; apiKey: string }
-  | { kind: 'oauth'; authToken: string };
+  | { kind: 'claudeCli'; binaryPath: string };
+// Note: 'oauth' removed — it never worked (see commit 6eb2d8f and v0.5 Q8).
 
 export class AnthropicVisionClient implements VisionClientInterface {
   constructor(
@@ -42,9 +43,10 @@ export class AnthropicVisionClient implements VisionClientInterface {
   ) {}
 
   async classify(req: VisionRequest): Promise<VisionResponse> {
-    const client = this.auth.kind === 'apiKey'
-      ? new Anthropic({ apiKey: this.auth.apiKey })
-      : new Anthropic({ authToken: this.auth.authToken });
+    if (this.auth.kind !== 'apiKey') {
+      throw new VisionApiError('auth', 'AnthropicVisionClient requires apiKey auth; use ClaudeCliVisionClient for claudeCli auth');
+    }
+    const client = new Anthropic({ apiKey: this.auth.apiKey });
     const imageBytes = fs.readFileSync(req.imagePath);
     const imageB64 = imageBytes.toString('base64');
     const mediaType = path.extname(req.imagePath).toLowerCase() === '.jpg'

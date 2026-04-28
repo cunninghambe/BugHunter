@@ -1,4 +1,4 @@
-// Core domain types for BugHunter v0.1
+// Core domain types for BugHunter v0.1 — extended for v0.5 security & hygiene.
 
 export type InputType =
   | 'text'
@@ -23,6 +23,7 @@ export type PaletteVariant = 'null' | 'happy' | 'edge' | 'out_of_bounds';
 export type BugKind =
   | 'console_error'
   | 'react_error'
+  | 'hydration_mismatch'
   | 'network_5xx'
   | 'network_4xx_unexpected'
   | '404_for_linked_route'
@@ -31,7 +32,25 @@ export type BugKind =
   | 'accessibility_critical'
   | 'dom_error_text'
   | 'surface_call_failed'
-  | 'visual_anomaly';
+  | 'visual_anomaly'
+  // v0.5 security / hygiene kinds
+  | 'missing_csp_header'
+  | 'permissive_cors'
+  | 'cookie_security_flags'
+  | 'csrf_missing_on_mutating_route'
+  | 'open_redirect'
+  | 'sensitive_data_in_url'
+  | 'stack_trace_leak_in_response'
+  | 'vulnerable_dependency_high'
+  | 'hardcoded_credentials_in_source'
+  | 'swallowed_error_empty_catch'
+  | 'idor_horizontal'
+  | 'idor_vertical_role_escalate'
+  | 'auth_bypass_via_unauthed_route'
+  | 'no_rate_limit_on_login'
+  | 'race_double_submit'
+  | 'optimistic_update_divergence'
+  | 'hallucinated_route';
 
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
 export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
@@ -359,6 +378,29 @@ export type TestResult = {
   postState?: PostState;
 };
 
+/** Context populated by the header-probe module for header/cookie/CSRF findings. */
+export type HeaderContext = {
+  headerName: string;
+  observedValue?: string;
+  expectedShape: string;
+};
+
+/** Context populated by the IDOR cross-user phase. */
+export type IdorContext = {
+  sourceRole: string;
+  targetRole: string;
+  resourceField: string;
+  resourceValue: string;
+};
+
+/** Context populated by the static-analysis runner for source-code findings. */
+export type StaticContext = {
+  tool: string;
+  ruleId: string;
+  sourceFile: string;
+  sourceLine?: number;
+};
+
 export type BugDetection = {
   kind: BugKind;
   rootCause: string;
@@ -380,6 +422,12 @@ export type BugDetection = {
   visualSuggestedFix?: string;
   /** Path to the screenshot that produced this detection. Always set when kind === 'visual_anomaly'. */
   screenshotPath?: string;
+  /** Populated for header/cookie/CSRF security findings. */
+  headerContext?: HeaderContext;
+  /** Populated for IDOR cross-user findings. */
+  idorContext?: IdorContext;
+  /** Populated for static-analysis findings. */
+  staticContext?: StaticContext;
 };
 
 export type RunPhase =
@@ -391,6 +439,12 @@ export type RunPhase =
   | 'cluster'
   | 'emit'
   | 'done';
+
+/**
+ * Resource IDs harvested per role during execute phase for cross-user IDOR probing.
+ * Outer key: role name. Middle key: field name (e.g. "tradeId"). Inner: unique values.
+ */
+export type DiscoveredIds = Map<string, Map<string, Set<string>>>;
 
 export type RunState = {
   runId: string;
@@ -410,6 +464,8 @@ export type RunState = {
   consecutiveInfraFailures: number;
   emitted: boolean;
   partialEmit: boolean;
+  /** Resource IDs harvested during execute for cross-user IDOR replay. Populated by execute phase. */
+  discoveredIds?: DiscoveredIds;
 };
 
 export type BrowserLoginConfig = {
@@ -452,6 +508,77 @@ export type CrawlConfig = {
   disableRuntimeEnum?: boolean;
   /** Cap on state-kind queue items to prevent runaway tab-state crawls. Default: 30. */
   maxStateNavigations?: number;
+};
+
+export type StaticAnalysisConfig = {
+  /** Master switch. Default: true. */
+  enabled?: boolean;
+  /** Minimum npm advisory severity to report. Default: 'high'. */
+  npmAudit?: { minSeverity?: 'high' | 'critical' };
+  /** Path to per-project allowlist file for static findings. */
+  allowFile?: string;
+  /** Glob pattern for frontend source files (hallucinated-route). Default: 'src/**\/*.{ts,tsx,js,jsx}'. */
+  frontendSourceGlob?: string;
+};
+
+export type HeadersConfig = {
+  /** CSP-specific overrides. */
+  csp?: {
+    /** Severity for unsafe-inline weakness. Default: 'informational'. */
+    severityForUnsafeInline?: 'informational' | 'major';
+    /** Skip CSP checks on localhost. Default: 'skip'. */
+    localhostMode?: 'skip' | 'flag';
+  };
+  /** Cookie flag overrides. */
+  cookies?: {
+    /** How to handle Secure flag absence on localhost. Default: 'skip'. */
+    localhostMode?: 'skip' | 'flag';
+  };
+  /** CSRF cookie name patterns. Default: ['csrf', 'xsrf', '_csrf']. */
+  csrf?: { cookieNamePatterns?: string[] };
+  /** Open-redirect param names to probe. */
+  redirect?: { paramNames?: string[] };
+  /** Sensitive URL param patterns. */
+  sensitiveUrl?: { paramPatterns?: string[] };
+  /** Stack-trace fingerprint segment count. Default: 3. */
+  stackTrace?: { frameFingerprintLength?: number };
+  /** Max origins to probe per run. Default: 100. */
+  maxHeaderProbes?: number;
+};
+
+export type AuthProbeConfig = {
+  /** Master switch. Default: false. Must be enabled via --enable-auth-probes. */
+  enabled?: boolean;
+  /** Max login attempts per probe run. Default: 50. */
+  maxAttempts?: number;
+  /** Sacrificial endpoint for rate-limit discovery. */
+  sacrificialEndpoint?: string;
+  /** Username for throwaway probe account. Default: 'bughunter-probe-user@invalid.test'. */
+  testAccountUsername?: string;
+};
+
+export type SyntheticConfig = {
+  /** Master switch. Default: false (scenarios mutate state). */
+  enabled?: boolean;
+  /** Specific scenarios to run. Omit to run all. */
+  scenarios?: Array<'race_double_submit' | 'optimistic_update_divergence' | 'no_rate_limit_on_login'>;
+  /** Allow destructive scenarios even on per-run reset policy. Default: false. */
+  allowDestructiveOnPerRunReset?: boolean;
+  /** Optimistic-divergence: minimum HTTP status to flag as failure. Default: 400. */
+  optimisticDivergence?: { statusThreshold?: number };
+  /** Race double-submit: interval between the two clicks. Default: 50ms. */
+  raceDoubleSubmit?: { intervalMs?: number };
+};
+
+export type CrossUserConfig = {
+  /** Enable cross-role IDOR probing. Default: true. */
+  crossRoleProbeEnabled?: boolean;
+  /** Enable anonymous-user probing. Default: true. */
+  anonymousProbeEnabled?: boolean;
+  /** Max replay attempts. Default: 200. */
+  maxReplays?: number;
+  /** Hints for which roles are admin. Default: ['admin', 'owner', 'superuser']. */
+  adminRoleHints?: string[];
 };
 
 export type BugHunterConfig = {
@@ -499,6 +626,16 @@ export type BugHunterConfig = {
   browserLogin?: BrowserLoginConfig;
   /** Vision-based visual anomaly detection. Default: disabled. */
   vision?: VisionConfig;
+  /** Static analysis tools (gitleaks, npm-audit, semgrep, eslint). Default: enabled. */
+  staticAnalysis?: StaticAnalysisConfig;
+  /** Header-probe security checks (CSP, CORS, cookies, CSRF). Default: enabled. */
+  headers?: HeadersConfig;
+  /** Auth-probe checks (no-rate-limit-on-login). Default: disabled (opt-in via --enable-auth-probes). */
+  authProbe?: AuthProbeConfig;
+  /** Synthetic interaction scenarios (race-double-submit, optimistic-divergence). Default: disabled. */
+  synthetic?: SyntheticConfig;
+  /** Cross-user IDOR probe config. Default: enabled. */
+  crossUser?: CrossUserConfig;
 };
 
 export type RunSummary = {
@@ -520,6 +657,8 @@ export type RunSummary = {
   testsRan: number;
   testsSkipped: number;
   skippedReasons: Array<{ reason: string; count: number }>;
+  /** Number of clusters suppressed via .bughunter/suppressions.json in this run. */
+  suppressedClusters?: number;
   vision?: {
     enabled: boolean;
     called: number;
@@ -528,6 +667,8 @@ export type RunSummary = {
     abortReason?: 'auth' | 'transport' | 'cost_cap';
     costUsd?: number;
     costCapUsd?: number;
+    /** Which auth path was used for vision. */
+    authMode?: 'apiKey' | 'claudeCli';
   };
   discovery?: {
     seedRoutes: number;
