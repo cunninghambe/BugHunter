@@ -137,6 +137,14 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     case 'xss_stored':
       // v0.8 placeholder — never fires in v0.7. Kept for cluster-collation forward-compat.
       return `xss_stored|${detection.endpoint ?? ''}|${detection.xssContext?.fieldName ?? ''}`;
+
+    // v0.7 auth-flow kinds
+    case 'auth_session_fixation': {
+      const cookie = detection.authFlowContext?.cookieName ?? '';
+      return `auth_session_fixation|${cookie}`;
+    }
+    case 'password_reset_token_reuse':
+      return `password_reset_token_reuse|${detection.endpoint ?? ''}`;
   }
 }
 

@@ -17,6 +17,7 @@ import { runExecute } from '../phases/execute.js';
 import { runClassify } from '../phases/classify.js';
 import { runCluster } from '../phases/cluster.js';
 import { runCrossUser } from '../phases/cross-user.js';
+import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
 import type { BugDetection, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry } from '../types.js';
@@ -226,6 +227,17 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     onClusterFound: () => runState.clusterCount,
   });
 
+  // Phase 3.6: auth-flow detectors (session fixation, reset token reuse, open redirect).
+  const { detections: authFlowDetections, testCases: authFlowTestCases } = await runAuthFlow({
+    runState,
+    surface,
+    browser,
+    appBaseUrl: resolved.appBaseUrl ?? new URL(resolved.surfaceMcpUrl).origin,
+    roles: effectiveRoles,
+    maxClusters: resolved.maxBugs,
+    onClusterFound: () => runState.clusterCount,
+  });
+
   // Synthesise visual baseline test cases + results (Option a from § 4.3.1).
   // These bypass execute and are merged directly into classify + cluster inputs.
   const { baselineTestCases, baselineResults } = synthesiseVisualBaselineCases(
@@ -237,6 +249,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(discovery.staticDetections ?? []),
     ...(headerProbeDetections ?? []),
     ...crossUserDetections.map(d => d.detection),
+    ...authFlowDetections.map(d => d.detection),
   ];
   const { staticTestCases, staticResults } = synthesiseFakeDetectionCases(runId, staticDetectionList);
 
@@ -248,7 +261,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   // Phase 5: cluster
   const paths = runPaths(opts.projectDir, runId);
-  const allTestCases = [...testCases, ...baselineTestCases, ...staticTestCases, ...crossUserTestCases];
+  const allTestCases = [...testCases, ...baselineTestCases, ...staticTestCases, ...crossUserTestCases, ...authFlowTestCases];
   const stateByTestId = new Map<string, { preState: PreState; postState: PostState }>(
     results
       .filter(r => r.postState !== undefined)

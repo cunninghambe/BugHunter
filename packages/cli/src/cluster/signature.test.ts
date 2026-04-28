@@ -160,3 +160,37 @@ describe('clusterSignature — v0.7 XSS kinds', () => {
     }
   });
 });
+
+describe('clusterSignature — v0.7 auth-flow kinds', () => {
+  it('auth_session_fixation collapses by cookie name', () => {
+    const a = make('auth_session_fixation', {
+      authFlowContext: { invariant: 'session_id_rotates', cookieName: 'tj_sess', preValuePrefix: 'abc12345', postValuePrefix: 'abc12345' },
+    });
+    const b = make('auth_session_fixation', {
+      authFlowContext: { invariant: 'session_id_rotates', cookieName: 'tj_sess', preValuePrefix: 'xyzxyzxy', postValuePrefix: 'xyzxyzxy' },
+    });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+    expect(clusterSignature(a)).toBe('auth_session_fixation|tj_sess');
+  });
+
+  it('password_reset_token_reuse collapses by endpoint', () => {
+    const a = make('password_reset_token_reuse', {
+      endpoint: '/auth/reset',
+      authFlowContext: { invariant: 'reset_token_single_use', reuseCount: 2 },
+    });
+    const b = make('password_reset_token_reuse', {
+      endpoint: '/auth/reset',
+      authFlowContext: { invariant: 'reset_token_single_use', reuseCount: 2 },
+    });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+    expect(clusterSignature(a)).toBe('password_reset_token_reuse|/auth/reset');
+  });
+
+  it('all auth-flow kinds return non-empty strings', () => {
+    for (const kind of ['auth_session_fixation', 'password_reset_token_reuse'] as BugDetection['kind'][]) {
+      const sig = clusterSignature(make(kind));
+      expect(sig.length).toBeGreaterThan(0);
+      expect(sig).toContain('|');
+    }
+  });
+});

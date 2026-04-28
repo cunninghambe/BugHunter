@@ -54,7 +54,10 @@ export type BugKind =
   // v0.7 XSS kinds
   | 'xss_reflected'
   | 'xss_dom'
-  | 'xss_stored';   // placeholder; v0.8
+  | 'xss_stored'   // placeholder; v0.8
+  // v0.7 auth-flow kinds
+  | 'auth_session_fixation'
+  | 'password_reset_token_reuse';
 
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
 export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
@@ -409,6 +412,23 @@ export type StaticContext = {
   sourceLine?: number;
 };
 
+/** Context populated by auth-flow detectors. */
+export type AuthFlowContext = {
+  /** What the detector was checking. */
+  invariant: 'session_id_rotates' | 'reset_token_single_use' | 'redirect_param_validates';
+  /** For session_fixation: cookie name observed. */
+  cookieName?: string;
+  /** For session_fixation: pre/post values (truncated to 8 chars for log safety). */
+  preValuePrefix?: string;
+  postValuePrefix?: string;
+  /** For password_reset: how many times the same token was redeemed successfully. */
+  reuseCount?: number;
+  /** For open_redirect: which param accepted off-origin. */
+  paramName?: string;
+  /** The off-origin target that succeeded. */
+  redirectTarget?: string;
+};
+
 /** Context populated by XSS detection. */
 export type XssContext = {
   /** The canary variant that fired ('script_tag_basic', etc.). */
@@ -452,6 +472,8 @@ export type BugDetection = {
   staticContext?: StaticContext;
   /** Populated for XSS findings. */
   xssContext?: XssContext;
+  /** Populated for auth-flow findings. */
+  authFlowContext?: AuthFlowContext;
 };
 
 export type RunPhase =
@@ -596,6 +618,27 @@ export type SyntheticConfig = {
   raceDoubleSubmit?: { intervalMs?: number };
 };
 
+export type AuthFlowConfig = {
+  /** Master switch. Default: false (opt-in). */
+  enabled?: boolean;
+  /** Which sub-checks to run. Defaults: all. */
+  checks?: Array<'session_fixation' | 'password_reset_reuse' | 'open_redirect'>;
+  /** Email used for password-reset probes. Default: config.authProbe.testAccountUsername. */
+  testEmail?: string;
+  /** For open_redirect: param names to test. */
+  redirectParamNames?: string[];
+  /** For open_redirect: routes to probe explicitly. */
+  redirectRoutes?: string[];
+  /** For open_redirect: max routes to probe. Default: 30. */
+  maxRedirectProbes?: number;
+  /** For password_reset_reuse: tool/route id of the request-reset endpoint. */
+  requestResetToolId?: string;
+  /** For password_reset_reuse: tool/route id of the consume-reset endpoint. */
+  consumeResetToolId?: string;
+  /** For session_fixation: max wait for cookie capture in ms. Default: 5000. */
+  cookieCaptureTimeoutMs?: number;
+};
+
 export type XssConfig = {
   /** Master switch. Default: true (opt-out). */
   enabled?: boolean;
@@ -677,6 +720,8 @@ export type BugHunterConfig = {
   crossUser?: CrossUserConfig;
   /** XSS canary injection config. Default: enabled. */
   xss?: XssConfig;
+  /** Auth-flow detectors (session fixation, reset token reuse, open redirect). Default: disabled. */
+  authFlow?: AuthFlowConfig;
 };
 
 export type RunSummary = {
