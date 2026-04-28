@@ -847,3 +847,64 @@ describe('SPA deep crawl — mixed sources and dedup (C17–C20)', () => {
     expect(result2.visited).toContain('/guessed');
   });
 });
+
+describe('SPA deep crawl — tab-state-only integration', () => {
+  // Integration: surface_list_pages returns only the crawl_seed; surface_list_navigations
+  // returns N kind:'state' navs. After SPEC_PAGE_KIND_FIX this matches a real tab-state app.
+  // Asserts: N+1 DiscoveredPages, each state page carries stateContext, click called N times.
+  it('seed + 3 state navs → 4 DiscoveredPages, one URL + three state', async () => {
+    const surface = makeSurface({
+      surface_describe_self: vi.fn().mockResolvedValue({
+        name: 'tab-state-app', stack: 'vite', baseUrl: 'http://h:1',
+        toolRevision: 1, pageRevision: 1,
+        capabilities: { listPages: true, listNavigations: true, enumerateRoutesRuntime: false, crawlSeed: true },
+      }),
+      surface_list_navigations: vi.fn().mockResolvedValue({
+        revision: 1,
+        navigations: [
+          { label: 'Dashboard', method: 'state-setter', target: 'dashboard', kind: 'state',
+            stateVar: 'tab', triggerSelectorHint: { text: 'Dashboard' },
+            sourceFile: 'src/App.tsx', sourceLine: 10, confidence: 'high' },
+          { label: 'Trades', method: 'state-setter', target: 'trades', kind: 'state',
+            stateVar: 'tab', triggerSelectorHint: { text: 'Trades' },
+            sourceFile: 'src/App.tsx', sourceLine: 11, confidence: 'high' },
+          { label: 'Settings', method: 'state-setter', target: 'settings', kind: 'state',
+            stateVar: 'tab', triggerSelectorHint: { testId: 'nav-settings' },
+            sourceFile: 'src/App.tsx', sourceLine: 12, confidence: 'high' },
+        ],
+        skips: [],
+      }),
+    });
+
+    const clickMock = vi.fn().mockResolvedValue({ clicked: true });
+    const browser: BrowserMcpAdapter = {
+      navigate: vi.fn().mockResolvedValue({ url: 'http://h:1/' }),
+      evaluate: vi.fn().mockImplementation(async (script: string) => {
+        if (script === 'location.pathname') return { value: '/' };
+        const match = /document\.querySelector\((.+?)\)/.exec(script);
+        if (match) return { value: true };
+        return { value: makeDomResult([]) };
+      }),
+      click: clickMock,
+      scroll: vi.fn().mockResolvedValue({ scrolled: true }),
+      type: vi.fn(), snapshot: vi.fn(), screenshot: vi.fn(),
+      listTabs: vi.fn(), closeTab: vi.fn(), openTab: vi.fn(), closeTabExplicit: vi.fn(), withTab: vi.fn(),
+    } as unknown as BrowserMcpAdapter;
+
+    const result = await crawlFromSeeds(browser, makeOpts({ surface, stateSettleMs: 0 }));
+
+    expect(result.pages).toHaveLength(4);
+    expect(result.pages.filter(p => p.kind === 'state')).toHaveLength(3);
+    expect(result.pages.find(p => p.kind === undefined || p.kind === 'url')?.route).toBe('/');
+
+    const dashboard = result.pages.find(p => p.stateContext?.stateValue === 'dashboard');
+    expect(dashboard).toBeDefined();
+    expect(dashboard!.stateContext!.stateVar).toBe('tab');
+    expect(dashboard!.stateContext!.triggerHint.text).toBe('Dashboard');
+
+    expect(clickMock).toHaveBeenCalledTimes(3);
+
+    expect(result.telemetry.staticNavigations).toBe(3);
+    expect(result.telemetry.stateKindPages).toBe(3);
+  });
+});
