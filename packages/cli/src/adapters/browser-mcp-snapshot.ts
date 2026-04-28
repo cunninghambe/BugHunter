@@ -97,6 +97,30 @@ function resolveStructured(sel: StructuredSelector, nodes: SnapshotNode[]): stri
   return matches[idx]?.ref ?? null;
 }
 
+/**
+ * Parse Playwright's `tag:has-text("text")` extension into {tag, text}.
+ * Accepts double-quote and single-quote forms. Returns null if the input
+ * does not match the expected shape.
+ *
+ * Pure function. No I/O.
+ */
+export function parsePlaywrightHasText(
+  selector: string
+): { tag: string; text: string } | null {
+  const m = /^(\w+):has-text\((?:"([^"]+)"|'([^']+)')\)$/.exec(selector);
+  if (!m) return null;
+  return { tag: m[1], text: m[2] ?? m[3] ?? '' };
+}
+
+function resolveHasText(tag: string, text: string, nodes: SnapshotNode[]): string | null {
+  const lowerTag = tag.toLowerCase();
+  const lowerText = text.toLowerCase();
+  const found = nodes.find(
+    n => n.role === lowerTag && (n.name ?? '').toLowerCase().includes(lowerText)
+  );
+  return found?.ref ?? null; // null signals evaluate fallback
+}
+
 function resolveStringSelector(selector: string, nodes: SnapshotNode[]): string | null {
   // Step 7: .class or :nth-of-type → needs DOM evaluate
   if (selector.startsWith('.') || selector.includes(':nth-of-type(')) {
@@ -120,6 +144,12 @@ function resolveStringSelector(selector: string, nodes: SnapshotNode[]): string 
   // Step 6: plain tag selector
   if (/^\w+$/.test(selector)) {
     return resolvePlainTag(selector, nodes);
+  }
+
+  // Playwright :has-text() extension
+  const hasText = parsePlaywrightHasText(selector);
+  if (hasText) {
+    return resolveHasText(hasText.tag, hasText.text, nodes);
   }
 
   // Unknown format — signal evaluate fallback
