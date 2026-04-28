@@ -501,8 +501,11 @@ async function executeApiTest(
         }
       }
 
-      // Network classification via status
-      if (callResult.status) {
+      // Network classification via status.
+      // status: 0 means "request never completed" (connectivity failure, CORS, abort) —
+      // treat it as a real signal, not as "no status reported". Only skip when
+      // the field is entirely absent (undefined).
+      if (callResult.status !== undefined) {
         const req: NetworkRequest = {
           method: 'POST',
           path: tc.action.toolId,

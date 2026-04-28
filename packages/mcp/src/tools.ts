@@ -122,8 +122,10 @@ export function registerTools(server: McpServer): void {
     'Get bugs from the latest run.',
     {
       project: z.string().min(1),
-      limit: z.number().int().optional(),
-      kind: z.string().optional(),
+      // limit: must be >= 1; limit: 0 would return 0 results and is rejected at schema level.
+      limit: z.number().int().positive().optional(),
+      // kind: empty string would match no clusters — require non-empty when provided.
+      kind: z.string().min(1).optional(),
     },
     // eslint-disable-next-line @typescript-eslint/require-await -- MCP tool handler interface contract; uses synchronous file I/O
     async (args) => {
@@ -136,8 +138,8 @@ export function registerTools(server: McpServer): void {
         const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
         let clusters = lines.map(l => JSON.parse(l) as BugCluster);
 
-        if (args.kind) clusters = clusters.filter(c => c.kind === args.kind);
-        if (args.limit) clusters = clusters.slice(0, args.limit);
+        if (args.kind !== undefined) clusters = clusters.filter(c => c.kind === args.kind);
+        if (args.limit !== undefined) clusters = clusters.slice(0, args.limit);
 
         return toolOk(clusters.map(c => ({
           id: c.id,

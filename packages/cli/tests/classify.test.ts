@@ -57,6 +57,17 @@ describe('classifyNetworkRequests', () => {
     const result = classifyNetworkRequests(reqs, 'success', true);
     expect(result.every(r => r.kind !== ('infrastructure_failure' as string))).toBe(true);
   });
+
+  // B-1 regression: status 0 must surface as a real classification (connectivity failure),
+  // not be silently dropped as if no status was reported.
+  it('B-1: status 0 (connectivity failure) is classified as network_5xx, not silently dropped', () => {
+    const reqs: NetworkRequest[] = [{ method: 'POST', path: '/api/orders', status: 0, duration: 0 }];
+    const result = classifyNetworkRequests(reqs, 'success', true);
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('network_5xx');
+    expect(result[0].status).toBe(0);
+    expect(result[0].rootCause).toContain('Connectivity failure');
+  });
 });
 
 describe('classifyMissingStateChange', () => {
