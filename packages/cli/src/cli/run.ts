@@ -23,6 +23,10 @@ import { resolveVisionConfig } from '../classify/vision.js';
 import type { BugDetection, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry } from '../types.js';
 import { runEmit } from '../phases/emit.js';
 import { log } from '../log.js';
+import { createCdpSession } from '../adapters/cdp-session.js';
+import { createPerfCollector } from '../perf/perf-collector.js';
+import { runBundleProbe } from '../phases/bundle-probe.js';
+import type { RunSummary } from '../types.js';
 
 function aggregateDiscoverySkips(skipList: SkippedItem[]): Array<{ reason: string; count: number }> {
   const counts = new Map<string, number>();
@@ -47,10 +51,50 @@ export type RunOptions = {
   a11y?: boolean;
   includeExternal?: boolean;
   strict?: boolean;
+  // v0.6 performance flags
+  enablePerf?: boolean;
+  enableBundleProbe?: boolean;
+  enableMemoryProfile?: boolean;
+  lcpThreshold?: number;
+  inpThreshold?: number;
+  clsThreshold?: number;
+  nPlusOneThreshold?: number;
+  bundleJsBudgetKb?: number;
+  bundleCssBudgetKb?: number;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
   const config = loadConfig(opts.projectDir);
+
+  // Build perf config from CLI flags (flags override config file)
+  const perfEnabled = opts.enablePerf === true || (config.perf?.enabled ?? false);
+  const bundleProbeEnabled = opts.enableBundleProbe === true || (config.bundleProbe?.enabled ?? false);
+  const heapSampling = opts.enableMemoryProfile === true || (config.perf?.heapSampling ?? false);
+
+  const perfConfig = perfEnabled ? {
+    enabled: true,
+    heapSampling,
+    vitalsThresholds: {
+      lcpMs: opts.lcpThreshold ?? config.perf?.vitalsThresholds?.lcpMs ?? 2500,
+      inpMs: opts.inpThreshold ?? config.perf?.vitalsThresholds?.inpMs ?? 200,
+      cls: opts.clsThreshold ?? config.perf?.vitalsThresholds?.cls ?? 0.1,
+    },
+    requestHygiene: {
+      enabled: true,
+      nPlusOneThreshold: opts.nPlusOneThreshold ?? config.perf?.requestHygiene?.nPlusOneThreshold ?? 8,
+    },
+    longTaskMs: config.perf?.longTaskMs ?? 50,
+    rerenderCountThreshold: config.perf?.rerenderCountThreshold ?? 10,
+    rerenderWindowMs: config.perf?.rerenderWindowMs ?? 5000,
+  } : config.perf;
+
+  const bundleProbeConfig = bundleProbeEnabled ? {
+    enabled: true,
+    jsThresholdGzipBytes: (opts.bundleJsBudgetKb ?? 500) * 1024,
+    cssThresholdGzipBytes: (opts.bundleCssBudgetKb ?? 200) * 1024,
+    searchPaths: config.bundleProbe?.searchPaths,
+  } : config.bundleProbe;
+
   const resolved = resolvedConfig({
     ...config,
     ...(opts.maxBugs !== undefined ? { maxBugs: opts.maxBugs } : {}),
@@ -60,6 +104,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(opts.apiConcurrency !== undefined ? { apiConcurrency: opts.apiConcurrency } : {}),
     ...(opts.includeExternal !== undefined ? { externalIntegrationsAllowed: opts.includeExternal } : {}),
     ...(opts.a11y !== undefined ? { enableA11y: opts.a11y } : {}),
+    ...(perfConfig !== undefined ? { perf: perfConfig } : {}),
+    ...(bundleProbeConfig !== undefined ? { bundleProbe: bundleProbeConfig } : {}),
   });
 
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
@@ -185,8 +231,34 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   // Page URLs for header probing — one per discovered page route.
   const pageUrls = discovery.pages.map(p => p.route);
 
+  // v0.6: create perf collector when --enable-perf is set
+  let perfCollector: import('../perf/perf-collector.js').PerfCollector | undefined;
+  let cdpSessionHandle: import('../adapters/cdp-session.js').CdpSession | undefined;
+
+  if (perfEnabled) {
+    const cdpResult = await createCdpSession();
+    if (cdpResult.ok) {
+      const rPaths = runPaths(opts.projectDir, runId);
+      const perfDir = `${rPaths.runDir}/perf`;
+      try {
+        perfCollector = await createPerfCollector({
+          cdpSession: cdpResult.session,
+          perfDir,
+          networkDir: rPaths.networkDir,
+          heapSampling,
+        });
+        cdpSessionHandle = cdpResult.session;
+        log.info('perf-collector: CDP session started');
+      } catch (err) {
+        log.warn('perf-collector: failed to create collector', { err: String(err) });
+      }
+    } else {
+      log.warn('perf-collector: failed to start CDP session', { reason: cdpResult.reason });
+    }
+  }
+
   // Phase 3: execute
-  const { results, abortReason, skipReasons, headerProbeDetections } = await runExecute({
+  const { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts } = await runExecute({
     testCases,
     runState,
     browser,
@@ -206,7 +278,15 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     visionBudget,
     headerProbeEnabled: resolved.headers?.enabled ?? true,
     pageUrls,
+    perfCollector,
   });
+
+  // Close CDP session after execute completes
+  if (cdpSessionHandle !== undefined) {
+    await cdpSessionHandle.close().catch(err =>
+      log.warn('perf-collector: CDP session close failed', { err: String(err) })
+    );
+  }
 
   if (abortReason !== undefined) {
     log.warn(`Run stopped: ${abortReason}`);
@@ -309,16 +389,58 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     authMode: visionAuthMode,
   } : undefined;
 
+  // v0.6: build perf summary from collected artifacts
+  const perfSummary: RunSummary['perfSummary'] = buildPerfSummary(perfArtifacts);
+
+  // v0.6: run bundle probe sidecar
+  const bundleProbeResult = bundleProbeConfig !== undefined
+    ? runBundleProbe({ projectDir: opts.projectDir, config: bundleProbeConfig })
+    : undefined;
+  const bundleSummary: RunSummary['bundleSummary'] = bundleProbeResult !== undefined
+    ? {
+        initialJsBytesGzipped: bundleProbeResult.totalInitialJsGzip,
+        initialCssBytesGzipped: bundleProbeResult.totalInitialCssGzip,
+        budgetExceeded: bundleProbeResult.budgetExceeded,
+      }
+    : undefined;
+
   runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
     testsPlanned: testCases.length,
     testsRan: results.length,
     testsSkipped: testCases.length - results.length,
     skipReasons: allSkipReasons,
     vision: visionSummary,
+    ...(perfSummary !== undefined ? { perfSummary } : {}),
+    ...(bundleSummary !== undefined ? { bundleSummary } : {}),
   });
   runState.emitted = true;
   runState.phase = 'done';
   saveRunState(runState);
+}
+
+function buildPerfSummary(
+  perfArtifacts: Map<string, import('../types.js').PerfArtifacts> | undefined
+): RunSummary['perfSummary'] {
+  if (perfArtifacts === undefined || perfArtifacts.size === 0) return undefined;
+
+  const vitalsByPage: Record<string, { lcp?: number; inp?: number; cls?: number }> = {};
+  let longestTaskMs = 0;
+  let totalNetworkRequests = 0;
+
+  for (const perf of perfArtifacts.values()) {
+    for (const vital of perf.webVitals) {
+      const page = vitalsByPage[perf.occurrenceId] ?? {};
+      if (vital.name === 'LCP') page.lcp = vital.value;
+      if (vital.name === 'INP') page.inp = vital.value;
+      if (vital.name === 'CLS') page.cls = vital.value;
+      vitalsByPage[perf.occurrenceId] = page;
+    }
+    for (const task of perf.longTasks) {
+      if (task.duration > longestTaskMs) longestTaskMs = task.duration;
+    }
+  }
+
+  return { vitalsByPage, longestTaskMs, totalNetworkRequests };
 }
 
 /**

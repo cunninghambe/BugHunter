@@ -106,6 +106,7 @@ async function main(): Promise<void> {
           );
           return;
         }
+        const enableAll = flags['enable-all-v06'] === true;
         await runCommand({
           projectDir,
           route: typeof flags['route'] === 'string' ? flags['route'] : undefined,
@@ -121,6 +122,15 @@ async function main(): Promise<void> {
           a11y: flags['a11y'] === true,
           includeExternal: flags['include-external'] === true,
           strict: flags['strict'] === true,
+          enablePerf: flags['enable-perf'] === true || enableAll,
+          enableBundleProbe: flags['enable-bundle-probe'] === true || enableAll,
+          enableMemoryProfile: flags['enable-memory-profile'] === true || enableAll,
+          lcpThreshold: typeof flags['lcp-threshold'] === 'string' ? parseInt(flags['lcp-threshold'], 10) : undefined,
+          inpThreshold: typeof flags['inp-threshold'] === 'string' ? parseInt(flags['inp-threshold'], 10) : undefined,
+          clsThreshold: typeof flags['cls-threshold'] === 'string' ? parseFloat(flags['cls-threshold']) : undefined,
+          nPlusOneThreshold: typeof flags['n-plus-one-threshold'] === 'string' ? parseInt(flags['n-plus-one-threshold'], 10) : undefined,
+          bundleJsBudgetKb: typeof flags['bundle-js-budget'] === 'string' ? parseInt(flags['bundle-js-budget'], 10) : undefined,
+          bundleCssBudgetKb: typeof flags['bundle-css-budget'] === 'string' ? parseInt(flags['bundle-css-budget'], 10) : undefined,
         });
         break;
       }

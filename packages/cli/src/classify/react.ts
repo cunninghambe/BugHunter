@@ -6,13 +6,15 @@ const HYDRATION_PATTERNS = [
   /Hydration failed because/i,
   /Text content does not match server-rendered HTML/i,
   /Did not match\. Server:.*Client:/i,
+  // React 16
+  /Did not expect server HTML to contain/i,
 ];
 
 const REACT_PATTERNS = [
   /^Warning:/,
   /Cannot update during (an existing state transition|render)/,
   /hydrat/i,
-  /did not match/i,
+  /d(?:id|oes) not match/i,
   /error boundary/i,
   /Each child in a list/,
   /Invalid hook call/,

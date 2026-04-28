@@ -29,6 +29,7 @@ import { runPaths, type RunPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
 import { createId } from '@paralleldrive/cuid2';
 import { MAX_CONSECUTIVE_INFRA_FAILURES } from '../config.js';
+import type { PerfCollector } from '../perf/perf-collector.js';
 
 export type ExecuteOptions = {
   testCases: TestCase[];
@@ -63,6 +64,8 @@ export type ExecuteOptions = {
   headerProbeEnabled?: boolean;
   /** Discovered page URLs to probe (from DiscoveryOutput.pages). Probe deduped by origin. */
   pageUrls?: string[];
+  /** v0.6 perf collector — when present, observes each UI occurrence via CDP. */
+  perfCollector?: PerfCollector;
 };
 
 export type ExecuteResult = {
@@ -71,10 +74,12 @@ export type ExecuteResult = {
   skipReasons: Array<{ reason: string; count: number }>;
   /** Security header probe detections — emitted before test execution. */
   headerProbeDetections?: BugDetection[];
+  /** v0.6 perf artifacts keyed by occurrenceId. Populated when perfCollector is set. */
+  perfArtifacts?: Map<string, import('../types.js').PerfArtifacts>;
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
@@ -86,6 +91,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   const apiQueue = testCases.filter(t => t.action.via === 'api');
 
   const results: TestResult[] = [];
+  const perfArtifacts = new Map<string, import('../types.js').PerfArtifacts>();
   let abortReason: ExecuteResult['abortReason'];
   let consecutiveInfraFailures = runState.consecutiveInfraFailures;
 
@@ -108,14 +114,32 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
   async function runTest(tc: TestCase): Promise<TestResult> {
     const start = Date.now();
-    // Mint a synthetic occurrenceId so the outer catch can always return one.
-    // If the inner executor runs, it overwrites this with its own minted id.
     const syntheticOccurrenceId = createId();
+
+    // Perf observe: mirror navigation in CDP session before the camofox action
+    if (perfCollector !== undefined && tc.action.via === 'ui') {
+      const pageUrl = tc.page.startsWith('http') ? tc.page : `${appBaseUrl ?? ''}${tc.page}`;
+      await perfCollector.observe(pageUrl).catch(err =>
+        log.warn('perf-collector: observe failed', { err: String(err), page: tc.page })
+      );
+      perfCollector.tick(syntheticOccurrenceId);
+    }
+
     try {
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
         ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds)
         : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds);
+
+      // Perf drain: collect vitals/HAR after the action completes
+      if (perfCollector !== undefined && tc.action.via === 'ui') {
+        const { perf } = await perfCollector.drain(result.occurrenceId).catch(err => {
+          log.warn('perf-collector: drain failed', { err: String(err), occurrenceId: result.occurrenceId });
+          return { perf: { occurrenceId: result.occurrenceId, webVitals: [], longTasks: [], heapSamples: [], renderEvents: [] }, har: { log: { version: '1.2' as const, creator: { name: 'bughunter', version: '0.6' }, entries: [] } } };
+        });
+        perfArtifacts.set(result.occurrenceId, perf);
+      }
+
       return result;
     } catch (err) {
       const infra: InfrastructureFailure = {
@@ -182,7 +206,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   // Header probes: once per unique origin, after all tests so as not to inflate runtime at start.
   const headerProbeDetections = await runHeaderProbes(pageUrls, appBaseUrl, headerProbeEnabled, runState.config);
 
-  return { results, abortReason, skipReasons, headerProbeDetections };
+  return { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts: perfArtifacts.size > 0 ? perfArtifacts : undefined };
 }
 
 type ArtifactPaths = Pick<RunPaths, 'actionLogsDir' | 'screenshotsDir' | 'domDir' | 'consoleDir' | 'networkDir'>;

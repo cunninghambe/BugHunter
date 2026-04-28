@@ -87,6 +87,28 @@ export const ConfigSchema = z.object({
     concurrency: z.number().int().positive().optional(),
     severityThreshold: z.enum(['minor', 'major', 'critical']).optional(),
   }).optional(),
+  perf: z.object({
+    enabled: z.boolean(),
+    vitalsThresholds: z.object({
+      lcpMs: z.number().int().positive().optional(),
+      inpMs: z.number().int().positive().optional(),
+      cls: z.number().nonnegative().optional(),
+    }).optional(),
+    requestHygiene: z.object({
+      enabled: z.boolean(),
+      nPlusOneThreshold: z.number().int().positive().optional(),
+    }).optional(),
+    heapSampling: z.boolean().optional(),
+    longTaskMs: z.number().int().positive().optional(),
+    rerenderCountThreshold: z.number().int().positive().optional(),
+    rerenderWindowMs: z.number().int().positive().optional(),
+  }).optional(),
+  bundleProbe: z.object({
+    enabled: z.boolean(),
+    jsThresholdGzipBytes: z.number().int().positive(),
+    cssThresholdGzipBytes: z.number().int().positive(),
+    searchPaths: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {
