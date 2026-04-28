@@ -1,3 +1,9 @@
+/**
+ * @deprecated Click flows should use `BrowserMcpAdapter.clickByHint(hint)` instead.
+ * `resolveTriggerSelector` returns a bare `:has-text("…")` string for text-only hints,
+ * which is not valid CSS and is rejected by the adapter's snapshot resolver. It is kept
+ * here to avoid breaking non-click probe callers, but the crawler no longer uses it.
+ */
 // Resolves a TriggerSelectorHint to a concrete CSS selector usable by BrowserMcpAdapter.click.
 
 import type { TriggerSelectorHint } from '../types.js';

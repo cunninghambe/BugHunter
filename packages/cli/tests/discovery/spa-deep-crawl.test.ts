@@ -58,7 +58,7 @@ function makeSurface(): SurfaceMcpAdapter {
   } as unknown as SurfaceMcpAdapter;
 }
 
-/** Builds a stateful mock browser that tracks clicks and returns appropriate DOM per state */
+/** Builds a stateful mock browser that tracks clickByHint calls and returns appropriate DOM per state */
 function makeBrowser(): BrowserMcpAdapter {
   let lastClickedTab: string | null = null;
 
@@ -71,14 +71,6 @@ function makeBrowser(): BrowserMcpAdapter {
       }
       // location.pathname check for state items — exact match
       if (script === 'location.pathname') return { value: '/' };
-      // selectorExists checks — short one-line scripts with !!document.querySelector(...)
-      const selectorExistsMatch = /^!!document\.querySelector\((.+)\)$/.exec(script.trim());
-      if (selectorExistsMatch) {
-        const sel = JSON.parse(selectorExistsMatch[1]) as string;
-        // Return true for any hint selector (testId or aria-label)
-        if (sel.includes('data-testid') || sel.includes('aria-label')) return { value: true };
-        return { value: false };
-      }
       // DOM collection (all other scripts — the full IIFE)
       return {
         value: {
@@ -89,13 +81,15 @@ function makeBrowser(): BrowserMcpAdapter {
       };
     }),
     scroll: vi.fn().mockResolvedValue({ scrolled: true }),
-    click: vi.fn().mockImplementation(async (selector: string) => {
-      // Detect which tab was clicked based on selector
-      if (selector.includes('nav-dashboard') || selector.includes('has-text("Dashboard")')) lastClickedTab = 'dashboard';
-      else if (selector.includes('nav-trades') || selector.includes('has-text("Trades")')) lastClickedTab = 'trades';
-      else if (selector.includes('nav-settings') || selector.includes('has-text("Settings")')) lastClickedTab = 'settings';
-      else if (selector.includes('aria-label') || selector.includes('has-text("Profile")')) lastClickedTab = 'profile';
-      return { clicked: true };
+    click: vi.fn(),
+    clickByHint: vi.fn().mockImplementation(async (hint: { text?: string; testId?: string; ariaLabel?: string }) => {
+      // Detect which tab was clicked based on hint fields
+      const label = hint.testId ?? hint.ariaLabel ?? hint.text ?? '';
+      if (label.includes('dashboard') || label === 'Dashboard') lastClickedTab = 'dashboard';
+      else if (label.includes('trades') || label === 'Trades') lastClickedTab = 'trades';
+      else if (label.includes('settings') || label === 'Settings') lastClickedTab = 'settings';
+      else if (label.includes('profile') || label === 'Profile' || label === 'My profile') lastClickedTab = 'profile';
+      return { clicked: true, matchedBy: hint.testId ? 'testId' : hint.ariaLabel ? 'ariaLabel' : 'text' };
     }),
     type: vi.fn(),
     snapshot: vi.fn(),

@@ -28,6 +28,7 @@ import {
   toCamofoxScrollDirection,
 } from './browser-mcp-snapshot.js';
 import type { StructuredSelector, SnapshotNode } from './browser-mcp-snapshot.js';
+import type { TriggerSelectorHint } from '../types.js';
 
 export type NavigateResult = { url: string; title?: string };
 export type ClickResult = { clicked: boolean };
@@ -39,6 +40,10 @@ export type EvaluateResult = { value: unknown };
 export type ListTabsResult = { tabs: Array<{ id: string; url: string; title: string }> };
 export type CloseTabResult = { closed: boolean };
 export type ExtraHeaders = Record<string, string>;
+
+export type ClickByHintResult =
+  | { clicked: true; matchedBy: 'testId' | 'ariaLabel' | 'text' }
+  | { clicked: false; reason: 'no_hint_fields' | 'not_found' };
 
 export type CookieEntry = {
   name: string;
@@ -62,6 +67,7 @@ export type TabScope = {
   snapshot(): Promise<SnapshotResult>;
   screenshot(outputPath?: string): Promise<ScreenshotResult>;
   evaluate(script: string): Promise<EvaluateResult>;
+  clickByHint(hint: TriggerSelectorHint): Promise<ClickByHintResult>;
 };
 
 export interface BrowserMcpAdapter {
@@ -87,6 +93,21 @@ export interface BrowserMcpAdapter {
 
   /** Read the full cookie jar for the current tab's browser context, including HttpOnly cookies. */
   cookies(urls?: string[]): Promise<CookiesResult>;
+
+  /**
+   * Click an element identified by a TriggerSelectorHint via browser.evaluate.
+   * Hint priority: testId → ariaLabel → text. For each populated field, walks
+   * the live DOM and dispatches a synthetic MouseEvent('click', {bubbles:true,
+   * cancelable:true, view:window, button:0}) on the first visible match.
+   *
+   * Returns `{clicked:true, matchedBy}` on success or `{clicked:false, reason}`
+   * when no hint field is set or no element matched any populated field.
+   * Never throws BrowserMcpError; transport errors propagate unchanged.
+   *
+   * Backward compat: this is additive. Existing callers of `click(selector)`
+   * are unchanged. The snapshot/ref pipeline is NOT used.
+   */
+  clickByHint(hint: TriggerSelectorHint): Promise<ClickByHintResult>;
 }
 
 // Raw camofox result shapes.
@@ -216,6 +237,32 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
       );
     }
     return ref;
+  }
+
+  // ---- Private evaluate-click helpers (React-safe MouseEvent dispatch) ----
+
+  private static escapeAttr(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  private async evaluateClickByCss(tabId: string, css: string): Promise<boolean> {
+    const expr = `(function(){var el=document.querySelector(${JSON.stringify(css)});if(!el)return false;var r=el.getBoundingClientRect();if(el.offsetParent===null&&(r.width===0||r.height===0))return false;el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window,button:0}));return true;})()`;
+    try {
+      const result = await this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+      return (result.result ?? result.value) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async evaluateClickByText(tabId: string, text: string): Promise<boolean> {
+    const expr = `(function(){var text=${JSON.stringify(text.toLowerCase())};var sel='button, a, [role="button"], [role="tab"], [role="link"]';var els=Array.from(document.querySelectorAll(sel));function visible(el){var r=el.getBoundingClientRect();return el.offsetParent!==null||(r.width>0&&r.height>0);}var candidates=els.filter(visible);var target=candidates.find(function(el){return(el.textContent||'').trim().toLowerCase()===text;})||candidates.find(function(el){return(el.textContent||'').toLowerCase().includes(text);});if(!target)return false;target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window,button:0}));return true;})()`;
+    try {
+      const result = await this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+      return (result.result ?? result.value) === true;
+    } catch {
+      return false;
+    }
   }
 
   // ---- Public interface ----
@@ -361,6 +408,10 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     return this.mcpCall<CookiesResult>('cookies', args);
   }
 
+  async clickByHint(hint: TriggerSelectorHint): Promise<ClickByHintResult> {
+    return this.clickByHintForTab(this.requireTab(), hint);
+  }
+
   /**
    * Open an isolated tab, call fn with a bound TabScope, then close the tab.
    * The tab is closed even if fn throws, ensuring no tab leakage per test.
@@ -416,7 +467,32 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
         this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: script }).then(r => ({
           value: r.result ?? r.value,
         })),
+      clickByHint: (hint) => this.clickByHintForTab(tabId, hint),
     };
+  }
+
+  private async clickByHintForTab(tabId: string, hint: TriggerSelectorHint): Promise<ClickByHintResult> {
+    if (hint.testId !== undefined && hint.testId !== '') {
+      if (await this.evaluateClickByCss(tabId, `[data-testid="${CamofoxBrowserMcpAdapter.escapeAttr(hint.testId)}"]`)) {
+        return { clicked: true, matchedBy: 'testId' };
+      }
+    }
+    if (hint.ariaLabel !== undefined && hint.ariaLabel !== '') {
+      if (await this.evaluateClickByCss(tabId, `[aria-label="${CamofoxBrowserMcpAdapter.escapeAttr(hint.ariaLabel)}"]`)) {
+        return { clicked: true, matchedBy: 'ariaLabel' };
+      }
+    }
+    if (hint.text !== undefined && hint.text !== '') {
+      if (await this.evaluateClickByText(tabId, hint.text)) {
+        return { clicked: true, matchedBy: 'text' };
+      }
+    }
+
+    const hasPopulatedField =
+      (hint.testId !== undefined && hint.testId !== '') ||
+      (hint.ariaLabel !== undefined && hint.ariaLabel !== '') ||
+      (hint.text !== undefined && hint.text !== '');
+    return { clicked: false, reason: hasPopulatedField ? 'not_found' : 'no_hint_fields' };
   }
 }
 
