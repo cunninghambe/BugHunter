@@ -341,3 +341,206 @@ describe('loginInBrowser — describe_auth unavailable', () => {
     expect(result.detail).toContain('v0.3');
   });
 });
+
+// ---------------------------------------------------------------------------
+// :has-text() evaluate-only modal flow tests
+// ---------------------------------------------------------------------------
+
+// Plan with a :has-text() trigger selector (TraiderJo shape)
+const HAS_TEXT_PLAN: DescribeAuthResult = {
+  authKind: 'form',
+  uiLoginPath: '/login',
+  uiTriggerSelector: 'button:has-text("log in")',
+  fields: { email: 'email', password: 'password' },
+  values: { email: 'owner@test.com', password: 'secret' },
+  successCheck: { kind: 'cookie', name: 'session' },
+  cookieName: 'session',
+};
+
+/**
+ * Build a browser mock tailored to the evaluate-only modal flow.
+ * evaluate() is the only method expected to be called (besides navigate and cookies).
+ * Tracks which evaluate scripts were called so tests can assert on script content.
+ */
+function makeModalBrowser(opts: {
+  triggerFound?: boolean;
+  fieldFound?: boolean;
+  submitFound?: boolean;
+  cookieAfterSubmit?: boolean;
+  cookiesAvailable?: boolean;
+} = {}): BrowserMcpAdapter {
+  const triggerFound = opts.triggerFound ?? true;
+  const fieldFound = opts.fieldFound ?? true;
+  const submitFound = opts.submitFound ?? true;
+  const cookiesAvailable = opts.cookiesAvailable ?? true;
+
+  let submitDone = false;
+  const evaluateCalls: string[] = [];
+
+  const browser = {
+    navigate: vi.fn(async (_url: string) => ({ url: _url })),
+    // click and snapshot MUST NOT be called in the :has-text() path
+    click: vi.fn(async () => { throw new Error('browser.click must not be called in evaluate-only path'); }),
+    snapshot: vi.fn(async () => { throw new Error('browser.snapshot must not be called in evaluate-only path'); }),
+    type: vi.fn(async () => ({ typed: true })),
+    scroll: vi.fn(async () => ({ scrolled: true })),
+    screenshot: vi.fn(async () => ({ path: '' })),
+    evaluate: vi.fn(async (script: string) => {
+      evaluateCalls.push(script);
+
+      // captcha/2FA detection — none present
+      if (script.includes('captcha')) {
+        return { value: { captcha: false, twoFa: false } };
+      }
+      // Trigger click (tryClickByText)
+      if (script.includes('dispatchEvent(new MouseEvent') && !script.includes('querySelector(') ) {
+        return { value: triggerFound };
+      }
+      // Trigger OR submit click — both use dispatchEvent(new MouseEvent
+      if (script.includes('dispatchEvent(new MouseEvent')) {
+        if (script.includes('querySelectorAll(')) {
+          // tryClickByText (trigger or SUBMIT_LABELS fallback)
+          return { value: submitDone ? true : triggerFound };
+        }
+        // tryClickByCssSelector (uiSubmitSelector as CSS)
+        const found = submitFound;
+        if (found) submitDone = true;
+        return { value: found };
+      }
+      // Field typing (tryTypeByCssSelector) — uses getOwnPropertyDescriptor
+      if (script.includes('getOwnPropertyDescriptor')) {
+        return { value: fieldFound };
+      }
+      // Submit button via tryClickFirstMatchingButton / tryClickByText with SUBMIT_LABELS
+      if (script.includes('querySelectorAll') && script.includes('dispatchEvent')) {
+        const found = submitFound;
+        if (found) submitDone = true;
+        return { value: found };
+      }
+      // URL for verifySuccess
+      if (script.includes('location.href')) {
+        return { value: 'http://localhost:3002/dashboard' };
+      }
+      return { value: null };
+    }),
+    listTabs: vi.fn(async () => ({ tabs: [] })),
+    closeTab: vi.fn(async () => ({ closed: true })),
+    openTab: vi.fn(async () => ({ tabId: 'tab1', finalUrl: '' })),
+    closeTabExplicit: vi.fn(async () => {}),
+    withTab: vi.fn(),
+    cookies: vi.fn(async (_urls?: string[]) => {
+      if (!cookiesAvailable) throw new Error('cookies unavailable');
+      // First call (fast-path check) → empty; subsequent → session cookie
+      const calls = (browser.cookies as ReturnType<typeof vi.fn>).mock.calls.length;
+      if (calls <= 1) return { tabId: 'tab1', cookies: [] };
+      return {
+        tabId: 'tab1',
+        cookies: [SESSION_COOKIE],
+      };
+    }),
+    _evaluateCalls: evaluateCalls,
+  } as unknown as BrowserMcpAdapter & { _evaluateCalls: string[] };
+
+  return browser;
+}
+
+describe('loginInBrowser — :has-text() modal flow', () => {
+  it('clicks trigger via evaluate when uiTriggerSelector is :has-text()', async () => {
+    const browser = makeModalBrowser({ cookieAfterSubmit: true });
+    await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    // evaluate must have been called (trigger, fields, submit, verify)
+    expect(browser.evaluate).toHaveBeenCalled();
+    // click must NOT have been called
+    expect(browser.click).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call browser.snapshot at any point', async () => {
+    const browser = makeModalBrowser({ cookieAfterSubmit: true });
+    await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    expect(browser.snapshot).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call browser.click for trigger or submit', async () => {
+    const browser = makeModalBrowser({ cookieAfterSubmit: true });
+    await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    expect(browser.click).not.toHaveBeenCalled();
+  });
+
+  it('types into fields via evaluate (script contains native setter)', async () => {
+    const browser = makeModalBrowser({ cookieAfterSubmit: true });
+    await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    const calls = vi.mocked(browser.evaluate).mock.calls.map(([s]) => s as string);
+    const typingCall = calls.find(s => s.includes('getOwnPropertyDescriptor'));
+    expect(typingCall).toBeDefined();
+    expect(typingCall).toMatch(/getOwnPropertyDescriptor/);
+    expect(typingCall).toMatch(/dispatchEvent\(new Event\('input'/);
+    expect(typingCall).toMatch(/dispatchEvent\(new Event\('change'/);
+  });
+
+  it('trigger click script uses MouseEvent with bubbles:true', async () => {
+    const browser = makeModalBrowser({ cookieAfterSubmit: true });
+    await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    const calls = vi.mocked(browser.evaluate).mock.calls.map(([s]) => s as string);
+    const clickCall = calls.find(s => s.includes('dispatchEvent(new MouseEvent'));
+    expect(clickCall).toBeDefined();
+    expect(clickCall).toMatch(/bubbles:true/);
+    expect(clickCall).toMatch(/cancelable:true/);
+  });
+
+  it('returns trigger_not_found when evaluate reports no match', async () => {
+    const browser = makeModalBrowser({ triggerFound: false });
+    const result = await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('trigger_not_found');
+  });
+
+  it('returns field_not_found when no field candidate matches in DOM', async () => {
+    const browser = makeModalBrowser({ fieldFound: false });
+    const result = await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('field_not_found');
+  });
+
+  it('returns submit_not_found when no submit text matches', async () => {
+    const browser = makeModalBrowser({ submitFound: false });
+    const result = await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('submit_not_found');
+  });
+
+  it('clicks submit via :has-text() submit selector when configured', async () => {
+    const plan: DescribeAuthResult = {
+      ...HAS_TEXT_PLAN,
+      uiSubmitSelector: 'button:has-text("Submit")',
+    };
+    const browser = makeModalBrowser({ cookieAfterSubmit: true });
+    const result = await loginInBrowser(browser, makeSurface(plan), DEFAULT_OPTS);
+    expect(result.ok).toBe(true);
+    // No browser.click calls
+    expect(browser.click).not.toHaveBeenCalled();
+    // Submit script should contain the text "Submit"
+    const calls = vi.mocked(browser.evaluate).mock.calls.map(([s]) => s as string);
+    const submitCall = calls.find(s => s.includes('"Submit"'));
+    expect(submitCall).toBeDefined();
+  });
+
+  it('clicks submit via SUBMIT_LABELS fallback when no uiSubmitSelector', async () => {
+    // HAS_TEXT_PLAN has no uiSubmitSelector — triggers fallback
+    const browser = makeModalBrowser({ cookieAfterSubmit: true });
+    const result = await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    expect(result.ok).toBe(true);
+    expect(browser.click).not.toHaveBeenCalled();
+  });
+
+  it('preserves cookie verification path (verifySuccess unchanged)', async () => {
+    const browser = makeModalBrowser({ cookiesAvailable: true });
+    const result = await loginInBrowser(browser, makeSurface(HAS_TEXT_PLAN), DEFAULT_OPTS);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.cookies.length).toBeGreaterThan(0);
+    expect(result.cookies[0]?.name).toBe('session');
+  });
+});

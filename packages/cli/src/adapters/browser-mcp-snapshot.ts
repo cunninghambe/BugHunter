@@ -107,9 +107,11 @@ function resolveStructured(sel: StructuredSelector, nodes: SnapshotNode[]): stri
 export function parsePlaywrightHasText(
   selector: string
 ): { tag: string; text: string } | null {
-  const m = /^(\w+):has-text\((?:"([^"]+)"|'([^']+)')\)$/.exec(selector);
-  if (!m) return null;
-  return { tag: m[1], text: m[2] ?? m[3] ?? '' };
+  const dq = /^(\w+):has-text\("([^"]+)"\)$/.exec(selector);
+  if (dq) return { tag: dq[1], text: dq[2] };
+  const sq = /^(\w+):has-text\('([^']+)'\)$/.exec(selector);
+  if (sq) return { tag: sq[1], text: sq[2] };
+  return null;
 }
 
 function resolveHasText(tag: string, text: string, nodes: SnapshotNode[]): string | null {

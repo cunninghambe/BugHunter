@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { parseSnapshot, resolveSelectorInSnapshot } from '../src/adapters/browser-mcp-snapshot.js';
+import {
+  parseSnapshot,
+  resolveSelectorInSnapshot,
+  parsePlaywrightHasText,
+} from '../src/adapters/browser-mcp-snapshot.js';
 
 const SIGN_IN_SNAPSHOT = `
 - generic [e1]:
@@ -137,5 +141,63 @@ describe('resolveSelectorInSnapshot — resolution algorithm (§3.7)', () => {
   it('Step 7: :nth-of-type returns null (needs evaluate fallback)', () => {
     const ref = resolveSelectorInSnapshot('button:nth-of-type(2)', nodes);
     expect(ref).toBeNull();
+  });
+
+  it(':has-text() double-quoted resolves by accessible-name substring', () => {
+    // "Sign in" button has name "Sign in"
+    const ref = resolveSelectorInSnapshot('button:has-text("sign in")', nodes);
+    expect(ref).toBe('e8');
+  });
+
+  it(':has-text() single-quoted resolves correctly', () => {
+    const ref = resolveSelectorInSnapshot("button:has-text('Sign in')", nodes);
+    expect(ref).toBe('e8');
+  });
+
+  it(':has-text() returns null when role has no name match', () => {
+    const ref = resolveSelectorInSnapshot('button:has-text("nonexistent")', nodes);
+    expect(ref).toBeNull();
+  });
+
+  it(':has-text() returns null when role does not exist in snapshot', () => {
+    const ref = resolveSelectorInSnapshot('input:has-text("sign in")', nodes);
+    expect(ref).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePlaywrightHasText — new in spec §3.1
+// ---------------------------------------------------------------------------
+describe('parsePlaywrightHasText', () => {
+  it('parses double-quoted form', () => {
+    expect(parsePlaywrightHasText('button:has-text("log in")')).toEqual({ tag: 'button', text: 'log in' });
+  });
+
+  it('parses single-quoted form', () => {
+    expect(parsePlaywrightHasText("button:has-text('log in')")).toEqual({ tag: 'button', text: 'log in' });
+  });
+
+  it('returns null for plain tag', () => {
+    expect(parsePlaywrightHasText('button')).toBeNull();
+  });
+
+  it('returns null for #id selector', () => {
+    expect(parsePlaywrightHasText('#submit')).toBeNull();
+  });
+
+  it('returns null for tag[attr=val]', () => {
+    expect(parsePlaywrightHasText('button[type="submit"]')).toBeNull();
+  });
+
+  it('returns null for malformed has-text (no quotes)', () => {
+    expect(parsePlaywrightHasText('button:has-text(log in)')).toBeNull();
+  });
+
+  it('returns null for missing tag prefix', () => {
+    expect(parsePlaywrightHasText(':has-text("log in")')).toBeNull();
+  });
+
+  it('preserves text case', () => {
+    expect(parsePlaywrightHasText('button:has-text("Log In")')).toEqual({ tag: 'button', text: 'Log In' });
   });
 });
