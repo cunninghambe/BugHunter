@@ -21,7 +21,7 @@ import { runCrossUser } from '../phases/cross-user.js';
 import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { BugDetection, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry } from '../types.js';
+import type { BugDetection, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry } from '../types.js';
 import { runEmit } from '../phases/emit.js';
 import { runFormReachabilityProbes } from '../phases/form-reachability-probe.js';
 import type { ProbeKey, ProbeResult } from '../phases/form-reachability-probe.js';
@@ -420,6 +420,39 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       onClusterFound: () => runState.clusterCount,
     });
 
+    // Phase 3.7: active pen-testing (SQL/CMD/PATH/JWT injection probes).
+    const penTestingEnabled = resolved.penTesting?.enabled ?? false;
+    const penTestingStartMs = Date.now();
+    let penTestingTelemetry: PenTestingTelemetry | undefined;
+    let penTestingDetections: BugDetection[] = [];
+
+    if (penTestingEnabled) {
+      const { runPenTests } = await import('../security/pen-test-runner.js');
+      const penResult = await runPenTests(
+        {
+          enabled: true,
+          targetTools: discovery.apiTools,
+          forms: discovery.pages.flatMap(p => p.forms),
+          variants: resolved.penTesting?.variants ?? ['sql', 'cmd', 'path', 'jwt'],
+          jwtTargets: resolved.penTesting?.jwtTargets,
+          jwtPublicKeyPemPath: resolved.penTesting?.jwtPublicKeyPemPath,
+          maxProbesPerEndpoint: resolved.penTesting?.maxProbesPerEndpoint ?? 25,
+          booleanDeltaThreshold: resolved.penTesting?.booleanDeltaThreshold ?? 0.3,
+        },
+        surface,
+      );
+      penTestingDetections = penResult.detections;
+      penTestingTelemetry = {
+        enabled: true,
+        ...penResult.telemetry,
+        durationMs: Date.now() - penTestingStartMs,
+      };
+      log.info('pen-test-runner: complete', {
+        probes: penResult.telemetry.probesAttempted,
+        detections: penResult.detections.length,
+      });
+    }
+
     // Synthesise visual baseline test cases + results (Option a from § 4.3.1).
     // These bypass execute and are merged directly into classify + cluster inputs.
     const { baselineTestCases, baselineResults } = synthesiseVisualBaselineCases(
@@ -434,6 +467,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...authFlowDetections.map(d => d.detection),
       ...(a11yBaselineDetections ?? []),
       ...(seoDetections ?? []),
+      ...penTestingDetections,
     ];
     const { staticTestCases, staticResults } = synthesiseFakeDetectionCases(runId, staticDetectionList);
 
@@ -559,6 +593,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(bundleSummary !== undefined ? { bundleSummary } : {}),
       ...(seedHookTelemetry.length > 0 ? { seedHookExecutions: seedHookTelemetry } : {}),
       ...(heapAttributionSummary !== undefined ? { heapAttributionSummary } : {}),
+      ...(penTestingTelemetry !== undefined ? { penTesting: penTestingTelemetry } : {}),
     });
     runState.emitted = true;
     runState.phase = 'done';

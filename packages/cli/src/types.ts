@@ -51,6 +51,11 @@ export type BugKind =
   | 'race_double_submit'
   | 'optimistic_update_divergence'
   | 'hallucinated_route'
+  // v0.16 active pen-testing kinds
+  | 'sql_injection'
+  | 'command_injection'
+  | 'path_traversal'
+  | 'jwt_weak_alg'
   // v0.7 XSS kinds
   | 'xss_reflected'
   | 'xss_dom'
@@ -530,6 +535,69 @@ export type AuthFlowContext = {
   redirectTarget?: string;
 };
 
+// --- v0.16 pen-testing types ---
+
+/**
+ * Context populated for active pen-testing findings.
+ * Present on: sql_injection, command_injection, path_traversal, jwt_weak_alg.
+ */
+export type InjectionDetectionContext = {
+  /** Form field or URL param name that accepted the payload. */
+  paramName: string;
+  /** Variant name (e.g. 'error_quote', 'shell_pipe_echo'). */
+  variant: string;
+  /** 16-char hex nonce embedded in the payload. */
+  nonce: string;
+  /**
+   * Proof kind.
+   * 'error_string': nonce found inside SQL error message in response.
+   * 'boolean_difference': true/false tautologies produced different response sizes (≥30%).
+   * 'output_marker': nonce literally echoed in response body (command injection).
+   * 'file_content': /etc/passwd or win.ini fingerprint found in 2xx response (path traversal).
+   * 'unsigned_accepted': alg=none JWT accepted on a requiresAuth endpoint.
+   * 'weak_secret_<value>': HS256 token forged with a known-weak secret was accepted.
+   * 'rs_to_hs_confusion': HS256 token signed with public RSA key was accepted.
+   */
+  proof: string;
+  /** Up to 200-char snippet of the matching response substring. */
+  evidence: string;
+};
+
+export type PenTestingConfig = {
+  /** Master switch. Default: false (probing is actively mutating). */
+  enabled?: boolean;
+  /** Which probe buckets to run. Default: all four. */
+  variants?: Array<'sql' | 'cmd' | 'path' | 'jwt'>;
+  /** Max probes per endpoint. Default: 25 (5 variants × 5 BugKinds). */
+  maxProbesPerEndpoint?: number;
+  /**
+   * Minimum fractional difference in response body length to trigger boolean SQL detection.
+   * Default: 0.3 (30%).
+   */
+  booleanDeltaThreshold?: number;
+  /**
+   * Endpoint paths to probe with JWT weak-algorithm variants.
+   * If unset, JWT probes are skipped with skipReason 'no_jwt_targets'.
+   */
+  jwtTargets?: string[];
+  /**
+   * Path to the server's RSA public key PEM file.
+   * Required for the key_confusion_rs_to_hs JWT variant.
+   * If unset, that variant is skipped.
+   */
+  jwtPublicKeyPemPath?: string;
+};
+
+export type PenTestingTelemetry = {
+  enabled: boolean;
+  probesAttempted: number;
+  probesSucceeded: number;
+  probesThrottled: number;
+  probesSkipped: { reason: string; count: number }[];
+  detectionsByKind: Record<string, number>;
+  durationMs: number;
+};
+
 // --- v0.6 performance types ---
 
 export type WebVitalSample = {
@@ -638,6 +706,8 @@ export type BugDetection = {
   xssContext?: XssContext;
   /** Populated for auth-flow findings. */
   authFlowContext?: AuthFlowContext;
+  /** Populated for v0.16 active pen-testing findings (sql_injection, command_injection, path_traversal, jwt_weak_alg). */
+  injectionContext?: InjectionDetectionContext;
   /** Populated for v0.6 performance findings; shape varies by BugKind. */
   evidence?: Record<string, unknown>;
   /** Populated for v0.8 heap-snapshot attribution findings. */
@@ -913,6 +983,8 @@ export type BugHunterConfig = {
   xss?: XssConfig;
   /** Auth-flow detectors (session fixation, reset token reuse, open redirect). Default: disabled. */
   authFlow?: AuthFlowConfig;
+  /** v0.16 active pen-testing palette (SQL/CMD/PATH/JWT). Default: disabled (opt-in). */
+  penTesting?: PenTestingConfig;
   /** v0.6 performance subsystem. Disabled by default until users opt in. */
   perf?: {
     enabled: boolean;
@@ -1073,6 +1145,8 @@ export type RunSummary = {
     attributedLeaks: number;
     topConstructor?: string;
   };
+  /** v0.16: pen-testing subsystem telemetry — present when penTesting.enabled = true. */
+  penTesting?: PenTestingTelemetry;
 };
 
 // --- v0.14 seed-hook execution record (defined here so emit.ts can reference it) ---
