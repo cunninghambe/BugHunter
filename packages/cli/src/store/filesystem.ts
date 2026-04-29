@@ -15,6 +15,8 @@ export type RunPaths = {
   actionLogsDir: string;
   summaryFile: string;
   specsDir: string;
+  /** v0.8: directory for gzipped heap snapshots */
+  heapDir: string;
 };
 
 export function runPaths(projectDir: string, runId: string): RunPaths {
@@ -31,6 +33,7 @@ export function runPaths(projectDir: string, runId: string): RunPaths {
     actionLogsDir: path.join(runDir, 'action-logs'),
     summaryFile: path.join(runDir, 'summary.json'),
     specsDir: path.join(runDir, 'specs'),
+    heapDir: path.join(runDir, 'heap'),
   };
 }
 

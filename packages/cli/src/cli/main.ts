@@ -140,6 +140,13 @@ async function main(): Promise<void> {
           seoEnabled: flags['seo'] === true,
           keyboardTrapMax: typeof flags['keyboard-trap-max'] === 'string' ? parseInt(flags['keyboard-trap-max'], 10) : undefined,
           formReachabilityTimeout: typeof flags['form-reachability-timeout'] === 'string' ? parseInt(flags['form-reachability-timeout'], 10) : undefined,
+          enableHeapAttribution: flags['enable-heap-attribution'] === true,
+          noHeapAttribution: flags['no-heap-attribution'] === true,
+          heapSnapshotFrequency: typeof flags['heap-snapshot-frequency'] === 'string'
+            ? (flags['heap-snapshot-frequency'] === 'auto' ? 'auto' : parseInt(flags['heap-snapshot-frequency'], 10))
+            : undefined,
+          heapDiffMinInstances: typeof flags['heap-diff-min-instances'] === 'string' ? parseInt(flags['heap-diff-min-instances'], 10) : undefined,
+          heapDiffMinBytes: typeof flags['heap-diff-min-bytes'] === 'string' ? parseInt(flags['heap-diff-min-bytes'], 10) : undefined,
         });
         break;
       }

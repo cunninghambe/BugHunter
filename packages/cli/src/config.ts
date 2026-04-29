@@ -129,6 +129,10 @@ export const ConfigSchema = z.object({
     longTaskMs: z.number().int().positive().optional(),
     rerenderCountThreshold: z.number().int().positive().optional(),
     rerenderWindowMs: z.number().int().positive().optional(),
+    heapAttribution: z.boolean().optional(),
+    heapSnapshotFrequency: z.union([z.literal('auto'), z.number().int().positive()]).optional(),
+    heapDiffMinInstances: z.number().int().positive().optional(),
+    heapDiffMinBytes: z.number().int().positive().optional(),
   }).optional(),
   bundleProbe: z.object({
     enabled: z.boolean(),
