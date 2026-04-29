@@ -113,6 +113,7 @@ export const ConfigSchema = z.object({
     preScreenshotSettleMs: z.number().int().positive().optional(),
     consistencyRuns: z.number().int().min(1).max(5).default(2),
     agreementMode: z.enum(['strict', 'majority']).default('strict'),
+    viewports: z.array(z.number().int().min(320).max(2560)).min(1).max(6).default([375, 768, 1280]),
   }).optional(),
   perf: z.object({
     enabled: z.boolean(),
@@ -149,6 +150,32 @@ export const ConfigSchema = z.object({
     perRole: z.record(z.array(SeedHookSchema)).optional(),
     beforeExecute: z.array(SeedHookSchema).optional(),
     cleanup: z.array(SeedHookSchema).optional(),
+  }).optional(),
+  penTesting: z.object({
+    enabled: z.boolean().optional(),
+    variants: z.array(z.enum(['sql', 'cmd', 'path', 'jwt'])).optional(),
+    jwtTargets: z.array(z.string()).optional(),
+    jwtPublicKeyPemPath: z.string().optional(),
+    booleanDeltaThreshold: z.number().min(0).max(1).optional(),
+    maxProbesPerEndpoint: z.number().int().positive().optional(),
+  }).optional(),
+  authFlow: z.object({
+    enabled: z.boolean().optional(),
+    sessionFixation: z.object({
+      enabled: z.boolean().optional(),
+      sessionCookieName: z.string().optional(),
+    }).optional(),
+    passwordResetReuse: z.object({
+      enabled: z.boolean().optional(),
+      requestEndpoint: z.string().optional(),
+      consumeEndpoint: z.string().optional(),
+      testEmail: z.string().optional(),
+      tokenBodyKey: z.string().optional(),
+    }).optional(),
+    openRedirect: z.object({
+      enabled: z.boolean().optional(),
+      candidateUrls: z.array(z.string()).optional(),
+    }).optional(),
   }).optional(),
 });
 

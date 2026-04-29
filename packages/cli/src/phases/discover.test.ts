@@ -111,7 +111,8 @@ describe('T1: url-kind pages use singleton tab', () => {
 
     await runVisualBaseline(pages, makeConfig(), ['owner'], browser, makeVisionClient(), makeBudget());
 
-    expect(browser.navigate).toHaveBeenCalledTimes(3);
+    // 1 navigate from probeAuthHealth (to baseUrl) + 3 from per-page navigateForScreenshot.
+    expect(browser.navigate).toHaveBeenCalledTimes(4);
     expect(browser.screenshot).toHaveBeenCalledTimes(3);
     expect(browser.withTab).not.toHaveBeenCalled();
   }, 10_000);
@@ -256,4 +257,138 @@ describe('T8: EC-6 small screenshot skipped without consuming budget', () => {
     expect(result.telemetry?.screenshotsTooSmall).toBe(2);
     expect(result.telemetry?.uniqueScreenshots).toBe(0);
   }, 10_000);
+});
+
+// v0.17 multi-viewport tests
+
+/** Build a browser with optional setViewport support. */
+function makeBrowserWithViewport(opts: {
+  screenshotBytes?: number;
+  setViewportResult?: { ok: true } | { ok: false; reason: string };
+} = {}): BrowserMcpAdapter & { setViewport: ReturnType<typeof vi.fn> } {
+  const { screenshotBytes = 2048, setViewportResult = { ok: true } } = opts;
+  const base = makeBrowser({ screenshotBytes });
+  const setViewportSpy = vi.fn().mockResolvedValue(setViewportResult);
+  return { ...base, setViewport: setViewportSpy } as unknown as BrowserMcpAdapter & { setViewport: ReturnType<typeof vi.fn> };
+}
+
+// TV1: 3 viewports × 2 pages = 6 unique captures (all hashes unique)
+describe('TV1: v0.17 multi-viewport — 3 viewports × 2 pages', () => {
+  it('calls setViewport 3× per page and takes 6 unique screenshots', async () => {
+    let screenshotIndex = 0;
+    const browser = makeBrowser({ screenshotBytes: 2048 });
+    // Return distinct bytes for each call so hashes differ.
+    (browser.screenshot as ReturnType<typeof vi.fn>).mockImplementation(async (outputPath?: string) => {
+      if (outputPath !== undefined) {
+        fs.writeFileSync(outputPath, Buffer.alloc(2048, screenshotIndex++));
+      }
+      return { path: outputPath ?? '' };
+    });
+    const setViewportSpy = vi.fn().mockResolvedValue({ ok: true });
+    const browserWithVp = { ...browser, setViewport: setViewportSpy } as unknown as BrowserMcpAdapter;
+
+    const pages = [urlPage('/a'), urlPage('/b')];
+    const result = await runVisualBaseline(
+      pages,
+      makeConfig({ viewports: [375, 768, 1280] }),
+      ['owner'],
+      browserWithVp,
+      makeVisionClient(),
+      makeBudget(),
+    );
+
+    // setViewport called at least 6 times (3 viewports × 2 pages; restore calls also happen)
+    expect(setViewportSpy.mock.calls.length).toBeGreaterThanOrEqual(6);
+    expect(result.telemetry?.uniqueScreenshots).toBe(6);
+  }, 15_000);
+});
+
+// TV2: same content at all viewports → hash dedup → 1 classify call per page
+describe('TV2: v0.17 hash dedup across viewports', () => {
+  it('identical screenshots across all viewports dedup to 1 per page', async () => {
+    let hashConsumed = 0;
+    const budget = makeBudget({
+      tryConsumeHash: () => hashConsumed++ === 0 || hashConsumed === 4, // accept 1st and 4th (one per page)
+    });
+    const browser = makeBrowserWithViewport({ screenshotBytes: 2048 });
+
+    const pages = [urlPage('/login'), urlPage('/login-alt')];
+    const result = await runVisualBaseline(
+      pages,
+      makeConfig({ viewports: [375, 768, 1280] }),
+      ['owner'],
+      browser,
+      makeVisionClient(),
+      budget,
+    );
+
+    expect(result.telemetry?.dedupedScreenshots).toBeGreaterThan(0);
+    expect(result.telemetry?.uniqueScreenshots).toBeLessThan(6); // dedup reduced count
+  }, 15_000);
+});
+
+// TV3: setViewport failure mid-loop → remaining viewports skipped for that page, next page proceeds
+describe('TV3: v0.17 setViewport failure (EC-10) skips remaining viewports for page', () => {
+  it('when setViewport fails at 768px, 1280px is skipped; next page is still processed', async () => {
+    const setViewportSpy = vi.fn()
+      .mockResolvedValueOnce({ ok: true })                            // page1: 375px ok
+      .mockResolvedValueOnce({ ok: false, reason: 'resize_failed' }) // page1: 768px fails
+      .mockResolvedValueOnce({ ok: true })                            // page1: restore to 1280
+      .mockResolvedValue({ ok: true });                               // page2: all ok
+
+    let screenshotIndex = 0;
+    const browser = makeBrowser({ screenshotBytes: 2048 });
+    (browser.screenshot as ReturnType<typeof vi.fn>).mockImplementation(async (outputPath?: string) => {
+      if (outputPath !== undefined) {
+        fs.writeFileSync(outputPath, Buffer.alloc(2048, screenshotIndex++));
+      }
+      return { path: outputPath ?? '' };
+    });
+    const browserWithVp = { ...browser, setViewport: setViewportSpy } as unknown as BrowserMcpAdapter;
+
+    const pages = [urlPage('/a'), urlPage('/b')];
+    await runVisualBaseline(
+      pages,
+      makeConfig({ viewports: [375, 768, 1280] }),
+      ['owner'],
+      browserWithVp,
+      makeVisionClient(),
+      makeBudget(),
+    );
+
+    // Page 1: only 375px captured (768px failed → viewportFailed=true → loop breaks)
+    // Page 2: all 3 viewports (setViewport returns ok for page 2)
+    // Total screenshots = 1 (page1/375) + 3 (page2) = 4
+    expect((browser.screenshot as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(4);
+  }, 15_000);
+});
+
+// TV4: byViewport telemetry is populated correctly
+describe('TV4: v0.17 byViewport telemetry in result', () => {
+  it('result.byViewport has entries for each configured viewport', async () => {
+    let screenshotIndex = 0;
+    const browser = makeBrowserWithViewport({ screenshotBytes: 2048 });
+    (browser.screenshot as ReturnType<typeof vi.fn>).mockImplementation(async (outputPath?: string) => {
+      if (outputPath !== undefined) {
+        fs.writeFileSync(outputPath, Buffer.alloc(2048, screenshotIndex++));
+      }
+      return { path: outputPath ?? '' };
+    });
+
+    const pages = [urlPage('/dash')];
+    const result = await runVisualBaseline(
+      pages,
+      makeConfig({ viewports: [375, 1280] }),
+      ['owner'],
+      browser,
+      makeVisionClient(),
+      makeBudget(),
+    );
+
+    expect(result.byViewport).toBeDefined();
+    expect(result.byViewport?.[375]).toBeDefined();
+    expect(result.byViewport?.[1280]).toBeDefined();
+    expect(result.byViewport?.[375]?.uniqueScreenshots).toBe(1);
+    expect(result.byViewport?.[1280]?.uniqueScreenshots).toBe(1);
+  }, 15_000);
 });

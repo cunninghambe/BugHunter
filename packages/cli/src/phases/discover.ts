@@ -243,15 +243,23 @@ export async function runDiscover(
     staticDetections,
     visionBaselineTelemetry: visionResult.telemetry,
     visionConsistencyTelemetry: visionResult.consistencyTelemetry,
+    visionByViewport: visionResult.byViewport,
   };
 }
 
 // Default login-path globs for auth-health probing (R4: configurable in future).
 const DEFAULT_LOGIN_GLOBS = ['/login', '/auth/login', '/signin'];
 
-/** Returns true when the singleton tab is on an authenticated route, false if on a login redirect. */
-async function probeAuthHealth(browser: BrowserMcpAdapter, loginGlobs: string[]): Promise<boolean> {
+/**
+ * Returns true when the singleton tab is on an authenticated route, false if on a login redirect.
+ * Navigates to the baseUrl root first so SPA post-login redirects (e.g. / -> /dashboard) settle
+ * before we sample location.pathname. Without this, the probe sees the post-login /login pathname
+ * if the user just authenticated and the SPA hasn't yet redirected.
+ */
+async function probeAuthHealth(browser: BrowserMcpAdapter, loginGlobs: string[], baseUrl: string): Promise<boolean> {
   try {
+    await browser.navigate(baseUrl);
+    await new Promise<void>(r => { setTimeout(r, 1500); });
     const result = await browser.evaluate('location.pathname');
     const pathname = String(result.value ?? '');
     return !loginGlobs.some(glob => pathname === glob || pathname.startsWith(`${glob}/`));
@@ -260,9 +268,20 @@ async function probeAuthHealth(browser: BrowserMcpAdapter, loginGlobs: string[])
   }
 }
 
+function viewportHeight(width: number): number {
+  return Math.round(width * 0.65);
+}
+
+// Fallback for configs that don't go through Zod (e.g. raw BugHunterConfig in tests).
+// Zod applies the [375, 768, 1280] default at parse time; this keeps v0.13 compat for mocks.
+const DEFAULT_VIEWPORTS = [1280];
+
+type ScreenshotEntry = { page: DiscoveredPage; screenshotPath: string; viewportPx: number };
+
 type ScreenshotPhaseResult = {
-  entries: Array<{ page: DiscoveredPage; screenshotPath: string }>;
+  entries: ScreenshotEntry[];
   telemetry: VisionBaselineTelemetry;
+  byViewport: Map<number, { uniqueScreenshots: number; deduped: number }>;
 };
 
 /** Navigate the singleton tab to the target route; returns false if auth degraded (EC-1). */
@@ -306,14 +325,17 @@ async function screenshotPhase(
   loginGlobs: string[],
   settleMs: number,
   loginEnabled: boolean,
+  viewports: number[],
 ): Promise<ScreenshotPhaseResult> {
   const telemetry: VisionBaselineTelemetry = { uniqueScreenshots: 0, dedupedScreenshots: 0, authLostMidLoop: false, screenshotsTooSmall: 0 };
-  const entries: Array<{ page: DiscoveredPage; screenshotPath: string }> = [];
+  const entries: ScreenshotEntry[] = [];
+  const byViewport = new Map<number, { uniqueScreenshots: number; deduped: number }>();
+  for (const vp of viewports) byViewport.set(vp, { uniqueScreenshots: 0, deduped: 0 });
+
+  let budgetExhausted = false;
 
   for (const page of pages) {
-    const routeSlugRaw = page.route.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '');
-    const routeSlug = routeSlugRaw !== '' ? routeSlugRaw : 'root';
-    const screenshotPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bh-vision-')), `vision-baseline-${routeSlug}.png`);
+    if (budgetExhausted) break;
 
     let navResult: 'ok' | 'skip' | 'auth_lost';
     try {
@@ -325,34 +347,76 @@ async function screenshotPhase(
     if (navResult === 'auth_lost') { telemetry.authLostMidLoop = true; break; }
     if (navResult === 'skip') continue;
 
-    try {
+    // v0.17: iterate viewports smallest-to-largest within each page.
+    // Settle delay applies per resize (spec §4.2), so it lives inside the viewport loop.
+    for (const vpWidth of viewports) {
+      if (browser.setViewport !== undefined) {
+        const vpResult = await browser.setViewport(vpWidth, viewportHeight(vpWidth));
+        if (!vpResult.ok) {
+          log.warn(`vision baseline: setViewport failed for ${page.route} at ${vpWidth}px (${vpResult.reason}); skipping remaining viewports`);
+          break;
+        }
+      }
+
       await new Promise<void>(r => { setTimeout(r, settleMs); });
-      await browser.screenshot(screenshotPath);
-    } catch (err) {
-      log.warn(`vision baseline: failed to open/screenshot page ${page.route}`, { err: String(err) });
-      continue;
+
+      const routeSlugRaw = page.route.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '');
+      const routeSlug = routeSlugRaw !== '' ? routeSlugRaw : 'root';
+      const screenshotPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bh-vision-')), `vision-baseline-${routeSlug}-${vpWidth}.png`);
+
+      try {
+        await browser.screenshot(screenshotPath);
+      } catch (err) {
+        log.warn(`vision baseline: failed to screenshot page ${page.route} at ${vpWidth}px`, { err: String(err) });
+        continue;
+      }
+
+      let buf: Buffer;
+      try { buf = fs.readFileSync(screenshotPath); } catch { continue; }
+      if (buf.length < 1024) {
+        log.info(`vision baseline: screenshot_too_small for ${page.route} at ${vpWidth}px (${buf.length} bytes)`);
+        telemetry.screenshotsTooSmall++;
+        continue;
+      }
+
+      const hash = crypto.createHash('sha256').update(buf).digest('hex');
+      const vpTelem = byViewport.get(vpWidth) ?? { uniqueScreenshots: 0, deduped: 0 };
+      if (!visionBudget.tryConsumeHash(hash)) {
+        log.info(`vision baseline: skipping duplicate screenshot for ${page.route} at ${vpWidth}px`);
+        telemetry.dedupedScreenshots++;
+        vpTelem.deduped++;
+        byViewport.set(vpWidth, vpTelem);
+        continue;
+      }
+      if (!visionBudget.tryConsume()) {
+        log.info('vision: per-run budget exhausted during baseline');
+        budgetExhausted = true;
+        break;
+      }
+
+      telemetry.uniqueScreenshots++;
+      vpTelem.uniqueScreenshots++;
+      byViewport.set(vpWidth, vpTelem);
+      entries.push({ page, screenshotPath, viewportPx: vpWidth });
     }
 
-    let buf: Buffer;
-    try { buf = fs.readFileSync(screenshotPath); } catch { continue; }
-    if (buf.length < 1024) { log.info(`vision baseline: screenshot_too_small for ${page.route} (${buf.length} bytes)`); telemetry.screenshotsTooSmall++; continue; }
-    const hash = crypto.createHash('sha256').update(buf).digest('hex');
-    if (!visionBudget.tryConsumeHash(hash)) { log.info(`vision baseline: skipping duplicate screenshot for ${page.route}`); telemetry.dedupedScreenshots++; continue; }
-    if (!visionBudget.tryConsume()) { log.info('vision: per-run budget exhausted during baseline'); break; }
-    telemetry.uniqueScreenshots++;
-    entries.push({ page, screenshotPath });
+    // Restore desktop viewport after processing each page (EC-10: avoid stuck-mobile state).
+    if (browser.setViewport !== undefined) {
+      await browser.setViewport(1280, viewportHeight(1280)).catch(() => undefined);
+    }
   }
 
-  return { entries, telemetry };
+  return { entries, telemetry, byViewport };
 }
 
 type ClassifyPhaseResult = {
   entries: VisualBaselineEntry[];
   consistencyTelemetry: VisionConsistencyTelemetry;
+  byViewport: Map<number, { anomaliesFound: number }>;
 };
 
 async function classifyPhase(
-  screenshotEntries: Array<{ page: DiscoveredPage; screenshotPath: string }>,
+  screenshotEntries: ScreenshotEntry[],
   baseUrl: string,
   role: string,
   visionConfig: VisionConfig,
@@ -360,6 +424,7 @@ async function classifyPhase(
   visionBudget: VisionBudget,
 ): Promise<ClassifyPhaseResult> {
   const results: VisualBaselineEntry[] = [];
+  const byViewport = new Map<number, { anomaliesFound: number }>();
   const consistencyRuns = visionConfig.consistencyRuns ?? 2;
   const agreementMode = visionConfig.agreementMode ?? 'strict';
   const telem: VisionConsistencyTelemetry = {
@@ -377,7 +442,7 @@ async function classifyPhase(
   const inFlight = new Set<Promise<void>>();
   const concurrency = visionConfig.concurrency ?? 4;
 
-  for (const { page, screenshotPath } of screenshotEntries) {
+  for (const { page, screenshotPath, viewportPx } of screenshotEntries) {
     const p = classifyVisualAnomaliesConsistent({
       screenshotPath,
       url: `${baseUrl}${page.route}`,
@@ -399,9 +464,14 @@ async function classifyPhase(
       } else {
         telem.screenshotsClean++;
       }
+      const vpTelem = byViewport.get(viewportPx) ?? { anomaliesFound: 0 };
       for (const detection of consistent.detections) {
-        results.push({ page, detection, screenshotPath });
+        // v0.17: tag detection with viewport context.
+        const taggedDetection = { ...detection, visualContext: { viewportPx } };
+        results.push({ page, detection: taggedDetection, screenshotPath });
+        vpTelem.anomaliesFound++;
       }
+      byViewport.set(viewportPx, vpTelem);
       inFlight.delete(p);
     }).catch(err => {
       log.warn(`vision baseline: classification error for ${page.route}`, { err: String(err) });
@@ -420,13 +490,14 @@ async function classifyPhase(
     ? agreementRateSum / telem.screenshotsWithAnomalies
     : 1;
 
-  return { entries: results, consistencyTelemetry: telem };
+  return { entries: results, consistencyTelemetry: telem, byViewport };
 }
 
 type VisualBaselineResult = {
   entries: VisualBaselineEntry[];
   telemetry: VisionBaselineTelemetry | undefined;
   consistencyTelemetry: VisionConsistencyTelemetry | undefined;
+  byViewport: Record<number, { uniqueScreenshots: number; anomaliesFound: number; deduped: number }> | undefined;
 };
 
 export async function runVisualBaseline(
@@ -438,7 +509,7 @@ export async function runVisualBaseline(
   visionBudget: VisionBudget | undefined,
 ): Promise<VisualBaselineResult> {
   if (browser === undefined || visionClient === undefined || visionBudget === undefined || config.vision?.enabled !== true) {
-    return { entries: [], telemetry: undefined, consistencyTelemetry: undefined };
+    return { entries: [], telemetry: undefined, consistencyTelemetry: undefined, byViewport: undefined };
   }
 
   const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
@@ -446,32 +517,42 @@ export async function runVisualBaseline(
   const visionConfig: VisionConfig = config.vision;
   const loginEnabled = config.browserLogin?.enabled !== false;
   const settleMs = Math.max(VISION_BASELINE_SETTLE_MS, visionConfig.preScreenshotSettleMs ?? 2500);
+  const viewports = visionConfig.viewports ?? DEFAULT_VIEWPORTS;
 
   // One-time auth health probe before the screenshot loop (Design C §4).
   if (loginEnabled) {
-    const isAuthed = await probeAuthHealth(browser, DEFAULT_LOGIN_GLOBS);
+    const isAuthed = await probeAuthHealth(browser, DEFAULT_LOGIN_GLOBS, baseUrl);
     if (!isAuthed) {
       log.warn('vision baseline: singleton tab not authenticated (auth_lost_pre_loop); skipping vision pass');
       return {
         entries: [],
         telemetry: { uniqueScreenshots: 0, dedupedScreenshots: 0, authLostMidLoop: true, screenshotsTooSmall: 0 },
         consistencyTelemetry: undefined,
+        byViewport: undefined,
       };
     }
   }
 
-  // Phase 1: sequential singleton-tab screenshots.
-  const { entries: screenshotEntries, telemetry } = await screenshotPhase(
-    pages, browser, visionBudget, baseUrl, DEFAULT_LOGIN_GLOBS, settleMs, loginEnabled,
+  // Phase 1: sequential singleton-tab screenshots across all viewports.
+  const { entries: screenshotEntries, telemetry, byViewport: screenshotByVp } = await screenshotPhase(
+    pages, browser, visionBudget, baseUrl, DEFAULT_LOGIN_GLOBS, settleMs, loginEnabled, viewports,
   );
 
   // Phase 2: classify with consistency aggregation in concurrency-bounded pool.
-  const { entries, consistencyTelemetry } = await classifyPhase(
+  const { entries, consistencyTelemetry, byViewport: classifyByVp } = await classifyPhase(
     screenshotEntries, baseUrl, role, visionConfig, visionClient, visionBudget,
   );
 
+  // Merge per-viewport telemetry from both phases.
+  const byViewport: Record<number, { uniqueScreenshots: number; anomaliesFound: number; deduped: number }> = {};
+  for (const vp of viewports) {
+    const ss = screenshotByVp.get(vp) ?? { uniqueScreenshots: 0, deduped: 0 };
+    const cl = classifyByVp.get(vp) ?? { anomaliesFound: 0 };
+    byViewport[vp] = { uniqueScreenshots: ss.uniqueScreenshots, anomaliesFound: cl.anomaliesFound, deduped: ss.deduped };
+  }
+
   log.info(`vision baseline: found ${entries.length} anomaly/anomalies across ${screenshotEntries.length} page(s)`);
-  return { entries, telemetry, consistencyTelemetry };
+  return { entries, telemetry, consistencyTelemetry, byViewport };
 }
 
 async function runStaticAnalysisPhase(
