@@ -1,6 +1,6 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
-import type { BugCluster, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry } from '../types.js';
+import type { BugCluster, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { log } from '../log.js';
 
@@ -27,6 +27,8 @@ export type TestCounters = {
   seedHookExecutions?: SeedHookExecution[];
   /** v0.8 heap attribution summary — present when analyze phase ran. */
   heapAttributionSummary?: RunSummary['heapAttributionSummary'];
+  /** v0.16 pen-testing telemetry — present when penTesting.enabled = true. */
+  penTesting?: PenTestingTelemetry;
 };
 
 export function runEmit(
@@ -91,6 +93,7 @@ export function runEmit(
       ? { seedHookExecutions: counters.seedHookExecutions }
       : {}),
     ...(counters?.heapAttributionSummary !== undefined ? { heapAttributionSummary: counters.heapAttributionSummary } : {}),
+    ...(counters?.penTesting !== undefined ? { penTesting: counters.penTesting } : {}),
   };
 
   writeJsonFile(paths.summaryFile, summary);

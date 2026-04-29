@@ -22,6 +22,11 @@ const KIND_PRIORITY: BugKind[] = [
   'surface_call_failed',
   'network_4xx_unexpected',
   '404_for_linked_route',
+  // v0.16 pen-testing kinds (unconditionally critical when tagged proof fires — above idor)
+  'sql_injection',
+  'command_injection',
+  'path_traversal',
+  'jwt_weak_alg',
   // v0.5 security kinds (ranked above visual but below network errors)
   'idor_horizontal',
   'idor_vertical_role_escalate',

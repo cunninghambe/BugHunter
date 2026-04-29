@@ -37,12 +37,16 @@ function makeMockCdpSession() {
   });
   const closeFn = vi.fn().mockResolvedValue(undefined);
   const setCookiesFn = vi.fn().mockResolvedValue(undefined);
+  const takeHeapSnapshotFn = vi.fn().mockResolvedValue('');
+  const collectGarbageFn = vi.fn().mockResolvedValue(undefined);
 
   return {
     newTab: newTabFn,
     drain: drainFn,
     close: closeFn,
     setCookies: setCookiesFn,
+    takeHeapSnapshot: takeHeapSnapshotFn,
+    collectGarbage: collectGarbageFn,
     setActionWindowId: (id: string) => { currentWindowId = id; },
     _getCurrentWindowId: () => currentWindowId,
   };

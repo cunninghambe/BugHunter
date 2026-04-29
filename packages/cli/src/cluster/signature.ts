@@ -123,6 +123,16 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     case 'hallucinated_route':
       return `hallucinated_route|${detection.targetPath ?? ''}`;
 
+    // v0.16 active pen-testing kinds
+    case 'sql_injection':
+      return `sql_injection|${detection.endpoint ?? ''}|${detection.injectionContext?.paramName ?? ''}|${detection.injectionContext?.variant ?? ''}`;
+    case 'command_injection':
+      return `command_injection|${detection.endpoint ?? ''}|${detection.injectionContext?.paramName ?? ''}`;
+    case 'path_traversal':
+      return `path_traversal|${detection.endpoint ?? ''}|${detection.injectionContext?.paramName ?? ''}`;
+    case 'jwt_weak_alg':
+      return `jwt_weak_alg|${detection.endpoint ?? ''}|${detection.injectionContext?.proof ?? ''}`;
+
     // v0.7 XSS kinds
     case 'xss_reflected': {
       const route = detection.endpoint ?? detection.pageRoute ?? '';
