@@ -111,7 +111,8 @@ describe('T1: url-kind pages use singleton tab', () => {
 
     await runVisualBaseline(pages, makeConfig(), ['owner'], browser, makeVisionClient(), makeBudget());
 
-    expect(browser.navigate).toHaveBeenCalledTimes(3);
+    // 1 navigate from probeAuthHealth (to baseUrl) + 3 from per-page navigateForScreenshot.
+    expect(browser.navigate).toHaveBeenCalledTimes(4);
     expect(browser.screenshot).toHaveBeenCalledTimes(3);
     expect(browser.withTab).not.toHaveBeenCalled();
   }, 10_000);
