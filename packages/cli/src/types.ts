@@ -381,6 +381,11 @@ export type VisionConfig = {
    * Default: 'strict' when consistencyRuns >= 2; ignored when consistencyRuns === 1.
    */
   agreementMode?: 'strict' | 'majority';
+  /**
+   * Viewport widths (px) to capture per page, smallest-to-largest.
+   * Default: [375, 768, 1280]. Each width maps to height = round(width * 0.65).
+   */
+  viewports?: number[];
 };
 
 export type VisualBaselineEntry = {
@@ -438,6 +443,8 @@ export type DiscoveryOutput = {
   visionBaselineTelemetry?: VisionBaselineTelemetry;
   /** v0.15 consistency telemetry — present when vision is enabled. */
   visionConsistencyTelemetry?: VisionConsistencyTelemetry;
+  /** v0.17 per-viewport vision telemetry — present when vision is enabled. */
+  visionByViewport?: Record<number, { uniqueScreenshots: number; anomaliesFound: number; deduped: number }>;
 };
 
 export type SkippedItem = {
@@ -696,6 +703,10 @@ export type BugDetection = {
   visualSuggestedFix?: string;
   /** Path to the screenshot that produced this detection. Always set when kind === 'visual_anomaly'. */
   screenshotPath?: string;
+  /** v0.17: viewport context for visual_anomaly detections. */
+  visualContext?: {
+    viewportPx?: number;
+  };
   /** Populated for header/cookie/CSRF security findings. */
   headerContext?: HeaderContext;
   /** Populated for IDOR cross-user findings. */
@@ -1114,6 +1125,8 @@ export type RunSummary = {
       screenshotsWithAnomalies: number;
       screenshotsClean: number;
     };
+    /** v0.17: per-viewport telemetry — present when vision is enabled. */
+    byViewport?: Record<number, { uniqueScreenshots: number; anomaliesFound: number; deduped: number }>;
   };
   discovery?: {
     seedRoutes: number;

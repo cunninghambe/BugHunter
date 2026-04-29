@@ -120,6 +120,12 @@ export interface BrowserMcpAdapter {
    * are unchanged. The snapshot/ref pipeline is NOT used.
    */
   clickByHint(hint: TriggerSelectorHint): Promise<ClickByHintResult>;
+  /**
+   * v0.17: resize the singleton tab to the given viewport dimensions.
+   * Uses window.resizeTo + dispatchEvent('resize') fallback (camofox v0.1 has no set_viewport tool).
+   * Optional to avoid breaking existing test mocks that predate v0.17.
+   */
+  setViewport?(width: number, height: number): Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
 // Raw camofox result shapes.
@@ -438,6 +444,17 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
 
   async clickByHint(hint: TriggerSelectorHint): Promise<ClickByHintResult> {
     return this.clickByHintForTab(this.requireTab(), hint);
+  }
+
+  async setViewport(width: number, height: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const tabId = this.requireTab();
+    const expr = `(function(){window.resizeTo(${width},${height});window.dispatchEvent(new Event('resize'));return true;})()`;
+    try {
+      await this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: String(err) };
+    }
   }
 
   /**

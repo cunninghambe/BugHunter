@@ -18,6 +18,8 @@ export type TestCounters = {
     costUsd?: number;
     costCapUsd?: number;
     consistency?: VisionConsistencyTelemetry;
+    /** v0.17: per-viewport telemetry. */
+    byViewport?: Record<number, { uniqueScreenshots: number; anomaliesFound: number; deduped: number }>;
   };
   /** v0.6 performance summary — present when perf subsystem was enabled. */
   perfSummary?: RunSummary['perfSummary'];
