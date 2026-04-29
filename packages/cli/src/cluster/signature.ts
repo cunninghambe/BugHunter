@@ -35,7 +35,9 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     case 'visual_anomaly': {
       const cat = detection.visualCategory ?? 'other';
       const descNorm = normalizeVisualDescription(detection.rootCause);
-      return `${detection.kind}|${cat}|${descNorm}`;
+      // v0.17: include viewport so mobile and desktop bugs cluster separately.
+      const vp = detection.visualContext?.viewportPx ?? 'unknown';
+      return `${detection.kind}|${cat}|${vp}|${descNorm}`;
     }
 
     // --- v0.5 security kinds ---

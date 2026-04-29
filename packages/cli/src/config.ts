@@ -113,6 +113,7 @@ export const ConfigSchema = z.object({
     preScreenshotSettleMs: z.number().int().positive().optional(),
     consistencyRuns: z.number().int().min(1).max(5).default(2),
     agreementMode: z.enum(['strict', 'majority']).default('strict'),
+    viewports: z.array(z.number().int().min(320).max(2560)).min(1).max(6).default([375, 768, 1280]),
   }).optional(),
   perf: z.object({
     enabled: z.boolean(),

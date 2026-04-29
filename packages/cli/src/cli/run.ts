@@ -566,6 +566,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       costCapUsd: visionBudget?.costCapUsd,
       authMode: visionAuthMode,
       consistency: discovery.visionConsistencyTelemetry,
+      byViewport: discovery.visionByViewport,
     } : undefined;
 
     // v0.6: build perf summary from collected artifacts
