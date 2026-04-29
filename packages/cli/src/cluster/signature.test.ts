@@ -238,3 +238,37 @@ describe('clusterSignature — v0.12 interactive_element_missing_accessible_name
     expect(sig).toContain('interactive_element_missing_accessible_name');
   });
 });
+
+describe('clusterSignature — v0.17 visual_anomaly viewport clustering', () => {
+  it('same description at different viewports produces distinct cluster keys', () => {
+    const base = { kind: 'visual_anomaly' as const, rootCause: 'table clipped on right edge', visualCategory: 'layout' as const };
+    const at375 = make('visual_anomaly', { ...base, visualContext: { viewportPx: 375 } });
+    const at1280 = make('visual_anomaly', { ...base, visualContext: { viewportPx: 1280 } });
+    expect(clusterSignature(at375)).not.toBe(clusterSignature(at1280));
+  });
+
+  it('same description at same viewport produces identical cluster keys', () => {
+    const base = { rootCause: 'table clipped on right edge', visualCategory: 'layout' as const };
+    const a = make('visual_anomaly', { ...base, visualContext: { viewportPx: 375 } });
+    const b = make('visual_anomaly', { ...base, visualContext: { viewportPx: 375 } });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+  });
+
+  it('cluster key contains the viewport px value', () => {
+    const sig = clusterSignature(make('visual_anomaly', {
+      rootCause: 'menu overflow',
+      visualCategory: 'layout',
+      visualContext: { viewportPx: 768 },
+    }));
+    expect(sig).toContain('768');
+    expect(sig).toContain('visual_anomaly');
+  });
+
+  it('missing viewportPx falls back to unknown in cluster key', () => {
+    const sig = clusterSignature(make('visual_anomaly', {
+      rootCause: 'missing alt text',
+      visualCategory: 'a11y',
+    }));
+    expect(sig).toContain('unknown');
+  });
+});
