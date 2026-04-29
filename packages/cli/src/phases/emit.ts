@@ -25,6 +25,8 @@ export type TestCounters = {
   bundleSummary?: RunSummary['bundleSummary'];
   /** v0.14 seed-hook executions — one per hook, in run order. */
   seedHookExecutions?: SeedHookExecution[];
+  /** v0.8 heap attribution summary — present when analyze phase ran. */
+  heapAttributionSummary?: RunSummary['heapAttributionSummary'];
 };
 
 export function runEmit(
@@ -88,6 +90,7 @@ export function runEmit(
     ...(counters?.seedHookExecutions !== undefined && counters.seedHookExecutions.length > 0
       ? { seedHookExecutions: counters.seedHookExecutions }
       : {}),
+    ...(counters?.heapAttributionSummary !== undefined ? { heapAttributionSummary: counters.heapAttributionSummary } : {}),
   };
 
   writeJsonFile(paths.summaryFile, summary);

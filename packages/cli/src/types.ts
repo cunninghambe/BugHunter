@@ -70,6 +70,7 @@ export type BugKind =
   | 'oversized_bundle'
   | 'excessive_re_renders'
   | 'memory_leak_suspected'
+  | 'memory_leak_attributed'
   // v0.6 a11y baseline kinds
   | 'axe_color_contrast_strong'
   | 'keyboard_trap'
@@ -571,6 +572,12 @@ export type PerfArtifacts = {
   cdpConsoleErrors?: ConsoleError[];
 };
 
+export type HeapSnapshotRaw = {
+  capturedAtMs: number;
+  /** V8 heap-snapshot JSON; gzipped on disk, parsed in-memory */
+  json: string;
+};
+
 export type BundleArtifact = {
   path: string;
   kind: 'js' | 'css' | 'html' | 'asset';
@@ -633,6 +640,15 @@ export type BugDetection = {
   authFlowContext?: AuthFlowContext;
   /** Populated for v0.6 performance findings; shape varies by BugKind. */
   evidence?: Record<string, unknown>;
+  /** Populated for v0.8 heap-snapshot attribution findings. */
+  heapContext?: {
+    constructorName: string;
+    instanceCountDelta: number;
+    retainedSizeDelta: number;
+    retainerChain: string[];
+    diffWindow: { beforeActionIdx: number; afterActionIdx: number };
+    largeTimeGap?: boolean;
+  };
   /** Populated for v0.6 SEO hygiene findings. */
   seoContext?: {
     field: 'title' | 'meta_description' | 'canonical' | 'h1' | 'robots_meta' | 'robots_txt';
@@ -657,6 +673,7 @@ export type RunPhase =
   | 'execute'
   | 'classify'
   | 'cluster'
+  | 'analyze'
   | 'emit'
   | 'done';
 
@@ -912,6 +929,14 @@ export type BugHunterConfig = {
     longTaskMs?: number;
     rerenderCountThreshold?: number;
     rerenderWindowMs?: number;
+    /** v0.8: enable heap-snapshot diffing for leak attribution. Default false. */
+    heapAttribution?: boolean;
+    /** v0.8: snapshot frequency. 'auto' = at indices 0, mid, end. Default 'auto'. */
+    heapSnapshotFrequency?: 'auto' | number;
+    /** v0.8: minimum instance delta to flag. Default 10. */
+    heapDiffMinInstances?: number;
+    /** v0.8: minimum retained-size delta (bytes) to flag. Default 5_000_000. */
+    heapDiffMinBytes?: number;
   };
   /** v0.6 bundle-size sidecar. */
   bundleProbe?: BundleProbeConfig;
@@ -1041,6 +1066,13 @@ export type RunSummary = {
   };
   /** v0.14: one entry per hook execution, in run order. */
   seedHookExecutions?: SeedHookExecution[];
+  /** v0.8: heap attribution summary — present when heap attribution ran. */
+  heapAttributionSummary?: {
+    snapshotsCaptured: number;
+    diffsRun: number;
+    attributedLeaks: number;
+    topConstructor?: string;
+  };
 };
 
 // --- v0.14 seed-hook execution record (defined here so emit.ts can reference it) ---

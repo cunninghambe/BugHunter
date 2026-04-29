@@ -4,7 +4,7 @@
 
 import { chromium } from 'playwright-core';
 import type { Browser, BrowserContext, Page, CDPSession as PlaywrightCdpSession, Cookie } from 'playwright-core';
-import type { WebVitalSample, LongTaskSample, HeapSample, RenderEvent, ConsoleError } from '../types.js';
+import type { WebVitalSample, LongTaskSample, HeapSample, RenderEvent, ConsoleError, HeapSnapshotRaw } from '../types.js';
 import { log } from '../log.js';
 
 // Minimal CDP network event types (subset we actually use for HAR building).
@@ -81,6 +81,8 @@ export interface CdpSession {
   drain(): Promise<DrainResult>;
   setCookies(cookies: Cookie[]): Promise<void>;
   close(): Promise<void>;
+  takeHeapSnapshot(): Promise<HeapSnapshotRaw>;
+  collectGarbage(): Promise<void>;
 }
 
 type CollectedData = {
@@ -297,6 +299,27 @@ class CdpSessionImpl implements CdpSession {
     this.collected.consoleErrors = [];
 
     return result;
+  }
+
+  async takeHeapSnapshot(): Promise<HeapSnapshotRaw> {
+    if (this.cdp === null) throw new Error('cdp-session: no active CDP session; call newTab first');
+    const chunks: string[] = [];
+
+    const onChunk = (ev: { chunk: string }) => { chunks.push(ev.chunk); };
+
+    this.cdp.on('HeapProfiler.addHeapSnapshotChunk', onChunk);
+    await this.cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
+    // Allow in-flight chunk events to arrive before detaching.
+    await new Promise<void>(resolve => setTimeout(resolve, 100));
+    this.cdp.off('HeapProfiler.addHeapSnapshotChunk', onChunk);
+
+    return { capturedAtMs: Date.now(), json: chunks.join('') };
+  }
+
+  async collectGarbage(): Promise<void> {
+    if (this.cdp === null) throw new Error('cdp-session: no active CDP session; call newTab first');
+    await this.cdp.send('HeapProfiler.collectGarbage');
+    await new Promise<void>(resolve => setTimeout(resolve, 500));
   }
 
   async close(): Promise<void> {

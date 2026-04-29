@@ -16,6 +16,7 @@ import { runPlan } from '../phases/plan.js';
 import { runExecute } from '../phases/execute.js';
 import { runClassify } from '../phases/classify.js';
 import { runCluster } from '../phases/cluster.js';
+import { clusterSignature } from '../cluster/signature.js';
 import { runCrossUser } from '../phases/cross-user.js';
 import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
@@ -28,8 +29,9 @@ import { log } from '../log.js';
 import { createCdpSession, type CdpSession } from '../adapters/cdp-session.js';
 import { createPerfCollector, type PerfCollector } from '../perf/perf-collector.js';
 import { runBundleProbe } from '../phases/bundle-probe.js';
+import { runAnalyze } from '../phases/analyze.js';
 import { runSeedHooksAt } from '../seed/runner.js';
-import type { RunSummary, SeedHookExecution } from '../types.js';
+import type { RunSummary, SeedHookExecution, BugCluster } from '../types.js';
 
 function aggregateDiscoverySkips(skipList: SkippedItem[]): Array<{ reason: string; count: number }> {
   const counts = new Map<string, number>();
@@ -70,6 +72,12 @@ export type RunOptions = {
   keyboardTrapMax?: number;
   // v0.11 form-reachability probe
   formReachabilityTimeout?: number;
+  // v0.8 heap attribution flags
+  enableHeapAttribution?: boolean;
+  noHeapAttribution?: boolean;
+  heapSnapshotFrequency?: 'auto' | number;
+  heapDiffMinInstances?: number;
+  heapDiffMinBytes?: number;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -79,10 +87,14 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const perfEnabled = opts.enablePerf === true || (config.perf?.enabled ?? false);
   const bundleProbeEnabled = opts.enableBundleProbe === true || (config.bundleProbe?.enabled ?? false);
   const heapSampling = opts.enableMemoryProfile === true || (config.perf?.heapSampling ?? false);
+  // v0.8: --enable-heap-attribution implies --enable-memory-profile
+  const heapAttributionEnabled =
+    opts.noHeapAttribution !== true &&
+    (opts.enableHeapAttribution === true || (config.perf?.heapAttribution ?? false));
 
   const perfConfig = perfEnabled ? {
     enabled: true,
-    heapSampling,
+    heapSampling: heapSampling || heapAttributionEnabled,
     vitalsThresholds: {
       lcpMs: opts.lcpThreshold ?? config.perf?.vitalsThresholds?.lcpMs ?? 2500,
       inpMs: opts.inpThreshold ?? config.perf?.vitalsThresholds?.inpMs ?? 200,
@@ -95,6 +107,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     longTaskMs: config.perf?.longTaskMs ?? 50,
     rerenderCountThreshold: config.perf?.rerenderCountThreshold ?? 10,
     rerenderWindowMs: config.perf?.rerenderWindowMs ?? 5000,
+    heapAttribution: heapAttributionEnabled || (config.perf?.heapAttribution ?? false),
+    heapSnapshotFrequency: opts.heapSnapshotFrequency ?? config.perf?.heapSnapshotFrequency ?? 'auto',
+    heapDiffMinInstances: opts.heapDiffMinInstances ?? config.perf?.heapDiffMinInstances ?? 10,
+    heapDiffMinBytes: opts.heapDiffMinBytes ?? config.perf?.heapDiffMinBytes ?? 5_000_000,
   } : config.perf;
 
   const bundleProbeConfig = bundleProbeEnabled ? {
@@ -456,6 +472,46 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
     runState.clusters = clusters;
     runState.clusterCount = clusters.length;
+    runState.phase = 'analyze';
+    saveRunState(runState);
+
+    // Phase 5.5: analyze — heap-snapshot diffing (v0.8).
+    // Only runs when memory_leak_suspected fired OR --enable-heap-attribution is set.
+    let heapAttributionSummary: RunSummary['heapAttributionSummary'];
+
+    if (cdpSessionHandle !== undefined && resolved.perf !== undefined) {
+      const rPaths = runPaths(opts.projectDir, runId);
+      const heapDir = `${rPaths.runDir}/heap`;
+      const analyzeResult = await runAnalyze({
+        clusters,
+        cdpSession: cdpSessionHandle,
+        heapDir,
+        config: resolved,
+        actionCount: results.length,
+      });
+
+      if (analyzeResult.ok && analyzeResult.detections.length > 0) {
+        // Synthesise attributed detections into cluster form.
+        const { attributedClusters } = synthesiseHeapAttributedClusters(runId, analyzeResult.detections);
+
+        // Promote memory_leak_suspected clusters with relatedClusters links.
+        linkSuspectedToAttributed(clusters, attributedClusters);
+
+        clusters.push(...attributedClusters);
+        runState.clusters = clusters;
+        runState.clusterCount = clusters.length;
+      }
+
+      heapAttributionSummary = {
+        snapshotsCaptured: analyzeResult.ok ? analyzeResult.snapshotsCaptured : 0,
+        diffsRun: analyzeResult.ok ? analyzeResult.diffsRun : 0,
+        attributedLeaks: analyzeResult.ok ? analyzeResult.detections.length : 0,
+        topConstructor: analyzeResult.ok
+          ? analyzeResult.detections[0]?.heapContext?.constructorName
+          : undefined,
+      };
+    }
+
     runState.phase = 'emit';
     saveRunState(runState);
 
@@ -502,6 +558,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(perfSummary !== undefined ? { perfSummary } : {}),
       ...(bundleSummary !== undefined ? { bundleSummary } : {}),
       ...(seedHookTelemetry.length > 0 ? { seedHookExecutions: seedHookTelemetry } : {}),
+      ...(heapAttributionSummary !== undefined ? { heapAttributionSummary } : {}),
     });
     runState.emitted = true;
     runState.phase = 'done';
@@ -622,6 +679,52 @@ function synthesiseFakeDetectionCases(
   }
 
   return { staticTestCases, staticResults };
+}
+
+function synthesiseHeapAttributedClusters(
+  runId: string,
+  detections: BugDetection[],
+): { attributedClusters: BugCluster[] } {
+  const clusterMap = new Map<string, BugCluster>();
+
+  for (const detection of detections) {
+    const sig = clusterSignature(detection);
+    if (!clusterMap.has(sig)) {
+      const now = new Date().toISOString();
+      clusterMap.set(sig, {
+        id: createId(),
+        runId,
+        kind: detection.kind,
+        rootCause: detection.rootCause,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        clusterSize: 1,
+        occurrences: [],
+        suspectedFiles: [],
+        fixHints: [detection.rootCause],
+        thirdPartyOrGenerated: false,
+      });
+    } else {
+      const c = clusterMap.get(sig)!;
+      c.clusterSize++;
+      c.lastSeenAt = new Date().toISOString();
+    }
+  }
+
+  return { attributedClusters: Array.from(clusterMap.values()) };
+}
+
+function linkSuspectedToAttributed(clusters: BugCluster[], attributedClusters: BugCluster[]): void {
+  const suspectedClusters = clusters.filter(c => c.kind === 'memory_leak_suspected');
+  if (suspectedClusters.length === 0 || attributedClusters.length === 0) return;
+
+  for (const suspected of suspectedClusters) {
+    const newIds = attributedClusters.map(c => c.id);
+    suspected.relatedClusterIds = [...new Set([...(suspected.relatedClusterIds ?? []), ...newIds])];
+    if (suspected.fixHints.length === 0 || !suspected.fixHints.some(h => h.includes('memory_leak_attributed'))) {
+      suspected.fixHints.push('See memory_leak_attributed clusters for retainer attribution.');
+    }
+  }
 }
 
 async function closeAllExistingTabs(browser: CamofoxBrowserMcpAdapter): Promise<void> {

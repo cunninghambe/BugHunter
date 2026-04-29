@@ -71,6 +71,7 @@ const KIND_PRIORITY: BugKind[] = [
   'main_thread_blocked',
   'oversized_bundle',
   'excessive_re_renders',
+  'memory_leak_attributed',
   'memory_leak_suspected',
 ];
 

@@ -184,6 +184,8 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     }
     case 'memory_leak_suspected':
       return 'memory_leak_suspected:run';
+    case 'memory_leak_attributed':
+      return `memory_leak_attributed|${detection.heapContext?.constructorName ?? ''}|${detection.heapContext?.retainerChain?.[0] ?? ''}`;
 
     // v0.6 a11y baseline kinds
     case 'axe_color_contrast_strong':
