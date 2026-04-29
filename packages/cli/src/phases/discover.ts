@@ -249,9 +249,16 @@ export async function runDiscover(
 // Default login-path globs for auth-health probing (R4: configurable in future).
 const DEFAULT_LOGIN_GLOBS = ['/login', '/auth/login', '/signin'];
 
-/** Returns true when the singleton tab is on an authenticated route, false if on a login redirect. */
-async function probeAuthHealth(browser: BrowserMcpAdapter, loginGlobs: string[]): Promise<boolean> {
+/**
+ * Returns true when the singleton tab is on an authenticated route, false if on a login redirect.
+ * Navigates to the baseUrl root first so SPA post-login redirects (e.g. / -> /dashboard) settle
+ * before we sample location.pathname. Without this, the probe sees the post-login /login pathname
+ * if the user just authenticated and the SPA hasn't yet redirected.
+ */
+async function probeAuthHealth(browser: BrowserMcpAdapter, loginGlobs: string[], baseUrl: string): Promise<boolean> {
   try {
+    await browser.navigate(baseUrl);
+    await new Promise<void>(r => { setTimeout(r, 1500); });
     const result = await browser.evaluate('location.pathname');
     const pathname = String(result.value ?? '');
     return !loginGlobs.some(glob => pathname === glob || pathname.startsWith(`${glob}/`));
@@ -449,7 +456,7 @@ export async function runVisualBaseline(
 
   // One-time auth health probe before the screenshot loop (Design C §4).
   if (loginEnabled) {
-    const isAuthed = await probeAuthHealth(browser, DEFAULT_LOGIN_GLOBS);
+    const isAuthed = await probeAuthHealth(browser, DEFAULT_LOGIN_GLOBS, baseUrl);
     if (!isAuthed) {
       log.warn('vision baseline: singleton tab not authenticated (auth_lost_pre_loop); skipping vision pass');
       return {
