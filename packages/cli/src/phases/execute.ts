@@ -510,7 +510,16 @@ async function executeUiTestInner(
         if (tc.action.selector === undefined) throw new Error('execute: submit action missing selector');
         if (tc.action.selector === '') throw new Error('execute: submit action has empty selector — planning bug?');
         const inputRecord = isStringKeyedRecord(tc.action.input) ? tc.action.input : {};
-        await runFormSubmit(scope, tc.action.selector, inputRecord, { asyncMaxWaitMs: asyncMaxWaitMs ?? 2000 });
+        if (tc.action.palette === 'xss_inject') {
+          // For XSS injection tests, a form submit failure is non-fatal: the server
+          // may still reflect the canary (e.g. in a redirect or partial render).
+          await runFormSubmit(scope, tc.action.selector, inputRecord, { asyncMaxWaitMs: asyncMaxWaitMs ?? 2000 })
+            .catch(err => {
+              log.debug('xss-inject: form submit failed, continuing to detection', { err: String(err), tcId: tc.id });
+            });
+        } else {
+          await runFormSubmit(scope, tc.action.selector, inputRecord, { asyncMaxWaitMs: asyncMaxWaitMs ?? 2000 });
+        }
         break;
       }
       case 'fill':
