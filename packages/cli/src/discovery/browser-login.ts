@@ -355,6 +355,10 @@ async function findSubmitSelector(
   return null;
 }
 
+function assertNever(x: never): never {
+  throw new Error(`Unhandled successCheck kind: ${String((x as { kind: string }).kind)}`);
+}
+
 async function verifySuccess(
   browser: BrowserMcpAdapter,
   plan: BrowseableAuthPlan,
@@ -367,20 +371,21 @@ async function verifySuccess(
 
   while (Date.now() < deadline) {
     const currentUrl = await getCurrentUrl(browser);
+    const sc = plan.successCheck;
 
-    if (plan.successCheck.kind === 'cookie') {
+    if (sc.kind === 'cookie') {
       const cookieNames = await getCookieNames(browser, baseUrl);
-      if (cookieNames.includes(plan.successCheck.name)) {
+      if (cookieNames.includes(sc.name)) {
         const cookies = await getCookies(browser, baseUrl);
         return { ok: true, cookies, finalUrl: currentUrl };
       }
-    } else if (plan.successCheck.kind === 'redirect') {
-      if (currentUrl.includes(plan.successCheck.to)) {
+    } else if (sc.kind === 'redirect') {
+      if (currentUrl.includes(sc.to)) {
         const cookies = await getCookies(browser, baseUrl);
         return { ok: true, cookies, finalUrl: currentUrl };
       }
-    } else {
-      // status-based: URL changed + no error alert.
+    } else if (sc.kind === 'status') {
+      // URL changed + no error alert.
       // Empty currentUrl means page is in a transient/unready state — treat as "still on login".
       if (currentUrl !== '' && currentUrl !== loginUrl) {
         try {
@@ -397,6 +402,34 @@ async function verifySuccess(
           return { ok: true, cookies, finalUrl: currentUrl };
         }
       }
+    } else if (sc.kind === 'localStorage') {
+      try {
+        const pathExpr = sc.tokenJsonPath !== undefined
+          ? `try{var obj=JSON.parse(raw);var path=${JSON.stringify(sc.tokenJsonPath)}.split('.');var v=obj;for(var i=0;i<path.length;i++){if(v==null)return null;v=v[path[i]];}return typeof v==='string'?v:null;}catch(e){return null;}`
+          : 'return raw;';
+        const result = await browser.evaluate(
+          `(function(){var raw=localStorage.getItem(${JSON.stringify(sc.key)});if(raw===null||raw==='')return null;${pathExpr}})()`
+        );
+        const token = String(result.value ?? '');
+        const minLen = sc.minLength ?? 16;
+        if (token.length >= minLen && token !== 'null' && token !== 'undefined') {
+          log.info(`browser_login: localStorage token present`, { key: sc.key, tokenLength: token.length });
+          const cookies = await getCookies(browser, baseUrl);
+          return { ok: true, cookies, finalUrl: currentUrl };
+        }
+      } catch { /* keep polling */ }
+    } else if (sc.kind === 'dom_signal') { // eslint-disable-line @typescript-eslint/no-unnecessary-condition
+      try {
+        const result = await browser.evaluate(
+          `document.querySelector(${JSON.stringify(sc.selector)})!==null`
+        );
+        if (result.value === true) {
+          const cookies = await getCookies(browser, baseUrl);
+          return { ok: true, cookies, finalUrl: currentUrl };
+        }
+      } catch { /* keep polling */ }
+    } else {
+      assertNever(sc);
     }
 
     await sleep(verifyPollMs);
