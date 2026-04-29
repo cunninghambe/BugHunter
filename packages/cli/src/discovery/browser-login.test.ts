@@ -663,3 +663,193 @@ describe('labelTextCandidates', () => {
     expect(labelTextCandidates('password', 'user-pwd')).toContain('user-pwd');
   });
 });
+
+// ─── v0.18 verifySuccess — localStorage + dom_signal ─────────────────────────
+
+function makeVerifyBrowser(opts: {
+  localStorageValue?: string | null;
+  domSelectorPresent?: boolean;
+  currentUrl?: string;
+  /** Array of values to return on successive localStorage evaluate calls */
+  localStorageSequence?: Array<string | null>;
+  domSequence?: boolean[];
+} = {}): BrowserMcpAdapter {
+  let lsCallCount = 0;
+  let domCallCount = 0;
+
+  return {
+    navigate: vi.fn(async (url: string) => ({ url })),
+    click: vi.fn(async () => ({ clicked: true })),
+    type: vi.fn(async () => ({ typed: true })),
+    scroll: vi.fn(async () => ({ scrolled: true })),
+    snapshot: vi.fn(async () => ({ snapshot: '' })),
+    screenshot: vi.fn(async () => ({ path: '' })),
+    listTabs: vi.fn(async () => ({ tabs: [] })),
+    closeTab: vi.fn(async () => ({ closed: true })),
+    openTab: vi.fn(async () => ({ tabId: 'tab1', finalUrl: '' })),
+    closeTabExplicit: vi.fn(async () => {}),
+    withTab: vi.fn(),
+    cookies: vi.fn(async () => ({ tabId: 'tab1', cookies: [] })),
+    evaluate: vi.fn(async (script: string) => {
+      if (script.includes('captcha')) return { value: { captcha: false, twoFa: false } };
+      if (script.includes('for(var i=0;i<sels.length;i++)')) return { value: true };
+      if (script.includes('getOwnPropertyDescriptor')) return { value: true };
+      if (script.includes('location.href')) return { value: opts.currentUrl ?? 'http://localhost:3002/login' };
+      if (script.includes('localStorage.getItem')) {
+        if (opts.localStorageSequence) {
+          const val = opts.localStorageSequence[lsCallCount] ?? null;
+          lsCallCount++;
+          return { value: val };
+        }
+        return { value: opts.localStorageValue ?? null };
+      }
+      if (script.includes('document.querySelector(') && script.includes('!==null')) {
+        if (opts.domSequence) {
+          const val = opts.domSequence[domCallCount] ?? false;
+          domCallCount++;
+          return { value: val };
+        }
+        return { value: opts.domSelectorPresent ?? false };
+      }
+      return { value: true };
+    }),
+  } as unknown as BrowserMcpAdapter;
+}
+
+describe('verifySuccess — localStorage kind', () => {
+  it('token present at minLength threshold → ok:true', async () => {
+    const plan: DescribeAuthResult = {
+      ...FORM_PLAN,
+      successCheck: { kind: 'localStorage', key: 'auth-storage' },
+    };
+    // Value is a 100-char JWT-like string
+    const token = 'a'.repeat(100);
+    const browser = makeVerifyBrowser({ localStorageValue: token, currentUrl: 'http://localhost:3002/dashboard' });
+    const result = await loginInBrowser(browser, makeSurface(plan), DEFAULT_OPTS);
+    expect(result.ok).toBe(true);
+  });
+
+  it('token shorter than default minLength (16) → keeps polling → verification_failed', async () => {
+    const plan: DescribeAuthResult = {
+      ...FORM_PLAN,
+      successCheck: { kind: 'localStorage', key: 'auth-storage' },
+    };
+    const browser = makeVerifyBrowser({ localStorageValue: 'short', currentUrl: 'http://localhost:3002/login' });
+    const result = await loginInBrowser(browser, makeSurface(plan), {
+      ...DEFAULT_OPTS,
+      verifyTimeoutMs: 50,
+      verifyPollMs: 10,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('verification_failed');
+  });
+
+  it('value is "null" string → rejected → verification_failed', async () => {
+    const plan: DescribeAuthResult = {
+      ...FORM_PLAN,
+      successCheck: { kind: 'localStorage', key: 'auth-storage' },
+    };
+    const browser = makeVerifyBrowser({ localStorageValue: 'null', currentUrl: 'http://localhost:3002/login' });
+    const result = await loginInBrowser(browser, makeSurface(plan), {
+      ...DEFAULT_OPTS,
+      verifyTimeoutMs: 50,
+      verifyPollMs: 10,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('verification_failed');
+  });
+
+  it('tokenJsonPath resolves nested token → ok:true', async () => {
+    const plan: DescribeAuthResult = {
+      ...FORM_PLAN,
+      successCheck: { kind: 'localStorage', key: 'auth-storage', tokenJsonPath: 'state.token' },
+    };
+    // The evaluate script extracts state.token from the JSON; mock returns the extracted value
+    const nestedToken = 'a'.repeat(200);
+    const browser = makeVerifyBrowser({ localStorageValue: nestedToken, currentUrl: 'http://localhost:3002/dashboard' });
+    const result = await loginInBrowser(browser, makeSurface(plan), DEFAULT_OPTS);
+    expect(result.ok).toBe(true);
+  });
+
+  it('tokenJsonPath missing intermediate key → null → keeps polling → verification_failed', async () => {
+    const plan: DescribeAuthResult = {
+      ...FORM_PLAN,
+      successCheck: { kind: 'localStorage', key: 'auth-storage', tokenJsonPath: 'state.token' },
+    };
+    // Mock returns null (path traversal failed or value isn't a string)
+    const browser = makeVerifyBrowser({ localStorageValue: null, currentUrl: 'http://localhost:3002/login' });
+    const result = await loginInBrowser(browser, makeSurface(plan), {
+      ...DEFAULT_OPTS,
+      verifyTimeoutMs: 50,
+      verifyPollMs: 10,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('verification_failed');
+  });
+
+  it('token appears on 3rd poll → ok:true', async () => {
+    const plan: DescribeAuthResult = {
+      ...FORM_PLAN,
+      successCheck: { kind: 'localStorage', key: 'auth-storage' },
+    };
+    const token = 'a'.repeat(100);
+    const browser = makeVerifyBrowser({
+      localStorageSequence: [null, null, token],
+      currentUrl: 'http://localhost:3002/dashboard',
+    });
+    const result = await loginInBrowser(browser, makeSurface(plan), {
+      ...DEFAULT_OPTS,
+      verifyTimeoutMs: 500,
+      verifyPollMs: 10,
+    });
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe('verifySuccess — dom_signal kind', () => {
+  it('selector present immediately → ok:true', async () => {
+    const plan: DescribeAuthResult = {
+      ...FORM_PLAN,
+      successCheck: { kind: 'dom_signal', selector: '[data-testid="user-menu"]' },
+    };
+    const browser = makeVerifyBrowser({ domSelectorPresent: true, currentUrl: 'http://localhost:3002/dashboard' });
+    const result = await loginInBrowser(browser, makeSurface(plan), DEFAULT_OPTS);
+    expect(result.ok).toBe(true);
+  });
+
+  it('selector absent → keeps polling → verification_failed', async () => {
+    const plan: DescribeAuthResult = {
+      ...FORM_PLAN,
+      successCheck: { kind: 'dom_signal', selector: '[data-testid="user-menu"]' },
+    };
+    const browser = makeVerifyBrowser({ domSelectorPresent: false, currentUrl: 'http://localhost:3002/login' });
+    const result = await loginInBrowser(browser, makeSurface(plan), {
+      ...DEFAULT_OPTS,
+      verifyTimeoutMs: 50,
+      verifyPollMs: 10,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('verification_failed');
+  });
+
+  it('selector absent for 4 polls then present → ok:true', async () => {
+    const plan: DescribeAuthResult = {
+      ...FORM_PLAN,
+      successCheck: { kind: 'dom_signal', selector: '[data-testid="user-menu"]' },
+    };
+    const browser = makeVerifyBrowser({
+      domSequence: [false, false, false, false, true],
+      currentUrl: 'http://localhost:3002/dashboard',
+    });
+    const result = await loginInBrowser(browser, makeSurface(plan), {
+      ...DEFAULT_OPTS,
+      verifyTimeoutMs: 500,
+      verifyPollMs: 10,
+    });
+    expect(result.ok).toBe(true);
+  });
+});
