@@ -16,6 +16,13 @@ const KIND_PRIORITY: BugKind[] = [
   'xss_dom',         // confirmed JS exec
   'xss_reflected',   // confirmed echo
   'xss_stored',      // v0.8 placeholder, never fires
+  // v0.19 race-condition kinds: critical (data corruption / silent failure) but below XSS exec
+  // click_then_navigate is lowest-of-family (most flake-prone)
+  'race_condition_double_submit',
+  'race_condition_optimistic_revert',
+  'race_condition_interleaved_mutations',
+  'race_condition_cross_tab',
+  'race_condition_click_navigate',
   'network_5xx',
   'react_error',
   'hydration_mismatch',
@@ -43,8 +50,6 @@ const KIND_PRIORITY: BugKind[] = [
   'vulnerable_dependency_high',
   'hardcoded_credentials_in_source',
   'no_rate_limit_on_login',
-  'race_double_submit',
-  'optimistic_update_divergence',
   'hallucinated_route',
   'swallowed_error_empty_catch',
   'dom_error_text',

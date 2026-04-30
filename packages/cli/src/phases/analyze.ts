@@ -172,10 +172,11 @@ export async function runAnalyze(opts: AnalyzeOptions): Promise<AnalyzeResult> {
   const sortedIndices = [...snapshots.keys()].sort((a, b) => a - b);
 
   for (let i = 0; i < sortedIndices.length - 1; i++) {
-    const beforeIdx = sortedIndices[i]!;
-    const afterIdx = sortedIndices[i + 1]!;
-    const beforeSnap = snapshots.get(beforeIdx)!;
-    const afterSnap = snapshots.get(afterIdx)!;
+    const beforeIdx = sortedIndices[i] ?? 0;
+    const afterIdx = sortedIndices[i + 1] ?? 0;
+    const beforeSnap = snapshots.get(beforeIdx);
+    const afterSnap = snapshots.get(afterIdx);
+    if (beforeSnap === undefined || afterSnap === undefined) continue;
 
     try {
       const diff = differ.diff(beforeSnap, afterSnap, {

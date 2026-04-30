@@ -3,7 +3,20 @@
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   BugHunterConfig, DiscoveredForm, DiscoveredPage, DiscoveryOutput, TestCase, ToolMeta,
+  RaceConditionsConfig, InterleavingVariant,
 } from '../types.js';
+import {
+  DEFAULT_VARIANTS,
+  extractMutatingActionTuples,
+  pairSiblings,
+  isSensitiveToolPath,
+  isIdempotentTool,
+  makeDoubleSubmit,
+  makeClickThenNavigate,
+  makeOptimisticRevert,
+  makeInterleavedMutations,
+  makeCrossTab,
+} from '../security/interleaving-palette.js';
 import { formTestCases, apiTestCases, xssFormTestCases, xssApiTestCases } from '../mutation/apply.js';
 import { formCollapseSignature } from '../discovery/element-collapse.js';
 import { log } from '../log.js';
@@ -135,6 +148,20 @@ export async function runPlan(
     log.info(`xss: planned ${xssCount} canary tests${xssCount >= xssMaxTestCases ? `, capped at ${xssMaxTestCases}` : ''}`);
   }
 
+  // v0.19: second pass — race-condition interleaving planner
+  const raceSkipReasons = new Map<string, number>();
+  if (config.raceConditions?.enabled === true) {
+    // Emit deprecation warning if synthetic.raceDoubleSubmit is also set (§ 2.1)
+    if (config.synthetic?.raceDoubleSubmit !== undefined) {
+      log.warn('synthetic.raceDoubleSubmit is deprecated; use raceConditions.doubleSubmitGapMs instead');
+    }
+
+    const toolMap = new Map<string, ToolMeta>(enrichedTools.map(t => [t.toolId, t]));
+    const raceCases = planRaceTests(runId, testCases, toolMap, config.raceConditions, raceSkipReasons);
+    testCases.push(...raceCases);
+    log.info(`race: planned ${raceCases.length} interleaving tests`);
+  }
+
   // Orphan-fixture warning: bodyFixtures keys not in catalog
   if (config.bodyFixtures !== undefined) {
     const catalogIds = new Set(enrichedTools.map(t => t.toolId));
@@ -154,11 +181,17 @@ export async function runPlan(
 
   const concurrency = config.concurrency ?? 4;
   const apiConcurrency = config.apiConcurrency ?? 16;
-  const uiTests = testCases.filter(t => t.action.via === 'ui').length;
+  const uiTests = testCases.filter(t => t.action.via === 'ui' && t.race === undefined).length;
   const apiTests = testCases.filter(t => t.action.via === 'api').length;
+  const raceCasesCount = testCases.filter(t => t.race !== undefined).length;
   const uiTimeMs = Math.ceil(uiTests / concurrency) * AVG_TEST_MS;
   const apiTimeMs = Math.ceil(apiTests / apiConcurrency) * AVG_TEST_MS;
-  const projectedRuntimeMs = Math.max(uiTimeMs, apiTimeMs);
+  // Race tests: ≈8s each including reset; capped to raceConcurrency (default 2).
+  const raceConcurrency = config.raceConditions?.raceConcurrency ?? Math.min(2, concurrency);
+  const RACE_TEST_AVG_MS = 8_000;
+  const raceTimeMs = raceCasesCount > 0 ? Math.ceil(raceCasesCount / raceConcurrency) * RACE_TEST_AVG_MS : 0;
+  // Race tests run after the main queue; add to projected runtime (open question 7: yes, include).
+  const projectedRuntimeMs = Math.max(uiTimeMs, apiTimeMs) + raceTimeMs;
 
   const hrs = Math.floor(projectedRuntimeMs / 3_600_000);
   const mins = Math.floor((projectedRuntimeMs % 3_600_000) / 60_000);
@@ -169,6 +202,11 @@ export async function runPlan(
     `\nProjected: ${testCases.length} tests · concurrency ${concurrency} (browser) + ${apiConcurrency} (api) · est. ${hrs}h ${mins}m\n` +
     `Set --max-runtime to a higher value or pass --budget <ms> to time-box this run.\n\n`
   );
+
+  // Merge race skip reasons into the global skip reason map
+  for (const [reason, count] of raceSkipReasons) {
+    skipReasonCounts.set(reason, (skipReasonCounts.get(reason) ?? 0) + count);
+  }
 
   const skipReasons = [...skipReasonCounts.entries()].map(([reason, count]) => ({ reason, count }));
 
@@ -279,4 +317,99 @@ export function shouldEmitSubmitTest(
   }
 
   return { emit: true };
+}
+
+/**
+ * v0.19: Race-condition second pass.
+ * Consumes the happy-palette UI test cases already generated, extracts mutating-action
+ * tuples, and emits one race TestCase per enabled InterleavingVariant.
+ */
+export function planRaceTests(
+  runId: string,
+  existingCases: TestCase[],
+  toolMap: Map<string, ToolMeta>,
+  raceConfig: RaceConditionsConfig,
+  skipReasonCounts: Map<string, number>,
+): TestCase[] {
+  const maxTests = raceConfig.maxTests ?? 200;
+  const enabledVariants = raceConfig.variants ?? DEFAULT_VARIANTS;
+  const idempotentToolIds = raceConfig.idempotentToolIds ?? [];
+  const aggressiveTargets = raceConfig.aggressiveRaceTargets ?? [];
+
+  const tuples = extractMutatingActionTuples(existingCases, toolMap);
+  const siblingMap = pairSiblings(tuples, raceConfig);
+
+  const raceCases: TestCase[] = [];
+
+  for (const tuple of tuples) {
+    if (raceCases.length >= maxTests) break;
+
+    const { toolId, toolPath, testCase } = tuple;
+
+    for (const variantKind of enabledVariants) {
+      if (raceCases.length >= maxTests) break;
+
+      // double_submit: skip idempotent and sensitive tools
+      if (variantKind === 'double_submit') {
+        if (isIdempotentTool(toolId, idempotentToolIds)) {
+          skipReasonCounts.set('idempotent_by_config', (skipReasonCounts.get('idempotent_by_config') ?? 0) + 1);
+          continue;
+        }
+        if (isSensitiveToolPath(toolPath, aggressiveTargets)) {
+          skipReasonCounts.set('sensitive_tool_path', (skipReasonCounts.get('sensitive_tool_path') ?? 0) + 1);
+          continue;
+        }
+      }
+
+      // interleaved_mutations: skip if no sibling exists for this toolId
+      if (variantKind === 'interleaved_mutations') {
+        const siblingToolId = siblingMap.get(toolId);
+        if (siblingToolId === undefined) {
+          skipReasonCounts.set('no_sibling_for_interleave', (skipReasonCounts.get('no_sibling_for_interleave') ?? 0) + 1);
+          continue;
+        }
+        raceCases.push(makeRaceTestCase(runId, testCase, makeInterleavedMutations(siblingToolId, raceConfig)));
+        continue;
+      }
+
+      // cross_tab: only if explicitly enabled (not in DEFAULT_VARIANTS; must be explicitly added by user)
+      if (variantKind === 'cross_tab') {
+        raceCases.push(makeRaceTestCase(runId, testCase, makeCrossTab(raceConfig)));
+        continue;
+      }
+
+      // click_then_navigate: target is the first link on the same page (from the test case's page)
+      if (variantKind === 'click_then_navigate') {
+        // Use the page's first available link as target; fall back to '/' if none
+        const targetRoute = (testCase as TestCase & { _pageLinks?: string[] })._pageLinks?.[0] ?? '/';
+        raceCases.push(makeRaceTestCase(runId, testCase, makeClickThenNavigate(targetRoute)));
+        continue;
+      }
+
+      if (variantKind === 'optimistic_revert') {
+        raceCases.push(makeRaceTestCase(runId, testCase, makeOptimisticRevert(raceConfig)));
+        continue;
+      }
+
+      // double_submit reaches here after guard checks above (idempotent + sensitive already skipped)
+      raceCases.push(makeRaceTestCase(runId, testCase, makeDoubleSubmit(raceConfig)));
+    }
+  }
+
+  return raceCases;
+}
+
+function makeRaceTestCase(runId: string, source: TestCase, variant: InterleavingVariant): TestCase {
+  return {
+    id: createId(),
+    runId,
+    role: source.role,
+    page: source.page,
+    action: { ...source.action, palette: 'happy' },
+    expectedOutcome: 'success',
+    palette: 'happy',
+    formSignature: source.formSignature,
+    stateContext: source.stateContext,
+    race: { variant },
+  };
 }
