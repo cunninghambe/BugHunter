@@ -18,11 +18,35 @@ export type ReplayResult = {
   error?: string;
 };
 
+/**
+ * Resolve a (possibly relative) action-log URL against the run's appBaseUrl.
+ * Returns the absolute URL string, or null if both inputs are invalid/missing.
+ * Only http: and https: protocols are accepted; javascript:, data:, etc. return null.
+ */
+export function resolveActionLogUrl(maybeRelative: string, appBaseUrl: string | undefined): string | null {
+  try {
+    const u = new URL(maybeRelative);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
+    // Any other absolute scheme (javascript:, data:, etc.) is rejected.
+    return null;
+  } catch { /* not an absolute URL — fall through to base resolution */ }
+
+  if (appBaseUrl === undefined || appBaseUrl === '') return null;
+  try {
+    const resolved = new URL(maybeRelative, appBaseUrl);
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return null;
+    return resolved.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function replayActionLog(
   actionLog: ActionLog,
   browser: BrowserMcpAdapter,
   surface: SurfaceMcpAdapter,
-  runId: string
+  runId: string,
+  appBaseUrl?: string,
 ): Promise<ReplayResult> {
   const consoleErrors: unknown[] = [];
   const networkRequests: unknown[] = [];
@@ -33,7 +57,8 @@ export async function replayActionLog(
     // navigation target is stateContext.baseRoute + clickByHint(triggerHint).
     if (actionLog.stateContext !== undefined) {
       const { baseRoute, triggerHint } = actionLog.stateContext;
-      await browser.navigate(baseRoute, { 'X-BugHunter-Run': runId });
+      const resolvedBase = resolveActionLogUrl(baseRoute, appBaseUrl) ?? baseRoute;
+      await browser.navigate(resolvedBase, { 'X-BugHunter-Run': runId });
       const clicked = await browser.clickByHint(triggerHint);
       if (!clicked.clicked) {
         log.warn('replay: state trigger not found', { occurrenceId: actionLog.occurrenceId, triggerHint });
@@ -42,7 +67,11 @@ export async function replayActionLog(
     }
 
     for (const entry of actionLog.actions) {
-      await executeStep(entry, browser, surface, actionLog.role, runId);
+      const stepError = await executeStep(entry, browser, surface, actionLog.role, runId, appBaseUrl);
+      if (stepError !== undefined) {
+        log.warn('replay: step unresolvable URL', { occurrenceId: actionLog.occurrenceId, error: stepError });
+        return { ok: false, observation: { consoleErrors, networkRequests }, error: stepError };
+      }
     }
 
     const snapshot = await browser.snapshot().catch(() => null);
@@ -65,17 +94,25 @@ export async function replayActionLog(
   }
 }
 
+/** Returns an error string if a navigate step's URL cannot be resolved, undefined otherwise. */
 async function executeStep(
   entry: ActionLogEntry,
   browser: BrowserMcpAdapter,
   surface: SurfaceMcpAdapter,
   role: string,
-  runId: string
-): Promise<void> {
+  runId: string,
+  appBaseUrl?: string,
+): Promise<string | undefined> {
   switch (entry.kind) {
-    case 'navigate':
-      await browser.navigate(entry.url ?? '', { 'X-BugHunter-Run': runId });
+    case 'navigate': {
+      const raw = entry.url ?? '';
+      const resolved = resolveActionLogUrl(raw, appBaseUrl);
+      if (resolved === null) {
+        return `replay_url_unresolvable: url=${JSON.stringify(raw)} appBaseUrl=${JSON.stringify(appBaseUrl)}`;
+      }
+      await browser.navigate(resolved, { 'X-BugHunter-Run': runId });
       break;
+    }
 
     case 'click':
       if (entry.selector === undefined) throw new Error('replay: click action missing selector');
@@ -110,4 +147,5 @@ async function executeStep(
       // Render = just navigate, already handled
       break;
   }
+  return undefined;
 }
