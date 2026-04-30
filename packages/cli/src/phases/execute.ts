@@ -24,6 +24,7 @@ import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
 import type { VisionConfig } from '../types.js';
 import { writeActionLog } from '../repro/action-log.js';
+import { resolveActionLogUrl } from '../repro/replay.js';
 import { runFormSubmit, waitForFormPresent, isStringKeyedRecord } from './form-submit-runner.js';
 import { hashSchema } from '../util/hash.js';
 import { runPaths, type RunPaths } from '../store/filesystem.js';
@@ -238,7 +239,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
         ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs)
-        : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds);
+        : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds, appBaseUrl);
 
       // Perf drain: collect vitals/HAR after the action completes
       if (perfCollector !== undefined && tc.action.via === 'ui') {
@@ -740,17 +741,18 @@ async function executeUiTest(
   const navTarget = tc.stateContext !== undefined ? tc.stateContext.baseRoute : tc.page;
   const pageUrl = navTarget.startsWith('http') ? navTarget : `${appBaseUrl ?? ''}${navTarget}`;
 
+  const absolutePage = resolveActionLogUrl(tc.page, appBaseUrl) ?? tc.page;
   const actionLog = {
     occurrenceId,
     runId,
     role: tc.role,
-    page: tc.page,
-    baseUrl: tc.page,
+    page: absolutePage,
+    baseUrl: absolutePage,
     actions: [{
       step: 0,
       kind: tc.action.kind,
       selector: tc.action.selector,
-      url: tc.page,
+      url: absolutePage,
       value: tc.action.input,
       role: tc.role,
       toolId: tc.action.toolId,
@@ -804,22 +806,24 @@ async function executeApiTest(
   paths: ArtifactPaths,
   toolMap?: Map<string, ToolMeta>,
   discoveredIds?: DiscoveredIds,
+  appBaseUrl?: string,
 ): Promise<TestResult> {
   const start = Date.now();
   const bugs: BugDetection[] = [];
   const occurrenceId = createId();
 
   const toolSchema = (tc.action.toolId !== undefined && tc.action.toolId !== '') ? toolMap?.get(tc.action.toolId)?.inputSchema : undefined;
+  const absolutePage = resolveActionLogUrl(tc.page, appBaseUrl) ?? tc.page;
   const actionLog = {
     occurrenceId,
     runId,
     role: tc.role,
-    page: tc.page,
-    baseUrl: tc.page,
+    page: absolutePage,
+    baseUrl: absolutePage,
     actions: [{
       step: 0,
       kind: tc.action.kind,
-      url: tc.page,
+      url: absolutePage,
       role: tc.role,
       toolId: tc.action.toolId,
       palette: tc.action.palette,
