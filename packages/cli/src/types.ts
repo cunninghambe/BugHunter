@@ -192,6 +192,8 @@ export type OccurrenceFull = {
 
 export type Occurrence = OccurrenceFull | OccurrenceSummary;
 
+export type ReplayKind = 'action_log' | 'static_rerun' | 'unrunable';
+
 export type BugCluster = {
   id: string;
   runId: string;
@@ -209,6 +211,10 @@ export type BugCluster = {
   verdict?: ClusterVerdict;
   /** Cluster ids that share a normalized route via a different kind (e.g. 404 ↔ surface_call_failed). */
   relatedClusterIds?: string[];
+  /** Discriminates the retest dispatch path: action-log replay, static-tool re-run, or not retestable. */
+  replayKind?: ReplayKind;
+  /** Stable cluster-signature key stored at mint time; used by static-rerun path to match fresh detections. */
+  signatureKey?: string;
 };
 
 export type ClusterVerdict =
@@ -217,6 +223,17 @@ export type ClusterVerdict =
   | 'not_fixed'
   | 'partially_verified'
   | 'architect_refused';
+
+export type RetestVerdict =
+  | 'verified_fixed'
+  | 'verified_fixed_by_removal'
+  | 'partially_verified'
+  | 'not_fixed'
+  | 'bugs_lost_to_revision'
+  | 'verified_fixed_static'
+  | 'not_fixed_static'
+  | 'partially_verified_static'
+  | 'cannot_retest';
 
 export type BugsSkippedReason =
   | 'third_party_or_generated'

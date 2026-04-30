@@ -1,11 +1,33 @@
 // Phase 5: cluster — group by stable signature; cap full-artifact occurrences (§ 3.6, 3.7).
 
-import type { BugDetection, BugCluster, Occurrence, OccurrenceFull, OccurrenceSummary, TestCase, PreState, PostState } from '../types.js';
+import type { BugDetection, BugCluster, BugKind, Occurrence, OccurrenceFull, OccurrenceSummary, ReplayKind, TestCase, PreState, PostState } from '../types.js';
 import { clusterSignature, extractNormalizedFields } from '../cluster/signature.js';
 import { computeFullArtifactSet } from '../store/artifact-budget.js';
 import { normalizePath } from '../classify/network.js';
 import { createId } from '@paralleldrive/cuid2';
 import { log } from '../log.js';
+
+/**
+ * BugKinds that do not require a live browser/server session for retest.
+ * These are re-validated by static tools or by re-navigating without an authenticated browser session.
+ */
+const STATIC_RERUN_KINDS = new Set<BugKind>([
+  'axe_color_contrast_strong', 'image_missing_alt', 'form_input_unlabeled', 'keyboard_trap',
+  'seo_title_missing', 'seo_title_duplicate_across_routes', 'seo_meta_description_missing',
+  'seo_canonical_missing', 'seo_h1_missing_or_multiple', 'seo_robots_blocking_crawl',
+  'visual_anomaly',
+  'slow_lcp', 'slow_inp', 'high_cls', 'unbounded_list_render', 'n_plus_one_api_calls',
+  'request_dedup_missing', 'request_cancellation_missing', 'main_thread_blocked',
+  'oversized_bundle', 'excessive_re_renders', 'memory_leak_suspected', 'memory_leak_attributed',
+  'vulnerable_dependency_high', 'hardcoded_credentials_in_source', 'swallowed_error_empty_catch',
+  'missing_csp_header', 'permissive_cors', 'cookie_security_flags', 'open_redirect',
+  'sensitive_data_in_url', 'stack_trace_leak_in_response', 'hallucinated_route',
+]);
+
+export function replayKindForBugKind(kind: BugKind): ReplayKind {
+  if (STATIC_RERUN_KINDS.has(kind)) return 'static_rerun';
+  return 'action_log';
+}
 
 export type ClusterOptions = {
   detections: Array<{ testId: string; detection: BugDetection }>;
@@ -69,6 +91,8 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
         suspectedFiles: [],
         fixHints: generateFixHints(detection),
         thirdPartyOrGenerated: false,
+        replayKind: replayKindForBugKind(detection.kind),
+        signatureKey: sig,
       });
     }
 
