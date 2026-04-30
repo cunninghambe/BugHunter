@@ -8,6 +8,15 @@ import type { CanaryPayload } from '../security/injection-palette.js';
 
 type StateContext = NonNullable<TestCase['stateContext']>;
 
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/** Returns true for RFC 9110 safe methods (GET, HEAD, OPTIONS). Case-insensitive. */
+export function isSafeMethod(method: string | undefined): boolean {
+  return method !== undefined && SAFE_METHODS.has(method.toUpperCase());
+}
+
+const MUTATING_PALETTES = new Set<PaletteVariant>(['null', 'xss_inject', 'out_of_bounds']);
+
 // Generate test cases for a form (fill-and-submit, 4 palette variants).
 export function formTestCases(
   runId: string,
@@ -71,7 +80,10 @@ export function apiTestCases(
     }];
   }
 
-  const palettes: PaletteVariant[] = ['null', 'happy', 'edge', 'out_of_bounds'];
+  const allPalettes: PaletteVariant[] = ['null', 'happy', 'edge', 'out_of_bounds'];
+  const palettes = isSafeMethod(tool.method)
+    ? allPalettes.filter(p => !MUTATING_PALETTES.has(p))
+    : allPalettes;
   return palettes.map(palette => ({
     id: createId(),
     runId,
@@ -203,6 +215,7 @@ export function xssApiTestCases(
 ): TestCase[] {
   if (tool.inputSchema.properties === undefined) return [];
   if (!mutateJsonBodies) return [];
+  if (isSafeMethod(tool.method)) return [];
 
   const stringFields = Object.entries(tool.inputSchema.properties)
     .filter(([, schema]) => schema.type === 'string' || schema.type === undefined)
