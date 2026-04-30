@@ -5,6 +5,14 @@ import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { ActionLog, ActionLogEntry } from './action-log.js';
 import { runFormSubmit, isStringKeyedRecord } from '../phases/form-submit-runner.js';
+import {
+  runBackTransition,
+  runForwardTransition,
+  runBackThenForwardTransition,
+  runRefreshTransition,
+  runDeepLinkNoAuth,
+  runHistoryCorruptTransition,
+} from '../phases/nav-transition-runner.js';
 import { log } from '../log.js';
 
 export type ReplayResult = {
@@ -146,6 +154,45 @@ async function executeStep(
     case 'render':
       // Render = just navigate, already handled
       break;
+
+    case 'nav_transition': {
+      // v0.22 replay: re-run seed then fire transition in order (§6.4).
+      // The seed is stored in entry.navSeed; the transition in entry.transition.
+      const seed = entry.navSeed;
+      if (seed !== undefined) {
+        await executeStep(
+          { ...seed, step: entry.step, timestamp: entry.timestamp },
+          browser,
+          surface,
+          role,
+          runId,
+        );
+      }
+      if (entry.transition !== undefined) {
+        // Replay uses browser methods directly (no tab scope needed in replay context).
+        switch (entry.transition.kind) {
+          case 'refresh':
+            await runRefreshTransition(browser as never);
+            break;
+          case 'back':
+            await runBackTransition(browser as never);
+            break;
+          case 'forward':
+            await runForwardTransition(browser as never);
+            break;
+          case 'back_then_forward':
+            await runBackThenForwardTransition(browser as never);
+            break;
+          case 'deep_link_no_auth':
+            await runDeepLinkNoAuth(browser as never, entry.transition.capturedUrl);
+            break;
+          case 'history_corrupt':
+            await runHistoryCorruptTransition(browser as never, entry.transition.pushStates);
+            break;
+        }
+      }
+      break;
+    }
   }
   return undefined;
 }

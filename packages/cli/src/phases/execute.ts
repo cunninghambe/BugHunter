@@ -9,7 +9,8 @@ import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   TestCase, TestResult, BugDetection, InfrastructureFailure, PreState, PostState,
-  ConsoleError, NetworkRequest, RunState, ToolMeta, DiscoveredIds, BugHunterConfig, PerfArtifacts
+  ConsoleError, NetworkRequest, RunState, ToolMeta, DiscoveredIds, BugHunterConfig, PerfArtifacts,
+  InterimState, Action, NavTransition,
 } from '../types.js';
 import { probeHeaders, analyzeProbeResult } from '../security/header-probe.js';
 import { extractIdsFromBody, mergeDiscoveredIds } from '../security/resource-id-extractor.js';
@@ -32,6 +33,17 @@ import type { VisionConfig } from '../types.js';
 import { writeActionLog } from '../repro/action-log.js';
 import { resolveActionLogUrl } from '../repro/replay.js';
 import { runFormSubmit, waitForFormPresent, isStringKeyedRecord } from './form-submit-runner.js';
+import {
+  captureInterimState,
+  runRefreshTransition,
+  runRefreshMidMutation,
+  runBackTransition,
+  runForwardTransition,
+  runBackThenForwardTransition,
+  runDeepLinkNoAuth,
+  runHistoryCorruptTransition,
+  capturePostFormAndClassify,
+} from './nav-transition-runner.js';
 import { hashSchema } from '../util/hash.js';
 import { runPaths, type RunPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
@@ -597,6 +609,46 @@ async function executeUiTestInner(
         break;
       case 'render':
         break;
+
+      case 'api_call':
+        // api_call actions are only dispatched via executeApiTest; reaching here is a bug.
+        throw new Error(`execute: api_call action reached UI executor — planning bug?`);
+
+      case 'nav_transition': {
+        // v0.22 three-phase observation (§3.5):
+        //   1. Run navSeed via recursive dispatch (short-settle).
+        //   2. Capture interimState.
+        //   3. Drive the transition.
+        //   4. postState captured below as normal.
+        if (tc.action.transition === undefined) {
+          throw new Error('execute: nav_transition action missing transition payload');
+        }
+        const navSeed = tc.action.navSeed;
+        let interim: InterimState | undefined;
+
+        if (navSeed !== undefined) {
+          if (tc.action.transition.kind === 'refresh') {
+            // refresh-mid-mutation: fire reload immediately, before seed settles.
+            // Execute the seed dispatch without waiting for settle.
+            await runNavSeedAction(scope, navSeed, runId, occurrenceId, appBaseUrl, asyncMaxWaitMs, tc);
+            interim = await runRefreshMidMutation(scope, navSeed);
+          } else {
+            // All other transitions: run seed with normal settle, capture interim, fire transition.
+            await runNavSeedAction(scope, navSeed, runId, occurrenceId, appBaseUrl, asyncMaxWaitMs, tc);
+            interim = await captureInterimState(scope, navSeed);
+            await driveNavTransition(scope, tc.action.transition);
+          }
+        } else {
+          // No seed (deep_link_no_auth, history_corrupt with no seed per §5).
+          interim = await captureInterimState(scope, undefined);
+          await driveNavTransition(scope, tc.action.transition);
+        }
+
+        // Store on the result below (after postState capture).
+        // Using a local reference captured by the result assembly at the end of this function.
+        Object.assign(tc, { __v22InterimState: interim });
+        break;
+      }
     }
   } catch (err) {
     if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
@@ -733,6 +785,17 @@ async function executeUiTestInner(
 
   await persistUiArtifacts(scope, occurrenceId, postSnapshot, postConsoleErrors, artifactPaths);
 
+  // v0.22: nav_transition post-state classification.
+  // interimState was captured and stashed on tc as a side-channel via __v22InterimState.
+  const interimState: InterimState | undefined = (tc as unknown as Record<string, unknown>).__v22InterimState as InterimState | undefined;
+  if (tc.action.kind === 'nav_transition' && interimState !== undefined && tc.action.transition !== undefined) {
+    const navBugs = await capturePostFormAndClassify(
+      scope, preState, interimState, postState,
+      tc.action.navSeed, tc.page, tc.formSignature,
+    );
+    bugs.push(...navBugs);
+  }
+
   // Per-occurrence vision pass: only when missing_state_change fired and vision is active.
   if (missingChange !== null && visionEnabled === true && visionClient !== undefined && visionBudget?.tryConsume() === true) {
     const screenshotPath = path.join(artifactPaths.screenshotsDir, `${occurrenceId}.png`);
@@ -773,7 +836,96 @@ async function executeUiTestInner(
     durationMs: Date.now() - start,
     preState,
     postState,
+    ...(interimState !== undefined ? { interimState } : {}),
   };
+}
+
+/** Dispatch a seed action through the action switch (shared logic for nav_transition). */
+async function runNavSeedAction(
+  scope: TabScope,
+  seed: Action,
+  runId: string,
+  occurrenceId: string,
+  appBaseUrl: string | undefined,
+  asyncMaxWaitMs: number | undefined,
+  tc: TestCase,
+): Promise<void> {
+  switch (seed.kind) {
+    case 'click': {
+      if (seed.selector === undefined || seed.selector === '') {
+        throw new Error('nav-seed: click action missing selector');
+      }
+      if (scope.clickWithObservation !== undefined) {
+        await scope.clickWithObservation(seed.selector);
+      } else {
+        await scope.click(seed.selector);
+      }
+      break;
+    }
+    case 'submit': {
+      if (seed.selector === undefined || seed.selector === '') {
+        throw new Error('nav-seed: submit action missing selector');
+      }
+      const inputRecord = isStringKeyedRecord(seed.input) ? seed.input : {};
+      await runFormSubmit(scope, seed.selector, inputRecord, {
+        asyncMaxWaitMs: asyncMaxWaitMs ?? 2000,
+        fillOnly: seed.fillOnly === true,
+      });
+      break;
+    }
+    case 'fill': {
+      if (seed.selector === undefined || seed.selector === '') {
+        throw new Error('nav-seed: fill action missing selector');
+      }
+      await scope.type(seed.selector, String(seed.input ?? ''));
+      break;
+    }
+    case 'navigate': {
+      if (seed.selector === undefined || seed.selector === '') {
+        throw new Error('nav-seed: navigate action missing selector');
+      }
+      const target = seed.selector.startsWith('http')
+        ? seed.selector
+        : `${appBaseUrl ?? ''}${seed.selector}`;
+      await scope.navigate(target);
+      break;
+    }
+    case 'render':
+      break;
+    case 'nav_transition':
+      // Nested nav_transition seeds are not supported — spec disallows chaining (§3.1).
+      throw new Error('nav-seed: nested nav_transition not supported');
+    case 'api_call':
+      throw new Error('nav-seed: api_call cannot be a nav_transition seed (§3.8)');
+  }
+  void runId; void occurrenceId; void tc;
+}
+
+/** Drive the actual transition after the seed. */
+async function driveNavTransition(
+  scope: TabScope,
+  transition: NavTransition,
+): Promise<void> {
+  switch (transition.kind) {
+    case 'refresh':
+      await runRefreshTransition(scope);
+      break;
+    case 'back':
+      await runBackTransition(scope);
+      break;
+    case 'forward':
+      await runForwardTransition(scope);
+      break;
+    case 'back_then_forward':
+      await runBackThenForwardTransition(scope);
+      break;
+    case 'deep_link_no_auth':
+      await runDeepLinkNoAuth(scope, transition.capturedUrl);
+      break;
+    case 'history_corrupt':
+      await runHistoryCorruptTransition(scope, transition.pushStates);
+      break;
+  }
 }
 
 async function executeUiTest(
