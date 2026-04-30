@@ -92,6 +92,12 @@ export type RunOptions = {
   raceCrossTab?: boolean;
   /** --race-strict: disable consensus voting */
   raceStrict?: boolean;
+  // v0.22 nav-state flags (§6.1)
+  enableNavState?: boolean;
+  navStateRefreshRace?: boolean;
+  enableHistoryCorruption?: boolean;
+  navStateSkipRoute?: string;
+  navStateDeepLinkMaxDepth?: number;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -142,6 +148,22 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   // v0.19: resolve race-condition config from flags + config file
   const raceConditionsConfig = buildRaceConditionsConfig(opts, config.raceConditions);
 
+  // v0.22 nav-state flag resolution (§6.1): CLI flags override config; implication rules apply.
+  // --nav-state-refresh-race and --enable-history-corruption imply --enable-nav-state.
+  const navStateRefreshRace = opts.navStateRefreshRace === true || (config.enableNavStateRefreshRace ?? false);
+  const enableHistoryCorruption = opts.enableHistoryCorruption === true || (config.enableHistoryCorruption ?? false);
+  const enableNavState =
+    opts.enableNavState === true ||
+    navStateRefreshRace ||
+    enableHistoryCorruption ||
+    (config.enableNavState ?? false);
+  // --nav-state-skip-route is comma-separated globs; merged with config list.
+  const navStateSkipRoutes: string[] = [
+    ...(config.navStateSkipRoutes ?? []),
+    ...(opts.navStateSkipRoute !== undefined ? opts.navStateSkipRoute.split(',').map(s => s.trim()).filter(Boolean) : []),
+  ];
+  const navStateDeepLinkMaxDepth = opts.navStateDeepLinkMaxDepth ?? config.navStateDeepLinkMaxDepth ?? 3;
+
   const resolved = resolvedConfig({
     ...config,
     ...(opts.maxBugs !== undefined ? { maxBugs: opts.maxBugs } : {}),
@@ -159,6 +181,12 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(perfConfig !== undefined ? { perf: perfConfig } : {}),
     ...(bundleProbeConfig !== undefined ? { bundleProbe: bundleProbeConfig } : {}),
     ...(raceConditionsConfig !== undefined ? { raceConditions: raceConditionsConfig } : {}),
+    // v0.22 nav-state
+    enableNavState,
+    enableNavStateRefreshRace: navStateRefreshRace,
+    enableHistoryCorruption,
+    navStateSkipRoutes: navStateSkipRoutes.length > 0 ? navStateSkipRoutes : undefined,
+    navStateDeepLinkMaxDepth,
   });
 
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);

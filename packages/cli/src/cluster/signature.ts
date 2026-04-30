@@ -251,6 +251,41 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     }
     case 'seo_robots_blocking_crawl':
       return `seo_robots_blocking_crawl|${detection.pageRoute ?? ''}`;
+
+    // v0.22 nav-state kinds (§4.2)
+
+    // nav_state_corruption: pageRoute + transition.kind + mismatchKind + seed.action.kind
+    case 'nav_state_corruption': {
+      const transitionKind = detection.navStateContext?.transitionKind ?? '';
+      const mismatchKind = detection.navStateContext?.mismatchKind ?? '';
+      const seedKind = detection.navStateContext?.seedActionKind ?? '';
+      return `nav_state_corruption|${detection.pageRoute ?? ''}|${transitionKind}|${mismatchKind}|${seedKind}`;
+    }
+
+    // nav_resubmit_on_back: pageRoute + endpoint (method + normalized path)
+    case 'nav_resubmit_on_back': {
+      const endpoint = detection.navStateContext?.endpoint ?? detection.endpoint ?? '';
+      return `nav_resubmit_on_back|${detection.pageRoute ?? ''}|${endpoint}`;
+    }
+
+    // nav_refresh_double_mutation: pageRoute + endpoint (method + normalized path)
+    case 'nav_refresh_double_mutation': {
+      const endpoint = detection.navStateContext?.endpoint ?? detection.endpoint ?? '';
+      return `nav_refresh_double_mutation|${detection.pageRoute ?? ''}|${endpoint}`;
+    }
+
+    // nav_form_state_lost: pageRoute + formSignature
+    case 'nav_form_state_lost': {
+      const formSig = detection.navStateContext?.formSignature ?? '';
+      return `nav_form_state_lost|${detection.pageRoute ?? ''}|${formSig}`;
+    }
+
+    // nav_form_state_stale: pageRoute + formSignature + staleField
+    case 'nav_form_state_stale': {
+      const formSig = detection.navStateContext?.formSignature ?? '';
+      const staleField = detection.navStateContext?.staleField ?? '';
+      return `nav_form_state_stale|${detection.pageRoute ?? ''}|${formSig}|${staleField}`;
+    }
   }
 }
 
