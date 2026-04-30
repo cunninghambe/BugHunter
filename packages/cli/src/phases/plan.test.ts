@@ -1,9 +1,10 @@
-// Tests for plan phase — stateContext propagation (v0.9 T2) + probe filter (v0.11 T3).
+// Tests for plan phase — stateContext propagation (v0.9 T2) + probe filter (v0.11 T3) + HTTP method filter (v0.12 T4).
 
 import { describe, it, expect, vi } from 'vitest';
 import { runPlan, shouldEmitSubmitTest } from './plan.js';
+import { apiTestCases } from '../mutation/apply.js';
 import { probeKey } from './form-reachability-probe.js';
-import type { DiscoveryOutput, BugHunterConfig, DiscoveredPage, DiscoveredForm } from '../types.js';
+import type { DiscoveryOutput, BugHunterConfig, DiscoveredPage, DiscoveredForm, ToolMeta } from '../types.js';
 import type { ProbeResult } from './form-reachability-probe.js';
 
 function makeSurface() {
@@ -262,5 +263,72 @@ describe('runPlan v0.11 — probe-filtered submit tests', () => {
     const unreachableSkip = skipReasons.find(r => r.reason === 'form_unreachable_for_role');
     expect(unreachableSkip).toBeDefined();
     expect(unreachableSkip?.count).toBeGreaterThan(0);
+  });
+});
+
+describe('HTTP method filter (v0.12 T4) — apiTestCases', () => {
+  const MUTATING_PALETTES = new Set(['null', 'xss_inject', 'out_of_bounds']);
+
+  function makeTool(method: string | undefined): ToolMeta {
+    return {
+      name: 'test-tool',
+      toolId: 'tool-1',
+      method: method ?? 'GET',
+      path: '/api/test',
+      inputSchema: { type: 'object', properties: { q: { type: 'string' } }, required: [] },
+      inputSchemaConfidence: 'introspected',
+      sideEffectClass: 'safe',
+      sourceFile: 'test.ts',
+      sourceLine: 1,
+      isServerAction: false,
+    };
+  }
+
+  it('GET tool produces only happy and edge palettes', () => {
+    const cases = apiTestCases('run1', 'user', makeTool('GET'), []);
+    const palettes = cases.map(c => c.palette);
+    expect(palettes).toContain('happy');
+    expect(palettes).toContain('edge');
+    for (const p of palettes) {
+      expect(MUTATING_PALETTES.has(p)).toBe(false);
+    }
+  });
+
+  it('POST tool produces all palette variants including mutating ones', () => {
+    const cases = apiTestCases('run1', 'user', makeTool('POST'), []);
+    const palettes = new Set(cases.map(c => c.palette));
+    expect(palettes.has('happy')).toBe(true);
+    expect(palettes.has('edge')).toBe(true);
+    expect(palettes.has('null')).toBe(true);
+    expect(palettes.has('out_of_bounds')).toBe(true);
+  });
+
+  it('HEAD tool produces only happy and edge palettes (safe method)', () => {
+    const cases = apiTestCases('run1', 'user', makeTool('HEAD'), []);
+    const palettes = cases.map(c => c.palette);
+    expect(palettes).toContain('happy');
+    expect(palettes).toContain('edge');
+    for (const p of palettes) {
+      expect(MUTATING_PALETTES.has(p)).toBe(false);
+    }
+  });
+
+  it('OPTIONS tool produces only happy and edge palettes (safe method)', () => {
+    const cases = apiTestCases('run1', 'user', makeTool('OPTIONS'), []);
+    const palettes = cases.map(c => c.palette);
+    expect(palettes).toContain('happy');
+    expect(palettes).toContain('edge');
+    for (const p of palettes) {
+      expect(MUTATING_PALETTES.has(p)).toBe(false);
+    }
+  });
+
+  it('undefined method falls back to mutation-allowed (all palettes)', () => {
+    // Tool with undefined method: build manually to bypass ToolMeta's required method field
+    const tool = { ...makeTool('GET'), method: undefined } as unknown as ToolMeta;
+    const cases = apiTestCases('run1', 'user', tool, []);
+    const palettes = new Set(cases.map(c => c.palette));
+    expect(palettes.has('null')).toBe(true);
+    expect(palettes.has('out_of_bounds')).toBe(true);
   });
 });
