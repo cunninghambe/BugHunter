@@ -95,7 +95,22 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
       return `swallowed_error_empty_catch|${file}|${line}`;
     }
 
-    // IDOR cross-user
+    // v0.21 IDOR kinds — keyed on resourceType, not toolId, so multiple tools on
+    // the same resource collapse to one cluster.
+    case 'idor_horizontal_read':
+    case 'idor_horizontal_mutate': {
+      const resourceType = detection.idorContext?.resourceType ?? '';
+      const tier = detection.idorContext?.tier ?? 'unknown';
+      return `${detection.kind}|${resourceType}|${tier}`;
+    }
+    case 'idor_vertical_suspicious': {
+      const resourceType = detection.idorContext?.resourceType ?? '';
+      const sourceTier = detection.idorContext?.sourceTier ?? '';
+      const targetTier = detection.idorContext?.targetTier ?? '';
+      return `idor_vertical_suspicious|${resourceType}|${sourceTier}->${targetTier}`;
+    }
+
+    // IDOR cross-user (legacy v0.5 — kept for backward compat with old artifacts)
     case 'idor_horizontal': {
       const toolId = detection.endpoint ?? '';
       const field = detection.idorContext?.resourceField ?? '';

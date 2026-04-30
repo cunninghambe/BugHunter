@@ -1,6 +1,6 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
-import type { BugCluster, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry } from '../types.js';
+import type { BugCluster, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { log } from '../log.js';
 
@@ -33,6 +33,8 @@ export type TestCounters = {
   penTesting?: PenTestingTelemetry;
   /** v0.19 race-condition telemetry — present when raceConditions.enabled = true. */
   raceConditions?: RaceConditionsTelemetry;
+  /** v0.21 IDOR telemetry — present when idor.enabled = true. */
+  idor?: IdorTelemetry;
 };
 
 export function runEmit(
@@ -101,6 +103,7 @@ export function runEmit(
     ...(counters?.heapAttributionSummary !== undefined ? { heapAttributionSummary: counters.heapAttributionSummary } : {}),
     ...(counters?.penTesting !== undefined ? { penTesting: counters.penTesting } : {}),
     ...(counters?.raceConditions !== undefined ? { raceConditions: counters.raceConditions } : {}),
+    ...(counters?.idor !== undefined ? { idor: counters.idor } : {}),
   };
 
   writeJsonFile(paths.summaryFile, summary);

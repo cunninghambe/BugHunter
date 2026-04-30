@@ -37,7 +37,11 @@ const KIND_PRIORITY: BugKind[] = [
   'command_injection',
   'path_traversal',
   'jwt_weak_alg',
-  // v0.5 security kinds (ranked above visual but below network errors)
+  // v0.21 IDOR kinds (above legacy idor entries; mutate > read > suspicious)
+  'idor_horizontal_mutate',
+  'idor_horizontal_read',
+  'idor_vertical_suspicious',
+  // v0.5 legacy IDOR kinds (kept for backward compat; not emitted by v0.21 classifier)
   'idor_horizontal',
   'idor_vertical_role_escalate',
   'auth_bypass_via_unauthed_route',

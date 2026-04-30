@@ -98,6 +98,11 @@ export type RunOptions = {
   enableHistoryCorruption?: boolean;
   navStateSkipRoute?: string;
   navStateDeepLinkMaxDepth?: number;
+  // v0.21 IDOR flags
+  /** Enable v0.21 IDOR / horizontal-authz pass. Implied by --security. Default: off. */
+  idor?: boolean;
+  /** Disable IDOR even when implied by --security. */
+  noIdor?: boolean;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -450,13 +455,19 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     saveRunState(runState);
 
     // Phase 3.5: cross-user IDOR probe (runs after execute, before classify).
-    const { detections: crossUserDetections, testCases: crossUserTestCases } = await runCrossUser({
+    // v0.21: --idor / --no-idor flags override config.idor.enabled.
+    const idorFlagEnabled = opts.noIdor === true ? false : (opts.idor === true ? true : undefined);
+    if (idorFlagEnabled !== undefined) {
+      resolved.idor = { ...(resolved.idor ?? {}), enabled: idorFlagEnabled };
+    }
+    const crossUserResult = await runCrossUser({
       runState,
       surface,
       roles: effectiveRoles,
       maxClusters: resolved.maxBugs,
       onClusterFound: () => runState.clusterCount,
     });
+    const { detections: crossUserDetections, testCases: crossUserTestCases } = crossUserResult;
 
     // Phase 3.6: auth-flow detectors (session fixation, reset token reuse, open redirect).
     const { detections: authFlowDetections, testCases: authFlowTestCases } = await runAuthFlow({
@@ -666,6 +677,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(heapAttributionSummary !== undefined ? { heapAttributionSummary } : {}),
       ...(penTestingTelemetry !== undefined ? { penTesting: penTestingTelemetry } : {}),
       ...(raceConditionsTelemetry !== undefined ? { raceConditions: raceConditionsTelemetry } : {}),
+      ...(crossUserResult.idorTelemetry !== undefined ? { idor: crossUserResult.idorTelemetry } : {}),
     });
     runState.emitted = true;
     runState.phase = 'done';
