@@ -33,6 +33,12 @@ export type BugKind =
   | 'dom_error_text'
   | 'surface_call_failed'
   | 'visual_anomaly'
+  // v0.22 nav-state kinds
+  | 'nav_state_corruption'
+  | 'nav_resubmit_on_back'
+  | 'nav_refresh_double_mutation'
+  | 'nav_form_state_lost'
+  | 'nav_form_state_stale'
   // v0.5 security / hygiene kinds
   | 'missing_csp_header'
   | 'permissive_cors'
@@ -108,8 +114,17 @@ export type ResetPolicy = 'transactional' | 'per-test' | 'per-page' | 'per-run';
 
 export type ExpectedOutcome = 'success' | 'expected_failure' | 'unknown';
 
-export type ActionKind = 'click' | 'fill' | 'navigate' | 'render' | 'submit' | 'api_call';
+export type ActionKind = 'click' | 'fill' | 'navigate' | 'render' | 'submit' | 'api_call' | 'nav_transition';
 export type ActionVia = 'ui' | 'api';
+
+// v0.22: discriminated union of nav transition kinds (§3.1 / §3.2).
+export type NavTransition =
+  | { kind: 'refresh' }
+  | { kind: 'back' }
+  | { kind: 'forward' }
+  | { kind: 'back_then_forward' }
+  | { kind: 'deep_link_no_auth'; capturedUrl: string }
+  | { kind: 'history_corrupt'; pushStates: Array<{ state: unknown; url?: string }> };
 
 export type Action = {
   kind: ActionKind;
@@ -132,12 +147,48 @@ export type Action = {
   input?: unknown;
   /** When set, the test plants this nonce in input and expects no XSS reflection. */
   injectionNonce?: string;
+  /**
+   * v0.22: set only when kind === 'nav_transition'. Discriminated union describing
+   * which transition to drive (back, forward, refresh, deep-link, history-corrupt).
+   */
+  transition?: NavTransition;
+  /**
+   * v0.22: set only when kind === 'nav_transition'. The seed action run before the
+   * transition fires. The executor dispatches it through the normal action switch.
+   */
+  navSeed?: Action;
+  /**
+   * v0.22: set only when kind === 'submit' and this action is used as a nav-state
+   * seed for back-after-form-fill. When true, runFormSubmit fills fields but does
+   * not submit. This lets us test whether the browser preserves filled-but-unsubmitted
+   * inputs when the user navigates away and comes back.
+   */
+  fillOnly?: boolean;
 };
 
 export type PreState = {
   url: string;
   title: string;
   consoleErrorCount: number;
+  /**
+   * v0.22: SHA-1 (20-hex) over visible text of <main>/[role="main"].
+   * Populated for nav-state tests; undefined on regular tests.
+   */
+  domSignature?: string;
+};
+
+/**
+ * v0.22: captured after the nav-state seed action settles and before the transition
+ * fires. Only populated on TestResult when tc.action.kind === 'nav_transition'.
+ */
+export type InterimState = {
+  url: string;
+  /** SHA-1 hex over visible-text content of <main> / [role="main"] element. */
+  domSignature: string;
+  inFlightRequests: Array<{ method: string; path: string; startedAtMs: number }>;
+  /** Populated when the seed was a fill or submit action. field-name → typed value. */
+  formSnapshot?: Record<string, string>;
+  mutationCompletionSignal: 'response-200ish' | 'response-error' | 'still-pending' | 'no-network';
 };
 
 export type NetworkRequest = {
@@ -161,6 +212,12 @@ export type PostState = {
   networkRequests: NetworkRequest[];
   domErrorTextDetected: boolean;
   mutationObserverWindowMs: number;
+  /**
+   * v0.22: SHA-1 (20-hex) over visible text of <main>/[role="main"].
+   * Populated by nav-transition-runner after transition settles.
+   * Undefined on non-nav-state tests.
+   */
+  domSignature?: string;
 };
 
 export type OccurrenceSummary = {
@@ -532,6 +589,11 @@ export type TestResult = {
   preState?: PreState;
   /** Captured by executeUiTest; undefined for API tests. */
   postState?: PostState;
+  /**
+   * v0.22: populated only for nav_transition test cases. Captures the state
+   * after the seed action settles and before the transition fires.
+   */
+  interimState?: InterimState;
 };
 
 /** Context populated by the header-probe module for header/cookie/CSRF findings. */
@@ -770,6 +832,19 @@ export type BugDetection = {
     observedValue: string | null;
     expectedShape: string;
     affectedRoutes?: string[];
+  };
+  /**
+   * v0.22: populated for nav-state findings. Carries the transition kind,
+   * mismatch kind (for nav_state_corruption), and staleField (for nav_form_state_stale)
+   * needed for cluster signature derivation (§4.2).
+   */
+  navStateContext?: {
+    transitionKind: NavTransition['kind'];
+    seedActionKind?: ActionKind;
+    mismatchKind?: 'url' | 'dom' | 'render-empty';
+    staleField?: string;
+    formSignature?: string;
+    endpoint?: string;
   };
   /** Populated for v0.6 a11y baseline findings. */
   a11yContext?: {
@@ -1072,6 +1147,36 @@ export type BugHunterConfig = {
   keyboardTrapMaxPresses?: number;
   /** v0.14 seed-data hooks — run shell commands or HTTP requests at lifecycle points. */
   seedHooks?: SeedHooksConfig;
+  /** v0.22: master toggle for nav-state tests. Default false. */
+  enableNavState?: boolean;
+  /**
+   * v0.22: include refresh-mid-mutation tests. Racy by nature; off by default
+   * even when enableNavState is true. Implies enableNavState.
+   *
+   * Per §3.4: false by default. Opt in via CLI flag --nav-state-refresh-race.
+   * Most useful on fast-responding mutations (< 1s server time).
+   */
+  enableNavStateRefreshRace?: boolean;
+  /**
+   * v0.22: include history-state-corruption tests. Advanced diagnostic; off by
+   * default. Implies enableNavState.
+   */
+  enableHistoryCorruption?: boolean;
+  /**
+   * v0.22: route globs to exclude from nav-state generation. Globs match against
+   * tc.page (the route key). Useful for wizard / payment routes that intentionally
+   * block back-button navigation.
+   *
+   * Note: routes already in excludedRoutes never produce TestCases, so nav-state
+   * skip is additive, not a replacement.
+   */
+  navStateSkipRoutes?: string[];
+  /**
+   * v0.22: max depth (URL hops from root) at which deep-link-no-auth tests
+   * are generated. Routes deeper than this are skipped to limit combinatorial
+   * blow-up on deeply-nested admin UIs. Default 3.
+   */
+  navStateDeepLinkMaxDepth?: number;
 };
 
 // --- v0.14 seed-data hook types ---
