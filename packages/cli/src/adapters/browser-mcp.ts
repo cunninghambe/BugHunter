@@ -448,12 +448,27 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
 
   async setViewport(width: number, height: number): Promise<{ ok: true } | { ok: false; reason: string }> {
     const tabId = this.requireTab();
-    const expr = `(function(){window.resizeTo(${width},${height});window.dispatchEvent(new Event('resize'));return true;})()`;
+    // Prefer the native set_viewport MCP tool (Playwright setViewportSize) which
+    // triggers a real layout reflow so SPAs that listen for resize events
+    // actually re-render. Falls back to evaluate(window.resizeTo) for older
+    // camofox-mcp builds — that fallback is mostly cosmetic; many SPAs ignore
+    // synthetic resize events.
     try {
-      await this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+      await this.mcpCall<{ ok: boolean; width: number; height: number }>('set_viewport', { tabId, width, height });
       return { ok: true };
     } catch (err) {
-      return { ok: false, reason: String(err) };
+      const errMsg = String(err);
+      // If set_viewport tool isn't available (old camofox-mcp), fall back.
+      if (/unknown tool|tool not found|not registered/i.test(errMsg)) {
+        const expr = `(function(){window.resizeTo(${width},${height});window.dispatchEvent(new Event('resize'));return true;})()`;
+        try {
+          await this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+          return { ok: true };
+        } catch (fallbackErr) {
+          return { ok: false, reason: `set_viewport unavailable + resizeTo failed: ${String(fallbackErr)}` };
+        }
+      }
+      return { ok: false, reason: errMsg };
     }
   }
 
