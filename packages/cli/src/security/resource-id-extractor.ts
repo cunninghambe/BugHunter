@@ -1,7 +1,45 @@
-// Pure resource-ID harvesting from JSON API response bodies (v0.5 §3.1).
+// Pure resource-ID harvesting from JSON API response bodies (v0.5 §3.1, extended v0.21).
 // No IO — unit-testable, re-entrant.
 
 import type { DiscoveredIds } from '../types.js';
+
+// v0.21: tool-path deny-list — self-referencing auth/identity endpoints.
+// IDs from these paths are the caller's own identity, not other roles' resource ids.
+const TOOL_PATH_DENY_LIST = [
+  '/api/me',
+  '/api/users/me',
+  '/api/account',
+  '/api/profile',
+  '/api/whoami',
+  '/api/session',
+  '/api/auth/',
+  '/api/login',
+  '/api/logout',
+  '/api/refresh',
+  '/api/csrf',
+  '/api/oauth/',
+];
+
+/**
+ * v0.21: Returns true when the tool path matches the deny-list.
+ * Ids from denied paths should not enter roleFixtures.
+ */
+export function isToolPathDenied(toolPath: string, extraDenyList: string[] = []): boolean {
+  const all = [...TOOL_PATH_DENY_LIST, ...extraDenyList];
+  return all.some(denied => toolPath === denied || toolPath.startsWith(denied));
+}
+
+/**
+ * v0.21: Returns true when the value looks like an opaque signed token
+ * that should not be used as a cross-role swap fixture (EC-9).
+ * Matches: value > 64 chars containing a '.', or JWT-shaped (two dots).
+ */
+export function isOpaqueSignedToken(value: string): boolean {
+  if (value.length <= 64) return false;
+  // JWT shape: header.payload.signature (two dots)
+  const dotCount = (value.match(/\./g) ?? []).length;
+  return dotCount >= 2;
+}
 
 // Tier 1: known identifier names (case-insensitive exact match)
 const ID_NAMES_EXACT = new Set([
@@ -23,6 +61,9 @@ const ID_NAMES_REGEX: RegExp[] = [
 const ID_NAMES_EXCLUDE = new Set([
   'apikey', 'token', 'secret', 'password', 'sessionid',
   'sessiontoken', 'csrftoken', 'authtoken',
+  // v0.21 additions
+  'verificationcode', 'recoverycode', 'mfa_secret', 'webhook_secret',
+  'signing_key', 'invitetoken', 'resettoken', 'confirmationtoken',
 ]);
 
 function isIdField(fieldName: string): boolean {
