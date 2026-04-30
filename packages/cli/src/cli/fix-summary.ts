@@ -60,6 +60,21 @@ function tally(entries: FixStateEntry[]): Counters {
         c.bugs_attempted_fix++;
         c.bugs_lost_to_revision++;
         break;
+      case 'verified_fixed_static':
+        c.bugs_attempted_fix++;
+        c.bugs_verified_fixed++;
+        break;
+      case 'partially_verified_static':
+        c.bugs_attempted_fix++;
+        c.partially_verified++;
+        break;
+      case 'not_fixed_static':
+        c.bugs_attempted_fix++;
+        c.bugs_persistent++;
+        break;
+      case 'cannot_retest':
+        c.bugs_skipped++;
+        break;
     }
   }
 
