@@ -13,8 +13,8 @@ export type FilesystemPage = {
 export async function discoverFilesystemPages(projectRoot: string): Promise<FilesystemPage[]> {
   const pages: FilesystemPage[] = [];
 
-  // Next.js App Router: app/**/page.tsx
-  const appPages = await glob('app/**/page.{tsx,jsx,ts,js}', {
+  // Next.js App Router: app/**/page.tsx OR src/app/**/page.tsx
+  const appPages = await glob('{app,src/app}/**/page.{tsx,jsx,ts,js}', {
     cwd: projectRoot,
     nodir: true,
     ignore: ['node_modules/**', '.next/**'],
@@ -25,11 +25,20 @@ export async function discoverFilesystemPages(projectRoot: string): Promise<File
     pages.push({ route, sourceFile: path.join(projectRoot, file) });
   }
 
-  // Next.js Pages Router: pages/**/*.tsx (not api/ and not _app, _document)
-  const pagesDir = await glob('pages/**/*.{tsx,jsx,ts,js}', {
+  // Next.js Pages Router: pages/**/*.tsx OR src/pages/**/*.tsx
+  // (not api/ and not _app, _document)
+  const pagesDir = await glob('{pages,src/pages}/**/*.{tsx,jsx,ts,js}', {
     cwd: projectRoot,
     nodir: true,
-    ignore: ['pages/api/**', 'pages/_app.*', 'pages/_document.*', 'node_modules/**'],
+    ignore: [
+      'pages/api/**',
+      'src/pages/api/**',
+      'pages/_app.*',
+      'pages/_document.*',
+      'src/pages/_app.*',
+      'src/pages/_document.*',
+      'node_modules/**',
+    ],
   });
 
   for (const file of pagesDir) {
@@ -50,8 +59,10 @@ export async function discoverFilesystemPages(projectRoot: string): Promise<File
 // app/(group)/products/page.tsx -> /products  (route groups stripped)
 // app/[id]/page.tsx -> /[id]
 function appFileToRoute(file: string): string {
-  // Remove leading "app/" and trailing "/page.tsx"
-  let route = file.replace(/^app\//, '').replace(/\/page\.[jt]sx?$/, '');
+  // Remove leading "app/" or "src/app/" and trailing "page.tsx" (with or
+  // without preceding slash — root index page is just "page.tsx" after the
+  // app-prefix strip).
+  let route = file.replace(/^(?:src\/)?app\//, '').replace(/(?:^|\/)page\.[jt]sx?$/, '');
   // Remove route groups (parenthesized segments)
   route = route.replace(/\([^)]+\)\//g, '');
   if (route === '') return '/';
@@ -60,9 +71,9 @@ function appFileToRoute(file: string): string {
 }
 
 // pages/admin/products/index.tsx -> /admin/products
-// pages/admin/products.tsx -> /admin/products
+// src/pages/admin/products.tsx -> /admin/products
 function pagesFileToRoute(file: string): string {
-  let route = file.replace(/^pages\//, '').replace(/\.[jt]sx?$/, '');
+  let route = file.replace(/^(?:src\/)?pages\//, '').replace(/\.[jt]sx?$/, '');
   if (route === 'index') return '/';
   route = route.replace(/\/index$/, '');
   return `/${  route}`;
