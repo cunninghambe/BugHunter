@@ -1044,6 +1044,8 @@ export type BugHunterConfig = {
   a11yStrict?: boolean;
   /** v0.6 SEO: enable SEO hygiene cluster. */
   seoEnabled?: boolean;
+  /** v0.6 SEO: suppresses seo_title_duplicate_across_routes detections. CLI: --no-seo-duplicate-titles. */
+  seoSuppressDuplicateTitles?: boolean;
   /** v0.6 keyboard trap: max Tab presses during trap probe. Default 20. */
   keyboardTrapMaxPresses?: number;
   /** v0.14 seed-data hooks — run shell commands or HTTP requests at lifecycle points. */
@@ -1120,8 +1122,8 @@ export type RunSummary = {
   testsRan: number;
   testsSkipped: number;
   skippedReasons: Array<{ reason: string; count: number }>;
-  /** Number of clusters suppressed via .bughunter/suppressions.json in this run. */
-  suppressedClusters?: number;
+  /** v0.11 form-reachability probe counters (run, skippedByBudget, durationMs). */
+  formReachabilityProbes?: { run: number; skippedByBudget: number; durationMs: number };
   vision?: {
     enabled: boolean;
     called: number;
@@ -1144,6 +1146,8 @@ export type RunSummary = {
     };
     /** v0.17: per-viewport telemetry — present when vision is enabled. */
     byViewport?: Record<number, { uniqueScreenshots: number; anomaliesFound: number; deduped: number }>;
+    /** v0.13: baseline telemetry — present when vision baseline pass ran. */
+    baseline?: VisionBaselineTelemetry;
   };
   discovery?: {
     seedRoutes: number;

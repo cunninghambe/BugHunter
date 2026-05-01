@@ -143,6 +143,7 @@ export const ConfigSchema = z.object({
   }).optional(),
   a11yStrict: z.boolean().optional(),
   seoEnabled: z.boolean().optional(),
+  seoSuppressDuplicateTitles: z.boolean().optional(),
   keyboardTrapMaxPresses: z.number().int().positive().optional(),
   seedHooks: z.object({
     beforeRun: z.array(SeedHookSchema).optional(),

@@ -80,6 +80,8 @@ export type ExecuteOptions = {
   a11yStrict?: boolean;
   /** v0.6 SEO: enable SEO corpus pass after execute. */
   seoEnabled?: boolean;
+  /** v0.6 SEO: suppresses seo_title_duplicate_across_routes detections. */
+  seoSuppressDuplicateTitles?: boolean;
   /** v0.6 keyboard trap: max Tab presses (default 20). */
   keyboardTrapMaxPresses?: number;
   /** v0.11 max wait for form to appear after trigger click. Default 2000ms. */
@@ -101,7 +103,7 @@ export type ExecuteResult = {
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, keyboardTrapMaxPresses, asyncMaxWaitMs } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, seoSuppressDuplicateTitles, keyboardTrapMaxPresses, asyncMaxWaitMs } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
@@ -321,7 +323,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   if (seoEnabled === true && seoPageInputs.length > 0) {
     const origin = appBaseUrl ?? (pageUrls?.[0] !== undefined ? new URL(pageUrls[0].startsWith('http') ? pageUrls[0] : `http://localhost${pageUrls[0]}`).origin : '');
     const robotsTxt = await fetchRobotsTxt(origin);
-    seoDetections = classifySeoCorpus({ pages: seoPageInputs, robotsTxt, origin });
+    seoDetections = classifySeoCorpus({ pages: seoPageInputs, robotsTxt, origin, suppressDuplicateTitles: seoSuppressDuplicateTitles });
     log.info('seo-corpus: complete', { pagesScraped: seoPageInputs.length, detections: seoDetections.length });
   }
 
