@@ -6,6 +6,7 @@ import { computeFullArtifactSet } from '../store/artifact-budget.js';
 import { normalizePath } from '../classify/network.js';
 import { createId } from '@paralleldrive/cuid2';
 import { log } from '../log.js';
+import { computeBugIdentity } from '../cluster/bug-identity.js';
 
 /**
  * BugKinds that do not require a live browser/server session for retest.
@@ -52,6 +53,8 @@ export type ClusterOptions = {
   /** Per-test pre/post observation captured by the executor. When absent, OccurrenceFull
    * falls back to an empty PostState (preserves backward-compat for unit tests). */
   stateByTestId?: Map<string, { preState: PreState; postState: PostState }>;
+  /** v0.27: project name from config; used to derive stable bugIdentity. Optional for backward compat with existing tests. */
+  projectName?: string;
 };
 
 export type ClusterResult = {
@@ -93,6 +96,9 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
         thirdPartyOrGenerated: false,
         replayKind: replayKindForBugKind(detection.kind),
         signatureKey: sig,
+        bugIdentity: opts.projectName !== undefined && opts.projectName !== ''
+          ? computeBugIdentity(opts.projectName, sig)
+          : undefined,
       });
     }
 
