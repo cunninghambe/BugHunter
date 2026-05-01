@@ -232,6 +232,9 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     log.info(`Starting new run ${runId}`);
   }
 
+  // Identify BugHunter-issued requests in target audit logs.
+  surface.setRunId(runId);
+
   const startMs = Date.now();
   const roles = opts.role !== undefined ? [opts.role] : undefined;
 

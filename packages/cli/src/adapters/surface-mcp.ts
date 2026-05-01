@@ -210,11 +210,18 @@ export interface SurfaceMcpAdapter {
 // HTTP-based implementation targeting a live SurfaceMCP instance.
 export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
   private readonly baseUrl: string;
+  private runId: string | undefined;
 
   constructor(baseUrl: string) {
     // Strip one trailing /mcp (with optional trailing slash) for backward-compat
     // with configs that include the path. The adapter appends /mcp internally.
     this.baseUrl = baseUrl.replace(/\/mcp\/?$/, '').replace(/\/$/, '');
+  }
+
+  // Identifies BugHunter-issued requests in the target app's audit log.
+  // Critical for V21 cross-user-id mutations to be distinguishable from real traffic.
+  setRunId(runId: string): void {
+    this.runId = runId;
   }
 
   private async mcpCall<T>(tool: string, args: unknown): Promise<T> {
@@ -224,12 +231,16 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
       method: 'tools/call',
       params: { name: tool, arguments: args },
     };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    };
+    if (this.runId !== undefined) {
+      headers['X-BugHunter-Run'] = this.runId;
+    }
     const res = await fetch(`${this.baseUrl}/mcp`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-      },
+      headers,
       body: JSON.stringify(body),
     });
     if (!res.ok) {
