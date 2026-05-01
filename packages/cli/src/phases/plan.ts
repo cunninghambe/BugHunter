@@ -178,15 +178,15 @@ export async function runPlan(
         }
 
         // deep-link-no-auth: one per page for non-public roles, respecting depth cap.
-        // Q3 conservative choice: lazy URL = appBaseUrl + route (no capture pass).
-        // This avoids an extra phase; real query-param state is a v0.23 improvement.
+        // Q3 conservative: lazy URL = appBaseUrl + route. PR #51 established that
+        // camofox.scope.navigate rejects relative URLs ("Invalid url"), so absolutize here.
         if (role !== 'public' && role !== 'anonymous') {
           const routeDepth = page.route.split('/').filter(Boolean).length;
           if (routeDepth <= deepLinkMaxDepth) {
-            // Skip if no logout plan info (§7.6) — we can't check surfaceMCP from here;
-            // the executor will log discovery_skipped: nav_state_no_logout_plan at runtime.
-            // Planner always emits the test; executor skips gracefully if logout unavailable.
-            const capturedUrl = page.route; // lazy approach per Q3
+            const base = config.appBaseUrl !== undefined ? config.appBaseUrl.replace(/\/$/, '') : '';
+            const capturedUrl = base !== '' && page.route.startsWith('/')
+              ? `${base}${page.route}`
+              : page.route;
             testCases.push(navDeepLinkTestCase(runId, role, page.route, capturedUrl));
             navStateCount.count++;
           }
