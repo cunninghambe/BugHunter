@@ -502,6 +502,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       maxClusters: resolved.maxBugs,
       occurrenceIdByTestId,
       stateByTestId,
+      projectName: resolved.projectName,
     });
 
     runState.clusters = clusters;
