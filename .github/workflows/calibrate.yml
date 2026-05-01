@@ -1,0 +1,111 @@
+name: calibrate
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.x'
+
+      - name: Install dependencies and build
+        run: npm ci && npm run build
+        working-directory: packages/cli
+
+      - name: Clone BugHunter-bench at pinned SHA
+        run: |
+          git clone https://github.com/cunninghambe/BugHunter-bench.git /tmp/bench
+          PINNED=$(cat /tmp/bench/MANIFEST.json | node -e "const d=require('/dev/stdin');process.stdout.write(d.pinned||'HEAD')" 2>/dev/null || echo "HEAD")
+          cd /tmp/bench && git checkout "$PINNED" || true
+
+      - name: Install bench dependencies
+        run: npm ci
+        working-directory: /tmp/bench
+
+      - name: Calibrate vibe-todo
+        run: |
+          node packages/cli/dist/cli/main.js calibrate \
+            --app /tmp/bench/apps/vibe-todo \
+            --enforce-thresholds \
+            --json > /tmp/calibration-vibe-todo.json || EXIT_VIBE_TODO=$?
+          echo "vibe-todo exit: ${EXIT_VIBE_TODO:-0}"
+
+      - name: Calibrate vite-shop
+        run: |
+          node packages/cli/dist/cli/main.js calibrate \
+            --app /tmp/bench/apps/vite-shop \
+            --enforce-thresholds \
+            --json > /tmp/calibration-vite-shop.json || EXIT_VITE_SHOP=$?
+          echo "vite-shop exit: ${EXIT_VITE_SHOP:-0}"
+
+      - name: Calibrate vue-board
+        run: |
+          node packages/cli/dist/cli/main.js calibrate \
+            --app /tmp/bench/apps/vue-board \
+            --enforce-thresholds \
+            --json > /tmp/calibration-vue-board.json || EXIT_VUE_BOARD=$?
+          echo "vue-board exit: ${EXIT_VUE_BOARD:-0}"
+
+      - name: Calibrate next-blog
+        run: |
+          node packages/cli/dist/cli/main.js calibrate \
+            --app /tmp/bench/apps/next-blog \
+            --enforce-thresholds \
+            --json > /tmp/calibration-next-blog.json || EXIT_NEXT_BLOG=$?
+          echo "next-blog exit: ${EXIT_NEXT_BLOG:-0}"
+
+      - name: Calibrate astro-saas
+        run: |
+          node packages/cli/dist/cli/main.js calibrate \
+            --app /tmp/bench/apps/astro-saas \
+            --enforce-thresholds \
+            --json > /tmp/calibration-astro-saas.json || EXIT_ASTRO_SAAS=$?
+          echo "astro-saas exit: ${EXIT_ASTRO_SAAS:-0}"
+
+      - name: Aggregate calibration reports
+        run: |
+          node scripts/aggregate-calibration.mjs \
+            /tmp/calibration-vibe-todo.json \
+            /tmp/calibration-vite-shop.json \
+            /tmp/calibration-vue-board.json \
+            /tmp/calibration-next-blog.json \
+            /tmp/calibration-astro-saas.json \
+            > /tmp/aggregate.json
+
+      - name: Upload calibration artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: calibration-reports
+          path: /tmp/calibration-*.json
+
+      - name: Upload aggregate report
+        uses: actions/upload-artifact@v4
+        with:
+          name: calibration-aggregate
+          path: /tmp/aggregate.json
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fn = await import('./scripts/post-calibration-comment.mjs');
+            await fn.default(github, context, '/tmp/aggregate.json');
+
+      - name: Update README calibration block (push to main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          node scripts/update-readme-calibration.mjs /tmp/aggregate.json
+          git config user.name 'bughunter-bot'
+          git config user.email 'bot@bughunter.dev'
+          git add README.md
+          git diff --cached --quiet || git commit -m 'chore: refresh calibration numbers'
+          git push origin main || true
