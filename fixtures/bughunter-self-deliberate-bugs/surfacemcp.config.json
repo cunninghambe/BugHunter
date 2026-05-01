@@ -1,0 +1,112 @@
+{
+  "surfaces": [
+    {
+      "name": "self-spa",
+      "stack": "vite",
+      "root": "web",
+      "baseUrl": "http://localhost:5790",
+      "port": 3120,
+      "launchDevCommand": "npm run dev",
+      "watchPaths": ["src"],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [],
+      "excludedRoutes": []
+    },
+    {
+      "name": "self-api",
+      "stack": "node",
+      "root": "api",
+      "baseUrl": "http://localhost:5791",
+      "port": 3120,
+      "launchDevCommand": "node server.js",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [],
+      "excludedRoutes": []
+    },
+    {
+      "name": "race-bad",
+      "stack": "node",
+      "root": "../race-bad",
+      "baseUrl": "http://localhost:9994",
+      "port": 3120,
+      "launchDevCommand": "node server.js",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [],
+      "excludedRoutes": []
+    },
+    {
+      "name": "idor-bad",
+      "stack": "node",
+      "root": "../idor-bad",
+      "baseUrl": "http://localhost:4090",
+      "port": 3120,
+      "launchDevCommand": "node server.js",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [
+        { "name": "alice", "credentials": { "userId": "alice" } },
+        { "name": "bob", "credentials": { "userId": "bob" } },
+        { "name": "admin", "credentials": { "userId": "admin" } }
+      ],
+      "excludedRoutes": []
+    },
+    {
+      "name": "v24-deferred-bugs",
+      "stack": "vite",
+      "root": "../v24-deferred-bugs",
+      "baseUrl": "http://localhost:5780",
+      "port": 3120,
+      "launchDevCommand": "npm run dev",
+      "watchPaths": ["src"],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [],
+      "excludedRoutes": []
+    },
+    {
+      "name": "a11y-bad",
+      "stack": "static",
+      "root": "../a11y-bad",
+      "baseUrl": "http://localhost:5781",
+      "port": 3120,
+      "launchDevCommand": "npx serve -p 5781 .",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [],
+      "excludedRoutes": []
+    },
+    {
+      "name": "seo-bad",
+      "stack": "static",
+      "root": "../seo-bad",
+      "baseUrl": "http://localhost:5782",
+      "port": 3120,
+      "launchDevCommand": "npx serve -p 5782 .",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [],
+      "excludedRoutes": []
+    },
+    {
+      "name": "pen-bad",
+      "stack": "node",
+      "root": "../pen-bad",
+      "baseUrl": "http://localhost:4091",
+      "port": 3120,
+      "launchDevCommand": "node server.js",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [],
+      "excludedRoutes": []
+    }
+  ]
+}

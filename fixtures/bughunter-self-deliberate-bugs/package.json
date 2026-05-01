@@ -1,0 +1,13 @@
+{
+  "name": "bughunter-self-deliberate-bugs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-test fixture: deliberately buggy composite app exercising every wired BugKind in DETECTOR_REGISTRY. DO NOT DEPLOY.",
+  "scripts": {
+    "up": "bash bin/up.sh",
+    "down": "bash bin/down.sh"
+  },
+  "dependencies": {
+    "left-pad": "0.0.3"
+  }
+}
