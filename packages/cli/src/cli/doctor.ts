@@ -7,7 +7,7 @@ import { loadConfig, effectiveForbiddenPaths } from '../config.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import { detectVisionAuth } from '../adapters/vision-auth-detect.js';
-import { listRunIds, runPaths } from '../store/filesystem.js';
+import { listRunIds } from '../store/filesystem.js';
 import type { BugHunterConfig } from '../types.js';
 
 type CheckStatus = 'green' | 'yellow' | 'red' | 'skipped' | 'info';
@@ -44,18 +44,14 @@ async function runAllChecks(projectDir: string): Promise<DoctorResult> {
   const checks: DoctorCheck[] = [];
 
   // D1: Config present + valid Zod
-  let config: BugHunterConfig | undefined;
-  const d1 = await checkConfig(projectDir);
+  const d1 = checkConfig(projectDir);
   checks.push(d1);
-  if (d1.status !== 'red') {
-    config = loadConfigQuiet(projectDir);
-  }
 
+  const config = d1.status !== 'red' ? loadConfigQuiet(projectDir) : undefined;
   const projectName = config?.projectName ?? path.basename(projectDir);
 
   if (config === undefined) {
-    // All subsequent checks skipped
-    const skipped: DoctorCheck[] = [
+    checks.push(
       { id: 'D2', label: 'SurfaceMCP reachable', status: 'skipped', detail: 'config-missing' },
       { id: 'D3', label: 'Browser MCP reachable', status: 'skipped', detail: 'config-missing' },
       { id: 'D4', label: 'Vision auth', status: 'skipped', detail: 'config-missing' },
@@ -65,24 +61,20 @@ async function runAllChecks(projectDir: string): Promise<DoctorResult> {
       { id: 'D8', label: 'Runs dir health', status: 'skipped', detail: 'config-missing' },
       { id: 'D9', label: 'Active hooks', status: 'skipped', detail: 'config-missing' },
       { id: 'D10', label: 'Forbidden paths', status: 'skipped', detail: 'config-missing' },
-    ];
-    checks.push(...skipped);
+    );
     return { projectName, status: 'red', exitCode: 2, checks };
   }
 
-  const surfaceMcpUrl = config.surfaceMcpUrl;
-  const browserMcpUrl = config.browserMcpUrl;
-
   const [d2, d3, d4, d5, d6, d7, d8, d9, d10] = await Promise.allSettled([
-    checkSurfaceMcp(surfaceMcpUrl),
-    checkBrowserMcp(browserMcpUrl),
+    checkSurfaceMcp(config.surfaceMcpUrl),
+    checkBrowserMcp(config.browserMcpUrl),
     checkVisionAuth(),
-    checkCamofoxVersion(browserMcpUrl),
-    checkPlaywrightVersion(projectDir),
-    checkDiskSpace(projectDir),
-    checkRunsDir(projectDir),
-    checkActiveHooks(config),
-    checkForbiddenPaths(config),
+    checkCamofoxVersion(config.browserMcpUrl),
+    Promise.resolve(checkPlaywrightVersion(projectDir)),
+    Promise.resolve(checkDiskSpace(projectDir)),
+    Promise.resolve(checkRunsDir(projectDir)),
+    Promise.resolve(checkActiveHooks(config)),
+    Promise.resolve(checkForbiddenPaths(config)),
   ]);
 
   checks.push(
@@ -120,7 +112,7 @@ function loadConfigQuiet(projectDir: string): BugHunterConfig | undefined {
   }
 }
 
-async function checkConfig(projectDir: string): Promise<DoctorCheck> {
+function checkConfig(projectDir: string): DoctorCheck {
   const configPath = path.join(projectDir, '.bughunter', 'config.json');
   try {
     loadConfig(projectDir);
@@ -133,7 +125,7 @@ async function checkConfig(projectDir: string): Promise<DoctorCheck> {
 async function checkSurfaceMcp(url: string): Promise<DoctorCheck> {
   const adapter = new HttpSurfaceMcpAdapter(url);
   try {
-    const result = await withTimeout(adapter.surface_describe_self(), 5000, url);
+    const result = await withTimeout(adapter.surface_describe_self(), 5000);
     const detail = `${url}  rev=${result.toolRevision} stack=${result.stack}`;
     return { id: 'D2', label: 'SurfaceMCP reachable', status: 'green', detail };
   } catch (err) {
@@ -150,12 +142,10 @@ async function checkBrowserMcp(url: string | undefined): Promise<DoctorCheck> {
   }
   const adapter = new CamofoxBrowserMcpAdapter(url);
   try {
-    const result = await withTimeout(adapter.listTabs(), 5000, url);
+    const result = await withTimeout(adapter.listTabs(), 5000);
     return { id: 'D3', label: 'Browser MCP reachable', status: 'green', detail: `${url}  tabs=${result.tabs.length}` };
-  } catch (err) {
-    const detail = String(err).includes('ECONNREFUSED')
-      ? `ECONNREFUSED at ${url}`
-      : `timeout after 5000ms`;
+  } catch {
+    const detail = 'timeout after 5000ms';
     return { id: 'D3', label: 'Browser MCP reachable', status: 'yellow', detail };
   }
 }
@@ -176,22 +166,22 @@ async function checkVisionAuth(): Promise<DoctorCheck> {
   };
 }
 
-async function checkCamofoxVersion(browserMcpUrl: string | undefined): Promise<DoctorCheck> {
+function checkCamofoxVersion(browserMcpUrl: string | undefined): Promise<DoctorCheck> {
   if (browserMcpUrl === undefined) {
-    return { id: 'D5', label: 'camofox version', status: 'info', detail: 'browser MCP not configured; skipping' };
+    return Promise.resolve({ id: 'D5', label: 'camofox version', status: 'info', detail: 'browser MCP not configured; skipping' });
   }
-  return new Promise(resolve => {
+  return new Promise<DoctorCheck>(resolve => {
     execFile('camofox', ['--version'], { timeout: 1000 }, (err, stdout) => {
       if (err !== null) {
         resolve({ id: 'D5', label: 'camofox version', status: 'yellow', detail: 'camofox not found or failed' });
-        return;
+      } else {
+        resolve({ id: 'D5', label: 'camofox version', status: 'green', detail: stdout.trim() });
       }
-      resolve({ id: 'D5', label: 'camofox version', status: 'green', detail: stdout.trim() });
     });
   });
 }
 
-async function checkPlaywrightVersion(projectDir: string): Promise<DoctorCheck> {
+function checkPlaywrightVersion(projectDir: string): DoctorCheck {
   const candidates = [
     path.join(projectDir, 'node_modules', 'playwright', 'package.json'),
     path.join(projectDir, '..', 'node_modules', 'playwright', 'package.json'),
@@ -204,13 +194,13 @@ async function checkPlaywrightVersion(projectDir: string): Promise<DoctorCheck> 
       const version = pkg.version ?? 'unknown';
       return { id: 'D6', label: 'Playwright version', status: 'info', detail: version };
     } catch {
-      // try next
+      // try next candidate
     }
   }
   return { id: 'D6', label: 'Playwright version', status: 'info', detail: 'not installed' };
 }
 
-async function checkDiskSpace(projectDir: string): Promise<DoctorCheck> {
+function checkDiskSpace(projectDir: string): DoctorCheck {
   const GIB = 1024 * 1024 * 1024;
   const MIB = 1024 * 1024;
   const targetDir = path.join(projectDir, '.bughunter');
@@ -232,7 +222,7 @@ async function checkDiskSpace(projectDir: string): Promise<DoctorCheck> {
   }
 }
 
-async function checkRunsDir(projectDir: string): Promise<DoctorCheck> {
+function checkRunsDir(projectDir: string): DoctorCheck {
   const runsDir = path.join(projectDir, '.bughunter', 'runs');
   try {
     const runIds = listRunIds(projectDir);
@@ -251,7 +241,7 @@ async function checkRunsDir(projectDir: string): Promise<DoctorCheck> {
   }
 }
 
-async function checkActiveHooks(config: BugHunterConfig): Promise<DoctorCheck> {
+function checkActiveHooks(config: BugHunterConfig): DoctorCheck {
   const hooks = config.seedHooks;
   if (hooks === undefined) {
     return { id: 'D9', label: 'Active hooks', status: 'info', detail: 'seedHooks: 0' };
@@ -278,24 +268,24 @@ async function checkActiveHooks(config: BugHunterConfig): Promise<DoctorCheck> {
   };
 }
 
-async function checkForbiddenPaths(config: BugHunterConfig): Promise<DoctorCheck> {
-  const paths = effectiveForbiddenPaths(config);
-  const defaultCount = paths.length - (config.forbiddenPaths?.length ?? 0);
+function checkForbiddenPaths(config: BugHunterConfig): DoctorCheck {
+  const allPaths = effectiveForbiddenPaths(config);
+  const defaultCount = allPaths.length - (config.forbiddenPaths?.length ?? 0);
   const customCount = config.forbiddenPaths?.length ?? 0;
   return {
     id: 'D10',
     label: 'Forbidden paths',
     status: 'info',
-    detail: `${paths.length} entries (${defaultCount} default + ${customCount} custom)`,
+    detail: `${allPaths.length} entries (${defaultCount} default + ${customCount} custom)`,
   };
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, url: string): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`timeout after ${ms}ms at ${url}`)), ms)
-    ),
+    new Promise<T>((_, reject) => {
+      setTimeout(() => { reject(new Error(`timeout after ${ms}ms`)); }, ms);
+    }),
   ]);
 }
 
