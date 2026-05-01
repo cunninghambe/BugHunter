@@ -235,6 +235,23 @@ export const ConfigSchema = z.object({
   }).optional(),
   // v0.48 notifications
   notifications: NotificationsConfigSchema.optional(),
+  // v0.23 clock-injection palette
+  clockTesting: z.object({
+    enabled: z.boolean().optional(),
+    activeConditions: z.array(z.enum([
+      'dst_forward',
+      'dst_backward',
+      'leap_day',
+      'y2038_edge',
+      'far_future',
+      'client_skew_plus_1h',
+      'tz_skew_negative_8h',
+    ])).optional(),
+    dateSensitiveAllowlist: z.array(z.string()).optional(),
+    dateSensitiveDenylist: z.array(z.string()).optional(),
+    serverClockSource: z.string().url().optional(),
+    userProfileTimezone: z.string().optional(),
+  }).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

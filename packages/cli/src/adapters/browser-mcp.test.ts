@@ -165,3 +165,81 @@ describe('CamofoxBrowserMcpAdapter.clickByHint — §5.1 unit tests', () => {
     });
   });
 });
+
+// ---- v0.23: setTimezoneOverride + addInitScript ----
+
+function mockToolResponse(tabId: string, toolResponses: Record<string, unknown>): { calls: FetchCall[] } {
+  const calls: FetchCall[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as {
+      params?: { name?: string; arguments?: Record<string, unknown> };
+    };
+    const name = body.params?.name ?? '';
+    const args = body.params?.arguments ?? {};
+    calls.push({ name, arguments: args });
+
+    let payload: unknown;
+    if (name === 'navigate') {
+      payload = { tabId, ok: true, finalUrl: 'http://test' };
+    } else if (name in toolResponses) {
+      payload = toolResponses[name];
+    } else {
+      // Simulate "unknown tool" error for unregistered tools
+      return new Response(
+        JSON.stringify({ result: { isError: true, content: [{ text: 'unknown tool: ' + name }] } }),
+        { headers: { 'content-type': 'application/json' } }
+      );
+    }
+    return new Response(
+      JSON.stringify({ result: { content: [{ text: JSON.stringify(payload) }] } }),
+      { headers: { 'content-type': 'application/json' } }
+    );
+  }));
+  return { calls };
+}
+
+describe('CamofoxBrowserMcpAdapter.setTimezoneOverride — v0.23', () => {
+  it('returns { applied: true } when set_timezone tool succeeds', async () => {
+    mockToolResponse('tz-1', { set_timezone: { ok: true } });
+    const adapter = await makeAdapter();
+    const result = await adapter.setTimezoneOverride!('America/New_York');
+    expect(result).toEqual({ applied: true });
+  });
+
+  it('falls back to evaluate_intl when set_timezone tool is unknown', async () => {
+    const { calls } = mockToolResponse('tz-2', { evaluate: { tabId: 'tz-2', result: true } });
+    const adapter = await makeAdapter();
+    const result = await adapter.setTimezoneOverride!('America/Los_Angeles');
+    expect(result.applied).toBe(false);
+    expect(result.degraded).toBe('evaluate_intl');
+    const evalCalls = calls.filter(c => c.name === 'evaluate');
+    expect(evalCalls.length).toBeGreaterThan(0);
+  });
+
+  it('returns unsupported when tz is null and set_timezone is missing', async () => {
+    mockToolResponse('tz-3', { evaluate: { tabId: 'tz-3', result: true } });
+    const adapter = await makeAdapter();
+    const result = await adapter.setTimezoneOverride!(null);
+    expect(result.applied).toBe(false);
+    expect(result.degraded).toBe('unsupported');
+  });
+});
+
+describe('CamofoxBrowserMcpAdapter.addInitScript — v0.23', () => {
+  it('returns { applied: true } when init_script tool succeeds', async () => {
+    mockToolResponse('init-1', { init_script: { ok: true } });
+    const adapter = await makeAdapter();
+    const result = await adapter.addInitScript!('window.__TEST = true;');
+    expect(result).toEqual({ applied: true });
+  });
+
+  it('falls back to late_inject evaluate when init_script tool is unknown', async () => {
+    const { calls } = mockToolResponse('init-2', { evaluate: { tabId: 'init-2', result: true } });
+    const adapter = await makeAdapter();
+    const result = await adapter.addInitScript!('window.__TEST = true;');
+    expect(result.applied).toBe(false);
+    expect(result.degraded).toBe('late_inject');
+    const evalCalls = calls.filter(c => c.name === 'evaluate');
+    expect(evalCalls.length).toBeGreaterThan(0);
+  });
+});
