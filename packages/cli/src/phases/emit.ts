@@ -1,11 +1,16 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
-import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry } from '../types.js';
+import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, Severity } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { openHistoryDb, previousRunForProject, clustersForRun, writeRunToHistory } from '../store/history.js';
+import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import { log } from '../log.js';
 
 const BUGHUNTER_VERSION = '0.1.0';
+// Registry entries do not carry severity yet (added in v0.29). Lookup returns undefined → falls back to 'info'.
+const registryLookup: Record<string, { severity?: Severity }> = Object.fromEntries(
+  DETECTOR_REGISTRY.map(e => [e.kind, e as { severity?: Severity }]),
+);
 
 export type TestCounters = {
   testsPlanned: number;
@@ -38,6 +43,10 @@ export type TestCounters = {
   raceConditions?: RaceConditionsTelemetry;
   /** v0.21 IDOR telemetry — present when idor.enabled = true. */
   idor?: IdorTelemetry;
+  /** v0.28: number of clusters suppressed by .bughunter/suppressions.json. */
+  suppressedClusters?: number;
+  /** v0.28: suppressed sample details (up to 20). */
+  suppressedSamples?: RunSummary['suppressedSamples'];
 };
 
 export function runEmit(
@@ -50,22 +59,23 @@ export function runEmit(
 ): void {
   const paths = runPaths(runState.projectDir, runState.runId);
 
+  const byKind: Record<string, number> = {};
+  const byRole: Record<string, number> = {};
+  const bySeverity: Record<Severity, number> = { critical: 0, major: 0, minor: 0, info: 0 };
+
   for (const cluster of clusters) {
+    const sev = registryLookup[cluster.kind]?.severity ?? 'info';
+    (cluster as BugCluster & { severity: Severity }).severity = sev;
+    bySeverity[sev] += 1;
+    byKind[cluster.kind] = (byKind[cluster.kind] ?? 0) + 1;
+    for (const occ of cluster.occurrences) {
+      byRole[occ.role] = (byRole[occ.role] ?? 0) + 1;
+    }
     appendJsonl(paths.bugsFile, cluster);
   }
 
   for (const failure of infraFailures) {
     appendJsonl(paths.infraFile, failure);
-  }
-
-  const byKind: Record<string, number> = {};
-  const byRole: Record<string, number> = {};
-
-  for (const cluster of clusters) {
-    byKind[cluster.kind] = (byKind[cluster.kind] ?? 0) + 1;
-    for (const occ of cluster.occurrences) {
-      byRole[occ.role] = (byRole[occ.role] ?? 0) + 1;
-    }
   }
 
   const testsPlanned = counters?.testsPlanned ?? 0;
@@ -88,12 +98,17 @@ export function runEmit(
     bugs_lost_to_revision: 0,
     byKind,
     byRole,
+    bySeverity,
     projectedRuntimeMs,
     actualRuntimeMs,
     testsPlanned,
     testsRan,
     testsSkipped,
     skippedReasons: skipReasons,
+    suppressedClusters: counters?.suppressedClusters ?? 0,
+    ...(counters?.suppressedSamples !== undefined && counters.suppressedSamples.length > 0
+      ? { suppressedSamples: counters.suppressedSamples }
+      : {}),
     ...(counters?.vision !== undefined ? { vision: counters.vision } : {}),
     ...(crawlTelemetry !== undefined ? { discovery: { ...crawlTelemetry, ...(probeTelemetry !== undefined ? { probe: { telemetry: probeTelemetry } } : {}) } } : {}),
     ...(probeTelemetry !== undefined && crawlTelemetry === undefined ? { discovery: { probe: { telemetry: probeTelemetry } } } : {}),

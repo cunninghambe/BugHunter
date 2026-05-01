@@ -1321,6 +1321,16 @@ export type RunSummary = {
   skippedReasons: Array<{ reason: string; count: number }>;
   /** v0.11 form-reachability probe counters (run, skippedByBudget, durationMs). */
   formReachabilityProbes?: { run: number; skippedByBudget: number; durationMs: number };
+  /** Number of clusters suppressed via .bughunter/suppressions.json in this run. Always 0 when no suppressions file. */
+  suppressedClusters: number;
+  /** Up to 20 suppressed samples for human-eyeball verification. Present when suppressedClusters > 0. */
+  suppressedSamples?: Array<{
+    clusterId: string;
+    kind: string;
+    bugIdentity?: string;
+    matchedPattern: string;
+    suppressionId: string;
+  }>;
   vision?: {
     enabled: boolean;
     called: number;

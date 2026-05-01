@@ -17,6 +17,8 @@ export type RunPaths = {
   specsDir: string;
   /** v0.8: directory for gzipped heap snapshots */
   heapDir: string;
+  /** v0.29: directory for export artifacts (sarif/csv/etc.) */
+  exportsDir: string;
 };
 
 export function runPaths(projectDir: string, runId: string): RunPaths {
@@ -34,6 +36,7 @@ export function runPaths(projectDir: string, runId: string): RunPaths {
     summaryFile: path.join(runDir, 'summary.json'),
     specsDir: path.join(runDir, 'specs'),
     heapDir: path.join(runDir, 'heap'),
+    exportsDir: path.join(runDir, 'exports'),
   };
 }
 
@@ -73,6 +76,24 @@ export function listRunIds(projectDir: string): string[] {
   return fs.readdirSync(runsDir).filter(d =>
     fs.statSync(path.join(runsDir, d)).isDirectory()
   );
+}
+
+export type BugHunterProjectPaths = {
+  suppressionsFile: string;
+  auditLogFile: string;
+  triageFile: string;
+  explanationsDir: string;
+};
+
+/** v0.28: project-level paths for suppressions, audit log, triage events, and explanation cache. */
+export function bugHunterPaths(projectDir: string): BugHunterProjectPaths {
+  const base = path.join(projectDir, '.bughunter');
+  return {
+    suppressionsFile: path.join(base, 'suppressions.json'),
+    auditLogFile: path.join(base, 'suppressions-audit.log'),
+    triageFile: path.join(base, 'triage.jsonl'),
+    explanationsDir: path.join(base, 'explanations'),
+  };
 }
 
 export function pruneRuns(projectDir: string, maxAgeMs: number): string[] {
