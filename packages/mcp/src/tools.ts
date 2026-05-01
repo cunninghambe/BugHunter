@@ -7,14 +7,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createId } from '@paralleldrive/cuid2';
 import * as fs from 'node:fs';
 
-type BugCluster = {
-  id: string;
-  kind: string;
-  clusterSize: number;
-  rootCause: string;
-  suspectedFiles: string[];
-  verdict?: string;
-};
+import { toolOk, toolErr } from './envelope.js';
+import { listRunIds, runPaths } from 'bughunter/src/store/filesystem.js';
+import type { BugCluster } from 'bughunter/src/types.js';
+
+export { toolOk, toolErr };
 
 const jobs = new Map<string, {
   state: 'queued' | 'running' | 'done' | 'failed';
@@ -22,27 +19,6 @@ const jobs = new Map<string, {
   bugCounts?: { filed: number; verified_fixed: number; persistent: number; skipped: number };
   error?: string;
 }>();
-
-type ToolOk = { content: [{ type: 'text'; text: string }] };
-type ToolErr = { content: [{ type: 'text'; text: string }]; isError: true };
-
-function toolOk(data: unknown): ToolOk {
-  return { content: [{ type: 'text', text: JSON.stringify(data) }] };
-}
-
-function toolErr(code: string, message: string): ToolErr {
-  return { content: [{ type: 'text', text: JSON.stringify({ error: code, message }) }], isError: true };
-}
-
-function listRunIds(projectDir: string): string[] {
-  const runsDir = `${projectDir}/.bughunter/runs`;
-  if (!fs.existsSync(runsDir)) return [];
-  return fs.readdirSync(runsDir).filter(d => fs.statSync(`${runsDir}/${d}`).isDirectory());
-}
-
-function bugsFilePath(projectDir: string, runId: string): string {
-  return `${projectDir}/.bughunter/runs/${runId}/bugs.jsonl`;
-}
 
 type CliModule = {
   runCommand: (opts: {
@@ -132,10 +108,10 @@ export function registerTools(server: McpServer): void {
       try {
         const runIds = listRunIds(args.project).sort().reverse();
         if (runIds.length === 0) return toolOk([]);
-        const filePath = bugsFilePath(args.project, runIds[0]);
-        if (!fs.existsSync(filePath)) return toolOk([]);
+        const paths = runPaths(args.project, runIds[0]);
+        if (!fs.existsSync(paths.bugsFile)) return toolOk([]);
 
-        const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
+        const lines = fs.readFileSync(paths.bugsFile, 'utf-8').split('\n').filter(Boolean);
         let clusters = lines.map(l => JSON.parse(l) as BugCluster);
 
         if (args.kind !== undefined) clusters = clusters.filter(c => c.kind === args.kind);
@@ -173,3 +149,18 @@ export function registerTools(server: McpServer): void {
     }
   );
 }
+
+// Re-export register functions for new tool families
+export { registerClustersTool } from './tools/clusters.js';
+export { registerClusterDetailTool } from './tools/cluster-detail.js';
+export { registerOccurrenceTool } from './tools/occurrence.js';
+export { registerArtifactTool } from './tools/artifact.js';
+export { registerRunsListTool, registerRunSummaryTool } from './tools/runs.js';
+export { registerDetectorsTool } from './tools/detectors.js';
+export { registerDiffTool } from './tools/diff.js';
+export { registerHistoryTool } from './tools/history.js';
+export { registerExplainTool } from './tools/explain.js';
+export { registerProjectDescribeTool } from './tools/project.js';
+export { registerConfigGetTool } from './tools/config.js';
+export { registerTailTool } from './tools/tail.js';
+export { registerProgressTool } from './tools/progress.js';

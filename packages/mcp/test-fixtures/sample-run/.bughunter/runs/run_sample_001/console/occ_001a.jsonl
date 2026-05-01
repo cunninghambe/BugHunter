@@ -1,0 +1,1 @@
+{"level":"error","text":"Uncaught TypeError: Cannot read properties of undefined","stack":"TypeError at useEffect"}
