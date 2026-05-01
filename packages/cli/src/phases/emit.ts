@@ -1,8 +1,11 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
-import type { BugCluster, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry } from '../types.js';
+import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
+import { openHistoryDb, previousRunForProject, clustersForRun, writeRunToHistory } from '../store/history.js';
 import { log } from '../log.js';
+
+const BUGHUNTER_VERSION = '0.1.0';
 
 export type TestCounters = {
   testsPlanned: number;
@@ -106,7 +109,43 @@ export function runEmit(
     ...(counters?.idor !== undefined ? { idor: counters.idor } : {}),
   };
 
-  writeJsonFile(paths.summaryFile, summary);
+  let crossRun: CrossRunSummary | undefined;
+  const db = openHistoryDb(runState.projectDir);
+  try {
+    const prev = previousRunForProject(db, runState.config.projectName, runState.runId);
+    if (prev !== undefined) {
+      const prevClusters = clustersForRun(db, prev.run_id);
+      const prevByIdentity = new Map(prevClusters.map(c => [c.bug_identity, c]));
+      const currIdentities = new Set(
+        clusters.filter(c => c.bugIdentity !== undefined).map(c => c.bugIdentity as string),
+      );
+      let newBugs = 0;
+      let persistent = 0;
+      let regressed = 0;
+      for (const c of clusters) {
+        if (c.bugIdentity === undefined) continue;
+        const prior = prevByIdentity.get(c.bugIdentity);
+        if (prior === undefined) newBugs++;
+        else if (prior.verdict === 'verified_fixed') regressed++;
+        else persistent++;
+      }
+      let goneSinceLast = 0;
+      for (const pc of prevClusters) {
+        if (!currIdentities.has(pc.bug_identity)) goneSinceLast++;
+      }
+      crossRun = { previousRunId: prev.run_id, newBugs, persistent, goneSinceLast, regressed };
+      log.info('crossRun computed', crossRun);
+    } else {
+      log.info('discovery.first-run-for-project: no prior run found; crossRun omitted from summary');
+    }
+    writeRunToHistory(db, runState, clusters, BUGHUNTER_VERSION);
+  } catch (err) {
+    log.warn('history.db write failed (non-fatal)', { error: err instanceof Error ? err.message : String(err) });
+  } finally {
+    db.close();
+  }
+
+  writeJsonFile(paths.summaryFile, { ...summary, ...(crossRun !== undefined ? { crossRun } : {}) });
 
   const skipLines = skipReasons.map(r => `Skipped: ${r.reason} (${r.count})`);
 
