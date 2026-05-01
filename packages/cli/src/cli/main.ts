@@ -177,6 +177,8 @@ async function main(): Promise<void> {
           enableHistoryCorruption: flags['enable-history-corruption'] === true,
           navStateSkipRoute: typeof flags['nav-state-skip-route'] === 'string' ? flags['nav-state-skip-route'] : undefined,
           navStateDeepLinkMaxDepth: typeof flags['nav-state-deep-link-max-depth'] === 'string' ? parseInt(flags['nav-state-deep-link-max-depth'], 10) : undefined,
+          idor: flags['idor'] === true,
+          noIdor: flags['no-idor'] === true,
         });
         break;
       }
