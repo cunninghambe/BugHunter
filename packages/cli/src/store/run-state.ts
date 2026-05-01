@@ -25,11 +25,16 @@ function migrateRaceKinds(state: RunState): RunState {
   return { ...state, clusters: migratedClusters };
 }
 
-export function initRunState(projectDir: string, runId: string, config: RunState['config']): RunState {
+export function initRunState(
+  projectDir: string,
+  runId: string,
+  config: RunState['config'],
+  startedAt?: string,
+): RunState {
   const state: RunState = {
     runId,
     projectDir,
-    startedAt: new Date().toISOString(),
+    startedAt: startedAt ?? new Date().toISOString(),
     phase: 'validate',
     config,
     clusterCount: 0,

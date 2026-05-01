@@ -73,7 +73,8 @@ export function fileExists(filePath: string): boolean {
 export function listRunIds(projectDir: string): string[] {
   const runsDir = path.join(projectDir, '.bughunter', 'runs');
   if (!fs.existsSync(runsDir)) return [];
-  return fs.readdirSync(runsDir).filter(d =>
+  // v0.32: sort ASC for deterministic iteration order across OSes.
+  return fs.readdirSync(runsDir).sort().filter(d =>
     fs.statSync(path.join(runsDir, d)).isDirectory()
   );
 }

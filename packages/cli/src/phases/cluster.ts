@@ -4,7 +4,9 @@ import type { BugDetection, BugCluster, BugKind, Occurrence, OccurrenceFull, Occ
 import { clusterSignature, extractNormalizedFields } from '../cluster/signature.js';
 import { computeFullArtifactSet } from '../store/artifact-budget.js';
 import { normalizePath } from '../classify/network.js';
-import { createId } from '@paralleldrive/cuid2';
+import { createId } from '../lib/ids.js';
+import { nowIso } from '../lib/clock.js';
+import type { Clock } from '../lib/clock.js';
 import { log } from '../log.js';
 import { computeBugIdentity } from '../cluster/bug-identity.js';
 
@@ -55,6 +57,8 @@ export type ClusterOptions = {
   stateByTestId?: Map<string, { preState: PreState; postState: PostState }>;
   /** v0.27: project name from config; used to derive stable bugIdentity. Optional for backward compat with existing tests. */
   projectName?: string;
+  /** v0.32: frozen clock for deterministic timestamps. Defaults to wall-clock when absent. */
+  clock?: Clock;
 };
 
 export type ClusterResult = {
@@ -64,6 +68,7 @@ export type ClusterResult = {
 
 export function runCluster(opts: ClusterOptions): ClusterResult {
   const { detections, testCases, runId, maxClusters } = opts;
+  const clock = opts.clock ?? { kind: 'wall' } as Clock;
   const clusterMap = new Map<string, BugCluster>();
   const testCaseMap = new Map(testCases.map(t => [t.id, t]));
   let capped = false;
@@ -79,7 +84,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
         continue; // Skip creating 201st cluster
       }
       const { errorMessageNormalized, stackTraceFingerprint } = extractNormalizedFields(detection);
-      const now = new Date().toISOString();
+      const now = nowIso(clock);
       clusterMap.set(sig, {
         id: createId(),
         runId,
@@ -111,7 +116,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
         `executor must populate occurrenceIdByTestId for every TestResult`,
       );
     }
-    const now = new Date().toISOString();
+    const now = nowIso(clock);
 
     cluster.lastSeenAt = now;
     cluster.clusterSize++;
@@ -143,8 +148,20 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
     );
   }
 
+  // v0.32: when deterministic mode is active, sort occurrences within each cluster
+  // by occurrenceId ASC so concurrent drains don't produce different orders (EC-8).
+  // In wall-clock mode, preserve insertion order (backward compat with existing tests).
+  if (opts.clock !== undefined && opts.clock.kind !== 'wall') {
+    for (const cluster of clusterMap.values()) {
+      cluster.occurrences.sort((a, b) => a.occurrenceId.localeCompare(b.occurrenceId));
+    }
+  }
+
   const clusters = Array.from(clusterMap.values());
   annotateRelatedClusters(clusters);
+
+  // v0.32: sort clusters by signatureKey ASC so bugs.jsonl line order is deterministic (§ 2.1).
+  clusters.sort((a, b) => (a.signatureKey ?? '').localeCompare(b.signatureKey ?? ''));
 
   return { clusters, capped };
 }

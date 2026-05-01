@@ -123,7 +123,8 @@ function buildRootCause(entry: { constructorName: string; instanceCountDelta: nu
 function pruneOldSnapshots(heapDir: string, keepIndices: number[]): void {
   const keepSet = new Set(keepIndices.map(i => `snapshot-${i}.json.gz`));
   try {
-    for (const file of fs.readdirSync(heapDir)) {
+    // v0.32: sort ASC for deterministic snapshot file traversal order.
+    for (const file of fs.readdirSync(heapDir).sort()) {
       if (file.startsWith('snapshot-') && file.endsWith('.json.gz') && !keepSet.has(file)) {
         fs.unlinkSync(path.join(heapDir, file));
       }

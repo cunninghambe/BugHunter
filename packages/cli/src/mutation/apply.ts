@@ -2,7 +2,7 @@
 
 import type { FormField, TestCase, DiscoveredForm, ToolMeta, PaletteVariant, InputType } from '../types.js';
 import { generatePaletteCases } from './palette.js';
-import { createId } from '@paralleldrive/cuid2';
+import { createId } from '../lib/ids.js';
 import { generateCanaries } from '../security/injection-palette.js';
 import type { CanaryPayload } from '../security/injection-palette.js';
 

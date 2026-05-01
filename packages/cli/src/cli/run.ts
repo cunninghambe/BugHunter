@@ -1,7 +1,11 @@
 // bughunter run — main run pipeline orchestrator.
 
-import { createId } from '@paralleldrive/cuid2';
 import { loadConfig, resolvedConfig } from '../config.js';
+import { setIdFactory, createId, resetIdFactory } from '../lib/ids.js';
+import { makeClock, nowIso } from '../lib/clock.js';
+import type { Clock } from '../lib/clock.js';
+import { loadHar, loadNormalizeConfig, makeHarReplayer } from '../adapters/har-replay.js';
+import type { HarReplayer } from '../adapters/har-replay.js';
 import { initRunState, saveRunState, loadRunState } from '../store/run-state.js';
 import { runPaths } from '../store/filesystem.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
@@ -104,9 +108,55 @@ export type RunOptions = {
   idor?: boolean;
   /** Disable IDOR even when implied by --security. */
   noIdor?: boolean;
+  // v0.32 deterministic mode flags
+  /** --seed <n>: 32-bit non-negative integer seeding the PRNG for all id generation. */
+  seed?: number;
+  /** --frozen-clock <iso8601>: all emitted timestamps are pinned to this value. */
+  frozenClock?: string;
+  /** --frozen-network <path>: replay HTTP from a recorded HAR file. */
+  frozenNetwork?: string;
+  /** --record-network <path>: record outbound HTTP to a HAR file. */
+  recordNetwork?: string;
+  /** --allow-network-miss: when --frozen-network, fall through to live network on a miss. */
+  allowNetworkMiss?: boolean;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
+  // v0.32: seed + clock + network determinism wiring.
+  // Must run before any id or timestamp is minted.
+  const clock: Clock = makeClock(opts);
+
+  // EC-13: --seed + --resume is incompatible.
+  if (opts.seed !== undefined && opts.resume !== undefined) {
+    throw new Error('--seed cannot be combined with --resume');
+  }
+
+  // Install seeded id factory when --seed is set; clean up after the run.
+  if (opts.seed !== undefined) {
+    setIdFactory(opts.seed);
+  }
+
+  // OQ-5: warn when only some determinism flags are set.
+  const hasSeed = opts.seed !== undefined;
+  const hasClock = opts.frozenClock !== undefined;
+  const hasNetwork = opts.frozenNetwork !== undefined || opts.recordNetwork !== undefined;
+  if ((hasSeed || hasClock || hasNetwork) && !(hasSeed && hasClock && hasNetwork)) {
+    process.stderr.write(
+      '[bughunter] warn: partial determinism mode — for byte-identical runs, set --seed, --frozen-clock, AND --frozen-network together.\n',
+    );
+  }
+
+  // OQ-8: when --frozen-network + race conditions enabled, skip race runner.
+  // (checked later after raceConditionsConfig is resolved)
+
+  // Build HAR replayer when --frozen-network is set.
+  let harReplayer: HarReplayer | undefined;
+  if (opts.frozenNetwork !== undefined) {
+    const har = loadHar(opts.frozenNetwork);
+    const normConfig = loadNormalizeConfig(opts.frozenNetwork);
+    harReplayer = makeHarReplayer(har, normConfig);
+  }
+
   const config = loadConfig(opts.projectDir);
 
   // Build perf config from CLI flags (flags override config file)
@@ -229,7 +279,9 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     resumeState = loadRunState(opts.projectDir, runId);
     log.info(`Resuming run ${runId} from phase ${resumeState.phase}`);
   } else {
-    runId = createId();
+    // OQ-6: prefix runId with seed to avoid path collision across seeded runs.
+    const baseId = createId();
+    runId = opts.seed !== undefined ? `det-${opts.seed}-${baseId}` : baseId;
     log.info(`Starting new run ${runId}`);
   }
 
@@ -285,7 +337,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     }
   }
 
-  const runState = resumeState ?? initRunState(opts.projectDir, runId, resolved);
+  const runState = resumeState ?? initRunState(opts.projectDir, runId, resolved, nowIso(clock));
   runState.surfaceRevision = revision;
   runState.phase = 'discover';
   saveRunState(runState);
@@ -484,6 +536,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       roles: effectiveRoles,
       maxClusters: resolved.maxBugs,
       onClusterFound: () => runState.clusterCount,
+      seed: opts.seed,
     });
 
     // Phase 3.7: active pen-testing (SQL/CMD/PATH/JWT injection probes).
@@ -569,6 +622,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       occurrenceIdByTestId,
       stateByTestId,
       projectName: resolved.projectName,
+      clock,
     });
 
     // v0.28 — apply user-defined suppressions before downstream consumers see the clusters.
@@ -600,7 +654,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
       if (analyzeResult.ok && analyzeResult.detections.length > 0) {
         // Synthesise attributed detections into cluster form.
-        const { attributedClusters } = synthesiseHeapAttributedClusters(runId, analyzeResult.detections);
+        const { attributedClusters } = synthesiseHeapAttributedClusters(runId, analyzeResult.detections, clock);
 
         // Promote memory_leak_suspected clusters with relatedClusters links.
         linkSuspectedToAttributed(clusters, attributedClusters);
@@ -624,6 +678,13 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     saveRunState(runState);
 
     // Phase 6: emit
+    // OQ-8: warn when --frozen-network is combined with race conditions.
+    if (harReplayer !== undefined && raceConditionsConfig?.enabled === true) {
+      process.stderr.write(
+        '[bughunter] warn: --frozen-network is active; race-condition pass skipped (HAR replay returns recorded responses, no real concurrency).\n',
+      );
+    }
+
     const actualRuntimeMs = Date.now() - startMs;
 
     // Merge discovery-phase + plan-phase + execute-phase skip reasons.
@@ -679,6 +740,15 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ? buildRaceConditionsTelemetry(testCases, results, raceConditionsConfig)
       : undefined;
 
+    // Build determinism telemetry block (§6.8).
+    const replayTelemetry = harReplayer?.telemetry();
+    const deterministicBlock = (hasSeed || hasClock || hasNetwork) ? {
+      ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
+      ...(opts.frozenClock !== undefined ? { frozenClockIso: opts.frozenClock } : {}),
+      ...(opts.frozenNetwork !== undefined ? { frozenNetworkPath: opts.frozenNetwork } : {}),
+      ...(replayTelemetry !== undefined ? { networkReplay: replayTelemetry } : {}),
+    } : undefined;
+
     runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
       testsPlanned: testCases.length,
       testsRan: results.length,
@@ -694,6 +764,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(crossUserResult.idorTelemetry !== undefined ? { idor: crossUserResult.idorTelemetry } : {}),
       suppressedClusters: suppressedCount,
       ...(suppressedSamples.length > 0 ? { suppressedSamples } : {}),
+      ...(deterministicBlock !== undefined ? { deterministic: deterministicBlock } : {}),
     });
     runState.emitted = true;
     runState.phase = 'done';
@@ -707,6 +778,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       seedHookTelemetry.push(...cleanupResults);
     } catch (err) {
       log.warn('seed: cleanup hook error (suppressed)', { reason: String(err) });
+    }
+    // v0.32: restore default id factory so tests/sub-processes are not affected.
+    if (opts.seed !== undefined) {
+      resetIdFactory();
     }
   }
 }
@@ -819,13 +894,14 @@ function synthesiseFakeDetectionCases(
 function synthesiseHeapAttributedClusters(
   runId: string,
   detections: BugDetection[],
+  clock: Clock,
 ): { attributedClusters: BugCluster[] } {
   const clusterMap = new Map<string, BugCluster>();
+  const now = nowIso(clock);
 
   for (const detection of detections) {
     const sig = clusterSignature(detection);
     if (!clusterMap.has(sig)) {
-      const now = new Date().toISOString();
       clusterMap.set(sig, {
         id: createId(),
         runId,
@@ -843,7 +919,7 @@ function synthesiseHeapAttributedClusters(
       const c = clusterMap.get(sig);
       if (c !== undefined) {
         c.clusterSize++;
-        c.lastSeenAt = new Date().toISOString();
+        c.lastSeenAt = now;
       }
     }
   }

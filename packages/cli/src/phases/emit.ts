@@ -1,7 +1,9 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
+import * as fs from 'node:fs';
 import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, Severity } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
+import { canonicalStringify } from '../lib/canonical.js';
 import { openHistoryDb, previousRunForProject, clustersForRun, writeRunToHistory } from '../store/history.js';
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import { log } from '../log.js';
@@ -47,6 +49,13 @@ export type TestCounters = {
   suppressedClusters?: number;
   /** v0.28: suppressed sample details (up to 20). */
   suppressedSamples?: RunSummary['suppressedSamples'];
+  /** v0.32: determinism telemetry — present when any determinism flag is set. */
+  deterministic?: {
+    seed?: number;
+    frozenClockIso?: string;
+    frozenNetworkPath?: string;
+    networkReplay?: { matched: number; missed: number; unmatchedRecorded: number };
+  };
 };
 
 export function runEmit(
@@ -64,14 +73,15 @@ export function runEmit(
   const bySeverity: Record<Severity, number> = { critical: 0, major: 0, minor: 0, info: 0 };
 
   for (const cluster of clusters) {
-    const sev = registryLookup[cluster.kind]?.severity ?? 'info';
+    const sev = (registryLookup[cluster.kind] as { severity?: Severity } | undefined)?.severity ?? 'info';
     (cluster as BugCluster & { severity: Severity }).severity = sev;
     bySeverity[sev] += 1;
     byKind[cluster.kind] = (byKind[cluster.kind] ?? 0) + 1;
     for (const occ of cluster.occurrences) {
       byRole[occ.role] = (byRole[occ.role] ?? 0) + 1;
     }
-    appendJsonl(paths.bugsFile, cluster);
+    // v0.32: use canonical (sorted-keys) serialisation for deterministic bugs.jsonl.
+    fs.appendFileSync(paths.bugsFile, `${canonicalStringify(cluster)}\n`);
   }
 
   for (const failure of infraFailures) {
@@ -122,6 +132,7 @@ export function runEmit(
     ...(counters?.penTesting !== undefined ? { penTesting: counters.penTesting } : {}),
     ...(counters?.raceConditions !== undefined ? { raceConditions: counters.raceConditions } : {}),
     ...(counters?.idor !== undefined ? { idor: counters.idor } : {}),
+    ...(counters?.deterministic !== undefined ? { deterministic: counters.deterministic } : {}),
   };
 
   let crossRun: CrossRunSummary | undefined;

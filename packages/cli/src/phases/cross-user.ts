@@ -8,7 +8,9 @@
 //  - Adds mutating-tool pass when config.idor.probeMutating=true.
 //  - Legacy path unchanged when idor.enabled is false/undefined.
 
-import { createId } from '@paralleldrive/cuid2';
+import { createId } from '../lib/ids.js';
+import { nowIso } from '../lib/clock.js';
+import type { Clock } from '../lib/clock.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { BugDetection, BugCluster, RunState, TestCase, IdorTelemetry } from '../types.js';
 import { decodeDiscoveredIdKey, isToolPathDenied, isOpaqueSignedToken } from '../security/resource-id-extractor.js';
@@ -711,8 +713,9 @@ export function crossUserDetectionToCluster(
   detection: BugDetection,
   runId: string,
   clusterKey: string,
+  clock: Clock = { kind: 'wall' },
 ): BugCluster {
-  const now = new Date().toISOString();
+  const now = nowIso(clock);
   return {
     id: createId(),
     runId,

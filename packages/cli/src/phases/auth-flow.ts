@@ -2,7 +2,7 @@
 // open redirect (v0.7 §4). Runs after execute + cross-user, before classify.
 // Opt-in only: requires config.authFlow.enabled === true.
 
-import { createId } from '@paralleldrive/cuid2';
+import { createId, makeSeededRng } from '../lib/ids.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import { loginInBrowser } from '../discovery/browser-login.js';
@@ -19,6 +19,8 @@ export type AuthFlowOptions = {
   roles: string[];
   maxClusters: number;
   onClusterFound: (key: string) => number;
+  /** v0.32: seed for deterministic temp passwords. When set, Math.random() is replaced. */
+  seed?: number;
 };
 
 export type AuthFlowResult = {
@@ -183,8 +185,10 @@ async function checkPasswordResetReuse(
     };
   }
 
-  const tempPw1 = `TempReset!${Math.random().toString(36).slice(2, 10)}`;
-  const tempPw2 = `TempReset2!${Math.random().toString(36).slice(2, 10)}`;
+  // v0.32: use seeded RNG when --seed is set (OQ-conservative: same seed → same passwords).
+  const rng = opts.seed !== undefined ? makeSeededRng(opts.seed) : Math.random;
+  const tempPw1 = `TempReset!${rng().toString(36).slice(2, 10)}`;
+  const tempPw2 = `TempReset2!${rng().toString(36).slice(2, 10)}`;
   const c1 = await opts.surface.surface_call({ toolId: consId, role: 'anonymous', input: { token: t1, password: tempPw1 }, noAutoRelogin: true });
   const c2 = await opts.surface.surface_call({ toolId: consId, role: 'anonymous', input: { token: t1, password: tempPw2 }, noAutoRelogin: true });
 
