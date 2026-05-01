@@ -426,7 +426,9 @@ Defaults:
 
 ```bash
 cd /tmp/TraiderJo
-bughunt . --crawl --vision --a11y-strict --seo --since-static
+# crawl is config-only (config.crawl.enabled); vision is config-only
+# (vision.enabled in .bughunter/config.json); --since-static was never landed.
+bughunt run --a11y-strict --seo
 ```
 
 Expected output (lower bound):
