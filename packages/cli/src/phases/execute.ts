@@ -49,7 +49,9 @@ import {
 import { hashSchema } from '../util/hash.js';
 import { runPaths, type RunPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
-import { createId } from '@paralleldrive/cuid2';
+import { createId } from '../lib/ids.js';
+import { nowIso } from '../lib/clock.js';
+import type { Clock } from '../lib/clock.js';
 import { MAX_CONSECUTIVE_INFRA_FAILURES } from '../config.js';
 import type { PerfCollector } from '../perf/perf-collector.js';
 import { AXE_RUN_SCRIPT, classifyA11yDelta } from '../classify/accessibility.js';
@@ -114,6 +116,8 @@ export type ExecuteOptions = {
   discoveryPages?: DiscoveredPage[];
   /** v0.25: dynamic routes for which no discoveryFixtures row was found. */
   fixtureUnresolvableRoutes?: Set<string>;
+  /** v0.32: frozen clock — all emitted timestamps use this value when set. */
+  clock?: Clock;
 };
 
 export type ExecuteResult = {
@@ -132,6 +136,7 @@ export type ExecuteResult = {
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, seoSuppressDuplicateTitles, keyboardTrapMaxPresses, asyncMaxWaitMs, discoveryPages, fixtureUnresolvableRoutes } = opts;
+  const clock = opts.clock ?? { kind: 'wall' as const };
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
@@ -281,8 +286,8 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
-        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined })
-        : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds, appBaseUrl);
+        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined }, clock)
+        : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds, appBaseUrl, clock);
 
       // Perf drain: collect vitals/HAR after the action completes
       if (perfCollector !== undefined && tc.action.via === 'ui') {
@@ -365,7 +370,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
       const infra: InfrastructureFailure = {
         id: createId(),
         runId: runState.runId,
-        timestamp: new Date().toISOString(),
+        timestamp: nowIso(clock),
         kind: 'generic',
         detail: String(err),
         role: tc.role,
@@ -511,6 +516,7 @@ async function executeUiTestInner(
   asyncMaxWaitMs?: number,
   /** V24: extra flags for deferred detector wiring. */
   extras?: { enableA11y?: boolean; enablePerf?: boolean },
+  clock: Clock = { kind: 'wall' },
 ): Promise<TestResult> {
   const bugs: BugDetection[] = [];
   const preConsoleErrors: ConsoleError[] = [];
@@ -533,7 +539,7 @@ async function executeUiTestInner(
         infrastructureFailure: {
           id: createId(),
           runId,
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso(clock),
           kind: 'browser_element_not_found',
           detail: `state-nav: trigger_not_found (hint=${JSON.stringify(tc.stateContext.triggerHint)}, baseRoute=${tc.stateContext.baseRoute})`,
           role: tc.role,
@@ -557,7 +563,7 @@ async function executeUiTestInner(
           infrastructureFailure: {
             id: createId(),
             runId,
-            timestamp: new Date().toISOString(),
+            timestamp: nowIso(clock),
             kind: 'browser_element_not_found',
             detail: `submit: form_never_rendered (formSelector=${tc.action.selector})`,
             role: tc.role,
@@ -723,7 +729,7 @@ async function executeUiTestInner(
         infrastructureFailure: {
           id: createId(),
           runId,
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso(clock),
           kind: 'browser_element_not_found',
           detail: (err as BrowserMcpError).message,
           role: tc.role,
@@ -742,7 +748,7 @@ async function executeUiTestInner(
         infrastructureFailure: {
           id: createId(),
           runId,
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso(clock),
           kind: 'browser_crash',
           detail: (err as BrowserMcpError).message,
           role: tc.role,
@@ -1062,6 +1068,7 @@ async function executeUiTest(
   asyncMaxWaitMs?: number,
   /** V24: extra flags for deferred detector wiring. */
   extras?: { enableA11y?: boolean; enablePerf?: boolean },
+  clock: Clock = { kind: 'wall' },
 ): Promise<TestResult> {
   const start = Date.now();
   const occurrenceId = createId();
@@ -1086,16 +1093,16 @@ async function executeUiTest(
       toolId: tc.action.toolId,
       palette: tc.action.palette,
       input: tc.action.input,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso(clock),
     }],
-    createdAt: new Date().toISOString(),
+    createdAt: nowIso(clock),
     stateContext: tc.stateContext,
   };
 
   let result: TestResult;
   try {
     result = await browser.withTab(pageUrl, headers, (scope) =>
-      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, extras)
+      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, extras, clock)
     );
   } catch (err) {
     // withTab itself failed (openTab or closeTab threw, or fn re-threw after unexpected error)
@@ -1107,7 +1114,7 @@ async function executeUiTest(
       infrastructureFailure: {
         id: createId(),
         runId,
-        timestamp: new Date().toISOString(),
+        timestamp: nowIso(clock),
         kind: 'generic',
         detail: String(err),
         role: tc.role,
@@ -1135,6 +1142,7 @@ async function executeApiTest(
   toolMap?: Map<string, ToolMeta>,
   discoveredIds?: DiscoveredIds,
   appBaseUrl?: string,
+  clock: Clock = { kind: 'wall' },
 ): Promise<TestResult> {
   const start = Date.now();
   const bugs: BugDetection[] = [];
@@ -1157,9 +1165,9 @@ async function executeApiTest(
       palette: tc.action.palette,
       input: tc.action.input,
       inputSchemaHash: toolSchema !== undefined ? hashSchema(toolSchema) : undefined,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso(clock),
     }],
-    createdAt: new Date().toISOString(),
+    createdAt: nowIso(clock),
   };
 
   let result: TestResult;
@@ -1247,7 +1255,7 @@ async function executeApiTest(
       infrastructureFailure: {
         id: createId(),
         runId,
-        timestamp: new Date().toISOString(),
+        timestamp: nowIso(clock),
         kind: 'generic',
         detail: String(err),
         role: tc.role,

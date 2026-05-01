@@ -32,6 +32,7 @@ import { publishCommand } from './publish.js';
 import type { DetectorStatus } from '../detectors/registry.js';
 import type { BugKind, PaletteVariant } from '../types.js';
 import { log } from '../log.js';
+import { parseSeed } from '../lib/rng.js';
 
 const USAGE = `
 BugHunter v0.1 — exhaustive UI + API bug hunting for local dev apps
@@ -83,6 +84,18 @@ Run options:
   --resume <runId>            Continue from saved state
   --force-resume              Resume even if SurfaceMCP revision differs
   --include-external          Allow external side-effect API calls
+
+Deterministic mode (v0.32):
+  --seed <n>                  Seed (32-bit non-negative integer) for all id generation.
+                              Stable cuid2 ids across runs. Partial determinism without
+                              --frozen-clock (timestamps still wall-clock).
+  --frozen-clock <iso8601>    Pin all emitted timestamps to this value (e.g.
+                              2026-05-01T12:00:00.000Z). Does not affect budget math.
+  --frozen-network <path>     Replay HTTP from a recorded HAR file. Hard-fail on miss
+                              unless --allow-network-miss is set.
+  --record-network <path>     Record outbound HTTP to a HAR file for later replay.
+  --allow-network-miss        When --frozen-network, fall through to live network on miss
+                              instead of failing. Voids the determinism contract.
 
 Accessibility / SEO:
   --a11y                      Enable accessibility_critical baseline + delta checks.
@@ -241,6 +254,12 @@ async function main(): Promise<void> {
           navStateDeepLinkMaxDepth: typeof flags['nav-state-deep-link-max-depth'] === 'string' ? parseInt(flags['nav-state-deep-link-max-depth'], 10) : undefined,
           idor: flags['idor'] === true,
           noIdor: flags['no-idor'] === true,
+          // v0.32 deterministic mode flags
+          seed: typeof flags['seed'] === 'string' ? parseSeed(flags['seed']) : undefined,
+          frozenClock: typeof flags['frozen-clock'] === 'string' ? flags['frozen-clock'] : undefined,
+          frozenNetwork: typeof flags['frozen-network'] === 'string' ? flags['frozen-network'] : undefined,
+          recordNetwork: typeof flags['record-network'] === 'string' ? flags['record-network'] : undefined,
+          allowNetworkMiss: flags['allow-network-miss'] === true,
         });
         break;
       }

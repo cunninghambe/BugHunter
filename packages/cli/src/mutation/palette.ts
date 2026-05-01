@@ -2,6 +2,8 @@
 // Generates the four test variants: null, happy, edge, out_of_bounds.
 
 import type { InputType, PaletteVariant, FormField } from '../types.js';
+import { nowIso } from '../lib/clock.js';
+import type { Clock } from '../lib/clock.js';
 
 export type MutationCase = {
   variant: PaletteVariant;
@@ -19,13 +21,14 @@ export function generatePaletteCases(
   runId: string,
   field: FormField,
   sampleValue?: unknown,
-  domainHints?: Record<string, string[]>
+  domainHints?: Record<string, string[]>,
+  clock?: Clock,
 ): MutationCase[] {
   switch (type) {
     case 'text': return textCases(field as TextSchema, sampleValue);
     case 'email': return emailCases(runId);
     case 'number': return numberCases(field as NumberSchema, sampleValue);
-    case 'date': return dateCases();
+    case 'date': return dateCases(clock);
     case 'select': return selectCases(field.options);
     case 'checkbox': return checkboxCases();
     case 'file': return fileCases(field as { min?: number; max?: number });
@@ -77,10 +80,11 @@ function numberCases(schema: NumberSchema, sampleValue?: unknown): MutationCase[
   ];
 }
 
-function dateCases(): MutationCase[] {
+function dateCases(clock?: Clock): MutationCase[] {
+  const wallOrFrozen: Clock = clock ?? { kind: 'wall' };
   return [
     { variant: 'null', value: null },
-    { variant: 'happy', value: new Date().toISOString().slice(0, 10) },
+    { variant: 'happy', value: nowIso(wallOrFrozen).slice(0, 10) },
     { variant: 'edge', value: '1900-01-01' },
     { variant: 'edge', value: '2100-12-31' },
     { variant: 'out_of_bounds', value: 'not-a-date' },

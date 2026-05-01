@@ -7,7 +7,9 @@ import type {
   RaceObservation, InterleavingVariant, RaceConditionsConfig,
   RaceConditionsTelemetry,
 } from '../types.js';
-import { createId } from '@paralleldrive/cuid2';
+import { createId } from '../lib/ids.js';
+import { nowIso } from '../lib/clock.js';
+import type { Clock } from '../lib/clock.js';
 import { createHash } from 'node:crypto';
 import { log } from '../log.js';
 import {
@@ -29,6 +31,8 @@ export type RaceTestContext = {
   appBaseUrl: string;
   config: RaceConditionsConfig;
   reRunForFlakes?: boolean;
+  /** v0.32: frozen clock for deterministic timestamps. */
+  clock?: Clock;
 };
 
 /**
@@ -61,10 +65,11 @@ export async function executeRaceTest(tc: TestCase, ctx: RaceTestContext): Promi
       durationMs: Date.now() - start,
     };
   } catch (err) {
+    const clock = ctx.clock ?? { kind: 'wall' as const };
     const infra: InfrastructureFailure = {
       id: createId(),
       runId: ctx.runId,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso(clock),
       kind: 'generic',
       detail: `race-runner: ${String(err)}`,
       role: tc.role,
@@ -480,9 +485,9 @@ export function buildRaceConditionsTelemetry(
   for (const r of raceResults) {
     durationMs += r.durationMs;
     if (r.infrastructureFailure !== undefined) {
-      const detail = r.infrastructureFailure.detail ?? '';
+      const { detail, kind } = r.infrastructureFailure;
       if (/timeout/i.test(detail)) testsTimedOut++;
-      const reason = r.infrastructureFailure.kind ?? 'infrastructure_failure';
+      const reason = kind;
       skipReasonsMap.set(reason, (skipReasonsMap.get(reason) ?? 0) + 1);
       continue;
     }

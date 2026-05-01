@@ -67,7 +67,8 @@ function parseInitialRouteAssets(indexHtmlContent: string, distPath: string): Se
 function walkDir(dir: string): string[] {
   const files: string[] = [];
   if (!fs.existsSync(dir)) return files;
-  for (const entry of fs.readdirSync(dir)) {
+  // v0.32: sort ASC for deterministic file traversal order.
+  for (const entry of fs.readdirSync(dir).sort()) {
     const full = path.join(dir, entry);
     const stat = fs.statSync(full);
     if (stat.isDirectory()) {
