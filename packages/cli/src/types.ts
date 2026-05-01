@@ -92,6 +92,12 @@ export type BugKind =
   | 'seo_h1_missing_or_multiple'
   | 'seo_robots_blocking_crawl';
 
+/** v0.29: four-level severity assigned per BugKind in DETECTOR_REGISTRY. */
+export type Severity = 'critical' | 'major' | 'minor' | 'info';
+
+/** v0.29: coarse exploitability hint surfaced into SARIF / Linear / Jira output. */
+export type ExploitabilityModel = 'easy' | 'medium' | 'hard' | 'na';
+
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
 export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
 export type ResetPolicy = 'transactional' | 'per-test' | 'per-page' | 'per-run';
@@ -217,6 +223,8 @@ export type BugCluster = {
   signatureKey?: string;
   /** v0.27: stable 16-char hex identity derived from sha256(projectName + ' ' + signatureKey). Absent on pre-V27 clusters. */
   bugIdentity?: string;
+  /** v0.29: decorated at emit time from DETECTOR_REGISTRY. Optional for backward-compat with old JSONL artifacts. */
+  severity?: Severity;
 };
 
 export type ClusterVerdict =
@@ -1181,6 +1189,8 @@ export type RunSummary = {
   penTesting?: PenTestingTelemetry;
   /** v0.27: cross-run delta vs. the previous run for the same projectName. Absent when history.db has no prior run. */
   crossRun?: CrossRunSummary;
+  /** v0.29: severity rollup. Always present in v0.29+ summary.json files; absent on older runs. */
+  bySeverity?: Record<Severity, number>;
 };
 
 export type CrossRunSummary = {
