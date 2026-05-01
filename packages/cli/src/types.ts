@@ -536,6 +536,12 @@ export type DiscoveryOutput = {
   visionConsistencyTelemetry?: VisionConsistencyTelemetry;
   /** v0.17 per-viewport vision telemetry — present when vision is enabled. */
   visionByViewport?: Record<number, { uniqueScreenshots: number; anomaliesFound: number; deduped: number }>;
+  /**
+   * v0.25: dynamic routes for which no discoveryFixtures row was found.
+   * Serialisable as string[]; convert to Set at the execute call site.
+   * These routes are excluded from hallucinated-route detection.
+   */
+  fixtureUnresolvableRoutes?: string[];
 };
 
 export type SkippedItem = {

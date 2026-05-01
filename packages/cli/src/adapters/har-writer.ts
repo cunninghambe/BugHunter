@@ -100,6 +100,64 @@ export function harEntriesToNetworkRequests(entries: HarEntry[]): NetworkRequest
   return out;
 }
 
+// --- V25: CsrfObservation projection ---
+
+/** A single mutating HTTP request as captured by the HAR pipeline. */
+export type CsrfObservation = {
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  url: string;
+  requestHeaders: Record<string, string>;
+  cookieJar: string[];
+  responseSetCookieHeaders: string[];
+};
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Project HAR entries into CsrfObservation structs for the CSRF detector.
+ * Filters to mutating methods only. Lowercases all request header keys.
+ * Skips entries where `request.headers` is missing (logs at debug level).
+ */
+export function harEntriesToCsrfObservations(entries: HarEntry[]): CsrfObservation[] {
+  const observations: CsrfObservation[] = [];
+
+  for (const entry of entries) {
+    const method = entry.request.method.toUpperCase();
+    if (!MUTATING_METHODS.has(method)) continue;
+
+    let requestHeaders: Record<string, string>;
+    try {
+      requestHeaders = Object.fromEntries(
+        entry.request.headers.map(({ name, value }) => [name.toLowerCase(), value])
+      );
+    } catch (err) {
+      // Log at debug level per spec § 3.1.3 EC-CSRF-8
+      // eslint-disable-next-line no-console
+      console.debug('[csrf-detector] har-entry: malformed request.headers; skipping', String(err));
+      continue;
+    }
+
+    const cookieHeader = requestHeaders['cookie'] ?? '';
+    const cookieJar = cookieHeader.length > 0
+      ? cookieHeader.split('; ').map(c => c.trim()).filter(c => c.length > 0)
+      : [];
+
+    const responseSetCookieHeaders = entry.response.headers
+      .filter(h => h.name.toLowerCase() === 'set-cookie')
+      .map(h => h.value);
+
+    observations.push({
+      method: method as CsrfObservation['method'],
+      url: entry.request.url,
+      requestHeaders,
+      cookieJar,
+      responseSetCookieHeaders,
+    });
+  }
+
+  return observations;
+}
+
 /** Convert a set of CDP Network.* events into a HAR 1.2 log. */
 export function eventsToHar(events: NetworkEvent[], creatorVersion = '0.6'): HarLog {
   const requests = new Map<string, RequestState>();
