@@ -438,6 +438,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       seoSuppressDuplicateTitles: resolved.seoSuppressDuplicateTitles ?? false,
       keyboardTrapMaxPresses: resolved.keyboardTrapMaxPresses ?? 20,
       asyncMaxWaitMs: opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs,
+      discoveryPages: discovery.pages,
+      fixtureUnresolvableRoutes: new Set(discovery.fixtureUnresolvableRoutes ?? []),
     });
 
     // Close CDP session after execute completes

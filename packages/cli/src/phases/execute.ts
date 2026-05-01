@@ -60,6 +60,10 @@ import { FocusTracker } from '../adapters/focus-tracker.js';
 import type { FocusAfterActionResult } from '../classify/a11y-baseline.js';
 import { classifySeoCorpus } from '../classify/seo.js';
 import type { SeoPageInput } from '../classify/seo.js';
+import { harEntriesToCsrfObservations } from '../adapters/har-writer.js';
+import { detectMissingCsrf } from '../security/csrf-detector.js';
+import { detectHallucinatedRoutes } from '../classify/hallucinated-route.js';
+import type { DiscoveredPage } from '../types.js';
 
 export type ExecuteOptions = {
   testCases: TestCase[];
@@ -106,6 +110,10 @@ export type ExecuteOptions = {
   keyboardTrapMaxPresses?: number;
   /** v0.11 max wait for form to appear after trigger click. Default 2000ms. */
   asyncMaxWaitMs?: number;
+  /** v0.25: discovered pages list — used by hallucinated-route detector. */
+  discoveryPages?: DiscoveredPage[];
+  /** v0.25: dynamic routes for which no discoveryFixtures row was found. */
+  fixtureUnresolvableRoutes?: Set<string>;
 };
 
 export type ExecuteResult = {
@@ -123,7 +131,7 @@ export type ExecuteResult = {
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, seoSuppressDuplicateTitles, keyboardTrapMaxPresses, asyncMaxWaitMs } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, seoSuppressDuplicateTitles, keyboardTrapMaxPresses, asyncMaxWaitMs, discoveryPages, fixtureUnresolvableRoutes } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
@@ -321,6 +329,34 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
         if (allPerfBugs.length > 0) {
           result.bugs.push(...allPerfBugs);
           result.passed = false;
+        }
+
+        // V25: CSRF detection from HAR (gates on headers.enabled)
+        if (har.log.entries.length > 0 && opts.runState.config.headers?.enabled !== false) {
+          const observations = harEntriesToCsrfObservations(har.log.entries);
+          const csrfBugs = detectMissingCsrf(observations, {
+            cookieNamePatterns: opts.runState.config.headers?.csrf?.cookieNamePatterns,
+          });
+          if (csrfBugs.length > 0) {
+            result.bugs.push(...csrfBugs);
+            result.passed = false;
+          }
+        }
+
+        // V25: Hallucinated-route detection for render test cases
+        if (tc.action.kind === 'render' && discoveryPages !== undefined && discoveryPages.length > 0) {
+          const unresolved = fixtureUnresolvableRoutes ?? new Set<string>();
+          const hallucinatedOut = detectHallucinatedRoutes({
+            renderResults: [result],
+            pages: discoveryPages,
+            fixtureUnresolvableRoutes: unresolved,
+          });
+          const entry = hallucinatedOut.perTestId.get(result.testId);
+          if (entry !== undefined) {
+            result.bugs = result.bugs.filter(d => !entry.removePredicate(d));
+            result.bugs.push(...entry.add);
+            if (entry.add.length > 0) result.passed = false;
+          }
         }
       }
 

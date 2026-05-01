@@ -156,6 +156,7 @@ export function harEntriesToCsrfObservations(entries: HarEntry[]): CsrfObservati
   }
 
   return observations;
+}
 
 /** Convert a set of CDP Network.* events into a HAR 1.2 log. */
 export function eventsToHar(events: NetworkEvent[], creatorVersion = '0.6'): HarLog {
