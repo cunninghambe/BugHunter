@@ -71,8 +71,8 @@ function makeTestCase(palette: PaletteVariant, input: unknown) {
     runId: 'inputs-cli',
     role: 'owner',
     page: '/api/trades',
-    action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette, input },
-    expectedOutcome: 'success',
+    action: { kind: 'api_call' as const, via: 'api' as const, expectedOutcome: 'success' as const, palette, input },
+    expectedOutcome: 'success' as const,
     palette,
   };
 }
