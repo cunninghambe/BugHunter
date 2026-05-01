@@ -18,6 +18,10 @@ import { detectorsCommand } from './detectors-cmd.js';
 import { scopeCommand } from './scope.js';
 import { inputsCommand } from './inputs-cmd.js';
 import { configCommand } from './config-cmd.js';
+import { diffCommand } from './diff.js';
+import { historyCommand } from './history.js';
+import { ingestCommand } from './ingest.js';
+import { agingCommand } from './aging.js';
 import type { DetectorStatus } from '../detectors/registry.js';
 import type { BugKind, PaletteVariant } from '../types.js';
 import { log } from '../log.js';
@@ -38,6 +42,11 @@ Usage:
   bughunter forbidden-path-gate <branch> [--base <baseBranch>] [--reset]
   bughunter retest <runId> <clusterId> [--base <baseBranch>] [--branch <fixBranch>]
   bughunter fix-summary <runId>
+  bughunter diff <runIdOld> <runIdNew> [--format table|json|sarif] [--filter <kind=k|severity=s>]
+  bughunter history [--kind <bugkind>] [--bug-identity <id>] [--limit <n>] [--format table|json]
+  bughunter ingest <path-to-bugs.jsonl> [--run-id <id>] [--project-name <name>]
+  bughunter aging [--threshold <days>] [--min-runs <n>]
+  bughunter prune [--rebuild-identity] [--force]
 
 Run options:
   --route <pattern>           Limit to routes matching glob
@@ -243,7 +252,10 @@ async function main(): Promise<void> {
         break;
 
       case 'prune':
-        pruneCommand(projectDir);
+        pruneCommand(projectDir, {
+          rebuildIdentity: flags['rebuild-identity'] === true,
+          force: flags['force'] === true,
+        });
         break;
 
       case 'forbidden-path-gate': {
@@ -296,6 +308,26 @@ async function main(): Promise<void> {
         break;
       }
 
+      case 'diff': {
+        const runIdOld = args[0] ?? '';
+        const runIdNew = args[1] ?? '';
+        if (runIdOld === '' || runIdNew === '') {
+          throw new Error('Usage: bughunter diff <runIdOld> <runIdNew> [--format table|json|sarif] [--filter <kind=k>]');
+        }
+        const diffFormat = typeof flags['format'] === 'string'
+          ? (flags['format'] as 'table' | 'json' | 'sarif')
+          : undefined;
+        const filterRaw = typeof flags['filter'] === 'string' ? flags['filter'] : undefined;
+        const filterKind = filterRaw?.startsWith('kind=') === true ? (filterRaw.slice(5) as BugKind) : undefined;
+        diffCommand(projectDir, {
+          runIdOld,
+          runIdNew,
+          format: diffFormat,
+          filter: filterKind !== undefined ? { kind: filterKind } : undefined,
+        });
+        break;
+      }
+
       case 'inputs': {
         const toolId = args[0] ?? '';
         if (toolId === '') throw new Error('Usage: bughunter inputs <toolId> [--palette <variant>]');
@@ -310,6 +342,40 @@ async function main(): Promise<void> {
           throw new Error('Usage: bughunter config validate | show [--resolved]');
         }
         configCommand(projectDir, sub, { resolved: flags['resolved'] === true });
+        break;
+      }
+
+      case 'history': {
+        const historyFormat = typeof flags['format'] === 'string'
+          ? (flags['format'] as 'table' | 'json')
+          : undefined;
+        historyCommand(projectDir, {
+          kind: typeof flags['kind'] === 'string' ? (flags['kind'] as BugKind) : undefined,
+          limit: typeof flags['limit'] === 'string' ? parseInt(flags['limit'], 10) : undefined,
+          bugIdentity: typeof flags['bug-identity'] === 'string' ? flags['bug-identity'] : undefined,
+          format: historyFormat,
+        });
+        break;
+      }
+
+      case 'ingest': {
+        const ingestPath = args[0] ?? '';
+        if (ingestPath === '') {
+          throw new Error('Usage: bughunter ingest <path-to-bugs.jsonl> [--run-id <id>] [--project-name <name>]');
+        }
+        ingestCommand(projectDir, {
+          filePath: ingestPath,
+          runId: typeof flags['run-id'] === 'string' ? flags['run-id'] : undefined,
+          projectName: typeof flags['project-name'] === 'string' ? flags['project-name'] : undefined,
+        });
+        break;
+      }
+
+      case 'aging': {
+        agingCommand(projectDir, {
+          thresholdDays: typeof flags['threshold'] === 'string' ? parseInt(flags['threshold'], 10) : undefined,
+          minRuns: typeof flags['min-runs'] === 'string' ? parseInt(flags['min-runs'], 10) : undefined,
+        });
         break;
       }
 
