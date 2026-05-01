@@ -22,6 +22,10 @@ import { diffCommand } from './diff.js';
 import { historyCommand } from './history.js';
 import { ingestCommand } from './ingest.js';
 import { agingCommand } from './aging.js';
+import { suppressCommand } from './suppress.js';
+import { unsuppressCommand } from './unsuppress.js';
+import { triageCliCommand } from './triage.js';
+import { explainCliCommand } from './explain.js';
 import type { DetectorStatus } from '../detectors/registry.js';
 import type { BugKind, PaletteVariant } from '../types.js';
 import { log } from '../log.js';
@@ -47,6 +51,16 @@ Usage:
   bughunter ingest <path-to-bugs.jsonl> [--run-id <id>] [--project-name <name>]
   bughunter aging [--threshold <days>] [--min-runs <n>]
   bughunter prune [--rebuild-identity] [--force]
+  bughunter suppress <pattern> --reason <text> [--expires <iso>] [--cluster-id <id>]
+  bughunter unsuppress <pattern>
+  bughunter triage [--interactive] [--run-id <id>]
+  bughunter explain <clusterId> [--no-cache] [--run-id <id>]
+
+Triage & suppression:
+  Pattern grammar: bugIdentity:<exact> | kind:<BugKind> | endpoint:<glob> |
+                   suspectedFile:<glob> | severity:<critical|major|minor|info>
+  Reason is REQUIRED on suppress. Audit trail: .bughunter/suppressions-audit.log.
+  Triage state: .bughunter/triage.jsonl. Explain cost cap: $0.50/cluster (~5c typical).
 
 Run options:
   --route <pattern>           Limit to routes matching glob
@@ -358,6 +372,29 @@ async function main(): Promise<void> {
         break;
       }
 
+      case 'suppress': {
+        const pattern = args[0] ?? '';
+        if (pattern === '') {
+          process.stderr.write('Usage: bughunter suppress <pattern> --reason <text>\n');
+          process.exitCode = 2;
+          break;
+        }
+        const reason = typeof flags['reason'] === 'string' ? flags['reason'] : '';
+        if (reason === '') {
+          process.stderr.write('Error: --reason is required\n');
+          process.exitCode = 2;
+          break;
+        }
+        suppressCommand({
+          projectDir,
+          pattern,
+          reason,
+          expires: typeof flags['expires'] === 'string' ? flags['expires'] : undefined,
+          clusterId: typeof flags['cluster-id'] === 'string' ? flags['cluster-id'] : undefined,
+        });
+        break;
+      }
+
       case 'ingest': {
         const ingestPath = args[0] ?? '';
         if (ingestPath === '') {
@@ -371,10 +408,45 @@ async function main(): Promise<void> {
         break;
       }
 
+      case 'unsuppress': {
+        const pattern = args[0] ?? '';
+        if (pattern === '') {
+          process.stderr.write('Usage: bughunter unsuppress <pattern>\n');
+          process.exitCode = 2;
+          break;
+        }
+        unsuppressCommand({ projectDir, pattern });
+        break;
+      }
+
+      case 'triage': {
+        await triageCliCommand({
+          projectDir,
+          runId: typeof flags['run-id'] === 'string' ? flags['run-id'] : undefined,
+        });
+        break;
+      }
+
       case 'aging': {
         agingCommand(projectDir, {
           thresholdDays: typeof flags['threshold'] === 'string' ? parseInt(flags['threshold'], 10) : undefined,
           minRuns: typeof flags['min-runs'] === 'string' ? parseInt(flags['min-runs'], 10) : undefined,
+        });
+        break;
+      }
+
+      case 'explain': {
+        const clusterId = args[0] ?? '';
+        if (clusterId === '') {
+          process.stderr.write('Usage: bughunter explain <clusterId> [--no-cache] [--run-id <id>]\n');
+          process.exitCode = 2;
+          break;
+        }
+        await explainCliCommand({
+          projectDir,
+          clusterId,
+          noCache: flags['no-cache'] === true,
+          runId: typeof flags['run-id'] === 'string' ? flags['run-id'] : undefined,
         });
         break;
       }

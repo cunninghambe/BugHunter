@@ -35,6 +35,7 @@ import { runBundleProbe } from '../phases/bundle-probe.js';
 import { runAnalyze } from '../phases/analyze.js';
 import { runSeedHooksAt } from '../seed/runner.js';
 import type { RunSummary, SeedHookExecution, BugCluster } from '../types.js';
+import { applySuppressions } from '../suppress/apply.js';
 
 function aggregateDiscoverySkips(skipList: SkippedItem[]): Array<{ reason: string; count: number }> {
   const counts = new Map<string, number>();
@@ -554,7 +555,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     const occurrenceIdByTestId = new Map<string, string>(
       allResults.map(r => [r.testId, r.occurrenceId]),
     );
-    const { clusters } = runCluster({
+    const { clusters: rawClusters } = runCluster({
       detections: bugs,
       testCases: allTestCases,
       runId,
@@ -568,6 +569,13 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       occurrenceIdByTestId,
       stateByTestId,
       projectName: resolved.projectName,
+    });
+
+    // v0.28 — apply user-defined suppressions before downstream consumers see the clusters.
+    const { clusters, suppressedSamples, suppressedCount } = applySuppressions({
+      clusters: rawClusters,
+      projectDir: opts.projectDir,
+      runId,
     });
 
     runState.clusters = clusters;
@@ -684,6 +692,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(penTestingTelemetry !== undefined ? { penTesting: penTestingTelemetry } : {}),
       ...(raceConditionsTelemetry !== undefined ? { raceConditions: raceConditionsTelemetry } : {}),
       ...(crossUserResult.idorTelemetry !== undefined ? { idor: crossUserResult.idorTelemetry } : {}),
+      suppressedClusters: suppressedCount,
+      ...(suppressedSamples.length > 0 ? { suppressedSamples } : {}),
     });
     runState.emitted = true;
     runState.phase = 'done';
