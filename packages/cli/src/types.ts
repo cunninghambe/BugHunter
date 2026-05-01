@@ -1465,6 +1465,7 @@ export type IdorTelemetry = {
   };
   suppressedByLegitimizedHierarchy: number;
   skippedReasons: Array<{ reason: string; count: number }>;
+  durationMs: number;
 };
 
 // --- v0.14 seed-hook execution record (defined here so emit.ts can reference it) ---

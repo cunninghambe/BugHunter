@@ -102,6 +102,15 @@ export async function runCrossUser(opts: CrossUserOptions): Promise<CrossUserRes
   }
 
   if (idorEnabled) {
+    // Anonymous sweep complements V21 — V21 detects horizontal/vertical IDOR via id-swap;
+    // the anonymous sweep detects auth_bypass_via_unauthed_route on tools that should require
+    // a session at all. Both are needed; enabling V21 must not silently disable the other path.
+    if (anonymousEnabled && config.resetPolicy !== undefined) {
+      await runAnonymousCatalogSweep({
+        toolCatalog, surface, runState, roles, maxReplays,
+        detections, testCases, clusterKeys, onClusterFound, maxClusters,
+      });
+    }
     return runV21IdorPass({
       toolCatalog, surface, runState, roles, maxReplays, maxClusters, onClusterFound,
       discoveredIds, detections, testCases, clusterKeys, idorCfg: resolvedIdorCfg,
@@ -266,7 +275,11 @@ async function runV21IdorPass(opts: V21PassOpts): Promise<CrossUserResult> {
                 continue;
               }
 
-              const clusterKey = `${outcome.kind}|${resourceType}|${outcome.tier}`;
+              // Match cluster/signature.ts: vertical_suspicious must include direction
+              // so admin→alice and alice→admin produce distinct clusters (spec § 5).
+              const clusterKey = outcome.kind === 'idor_vertical_suspicious'
+                ? `${outcome.kind}|${resourceType}|${outcome.sourceTier}->${outcome.targetTier}`
+                : `${outcome.kind}|${resourceType}|${outcome.tier}`;
               if (clusterKeys.has(clusterKey)) continue;
               clusterKeys.add(clusterKey);
 
