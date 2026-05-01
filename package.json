@@ -11,7 +11,8 @@
     "typecheck": "npm run typecheck -w packages/cli && npm run typecheck -w packages/mcp",
     "test": "npm run test -w packages/cli",
     "lint": "eslint packages/*/src --max-warnings 0",
-    "lint:fast": "ESLINT_FAST=1 eslint packages/*/src --max-warnings 0"
+    "lint:fast": "ESLINT_FAST=1 eslint packages/*/src --max-warnings 0",
+    "test:self-test": "BUGHUNTER_SELF_TEST_RUN=1 node packages/cli/dist/cli/main.js self-test"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "8.59.1",

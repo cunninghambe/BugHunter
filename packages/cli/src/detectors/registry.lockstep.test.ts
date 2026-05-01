@@ -1,0 +1,145 @@
+// Lockstep enforcement test (§5.3 of SPEC_V33_SELF_TEST.md).
+//
+// Verifies that DETECTOR_REGISTRY, reuse-manifest.json, and golden-bugs.jsonl
+// are all in sync:
+//   - Every wired kind has exactly one manifest entry AND a positive golden expectation.
+//   - Every deferred kind has an `expect: 'absent'` line OR is listed in manifest.deferred.
+//
+// This test is a static contract check. It imports no runtime code from self-test.ts.
+
+import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { DETECTOR_REGISTRY } from './registry.js';
+
+// ---------------------------------------------------------------------------
+// File locations
+// ---------------------------------------------------------------------------
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const FIXTURE_ROOT = path.join(REPO_ROOT, 'fixtures', 'bughunter-self-deliberate-bugs');
+const MANIFEST_PATH = path.join(FIXTURE_ROOT, 'reuse-manifest.json');
+const GOLDEN_PATH = path.join(FIXTURE_ROOT, 'golden-bugs.jsonl');
+
+// ---------------------------------------------------------------------------
+// Load artifacts
+// ---------------------------------------------------------------------------
+
+type ManifestKindEntry = { fixture: string; port: number | null; route: string };
+type ReuseManifest = { kinds: Record<string, ManifestKindEntry>; deferred: string[] };
+
+type PositiveLine = { kind: string; signaturePrefix: string; fixture: string; specReference: string; acceptableMisses?: number };
+type NegativeLine = { expect: 'absent'; kind: string; reason: string };
+type GoldenLine = PositiveLine | NegativeLine;
+
+function loadManifest(): ReuseManifest {
+  const raw = fs.readFileSync(MANIFEST_PATH, 'utf-8');
+  return JSON.parse(raw) as ReuseManifest;
+}
+
+function loadGolden(): GoldenLine[] {
+  const raw = fs.readFileSync(GOLDEN_PATH, 'utf-8');
+  return raw
+    .split('\n')
+    .filter(l => l.trim().length > 0)
+    .map(l => JSON.parse(l) as GoldenLine);
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('DETECTOR_REGISTRY lockstep', () => {
+  it('fixture files exist', () => {
+    expect(fs.existsSync(MANIFEST_PATH), `reuse-manifest.json not found at ${MANIFEST_PATH}`).toBe(true);
+    expect(fs.existsSync(GOLDEN_PATH), `golden-bugs.jsonl not found at ${GOLDEN_PATH}`).toBe(true);
+  });
+
+  it('every wired kind has exactly one manifest entry', () => {
+    const manifest = loadManifest();
+    const wiredKinds = DETECTOR_REGISTRY.filter(e => e.status === 'wired').map(e => e.kind);
+    const manifestKinds = new Set(Object.keys(manifest.kinds));
+
+    const missing = wiredKinds.filter(k => !manifestKinds.has(k));
+    expect(missing, `Wired kinds missing from reuse-manifest.json.kinds: ${missing.join(', ')}`).toHaveLength(0);
+  });
+
+  it('every wired kind has at least one positive expectation in golden-bugs.jsonl', () => {
+    const golden = loadGolden();
+    const wiredKinds = DETECTOR_REGISTRY.filter(e => e.status === 'wired').map(e => e.kind);
+    const goldenPositiveKinds = new Set(
+      golden.filter((l): l is PositiveLine => !('expect' in l)).map(l => l.kind),
+    );
+
+    const missing = wiredKinds.filter(k => !goldenPositiveKinds.has(k));
+    expect(missing, `Wired kinds with no positive expectation in golden-bugs.jsonl: ${missing.join(', ')}`).toHaveLength(0);
+  });
+
+  it('every deferred kind has an absent expectation or manifest.deferred entry', () => {
+    const manifest = loadManifest();
+    const golden = loadGolden();
+    const deferredKinds = DETECTOR_REGISTRY.filter(e => e.status === 'deferred').map(e => e.kind);
+
+    const goldenNegativeKinds = new Set(
+      golden.filter((l): l is NegativeLine => 'expect' in l && l.expect === 'absent').map(l => l.kind),
+    );
+    const manifestDeferred = new Set(manifest.deferred);
+
+    const uncovered = deferredKinds.filter(k => !goldenNegativeKinds.has(k) && !manifestDeferred.has(k));
+    expect(
+      uncovered,
+      `Deferred kinds with no absent expectation and not in manifest.deferred: ${uncovered.join(', ')}`,
+    ).toHaveLength(0);
+  });
+
+  it('manifest has no extra entries not in DETECTOR_REGISTRY', () => {
+    const manifest = loadManifest();
+    const allKinds = new Set(DETECTOR_REGISTRY.map(e => e.kind));
+    const extra = Object.keys(manifest.kinds).filter(k => !allKinds.has(k as never));
+    expect(extra, `manifest.kinds has entries unknown to DETECTOR_REGISTRY: ${extra.join(', ')}`).toHaveLength(0);
+  });
+
+  it('golden positive lines reference only kinds in DETECTOR_REGISTRY', () => {
+    const golden = loadGolden();
+    const allKinds = new Set(DETECTOR_REGISTRY.map(e => e.kind));
+    const positives = golden.filter((l): l is PositiveLine => !('expect' in l));
+    const unknown = positives.filter(l => !allKinds.has(l.kind as never)).map(l => l.kind);
+    expect(unknown, `golden-bugs.jsonl positive lines reference unknown kinds: ${unknown.join(', ')}`).toHaveLength(0);
+  });
+
+  it('golden negative lines reference only deferred or dead kinds', () => {
+    const golden = loadGolden();
+    const deferredOrDead = new Set(
+      DETECTOR_REGISTRY.filter(e => e.status !== 'wired').map(e => e.kind),
+    );
+    const negatives = golden.filter((l): l is NegativeLine => 'expect' in l && l.expect === 'absent');
+    const invalid = negatives.filter(l => !deferredOrDead.has(l.kind as never)).map(l => l.kind);
+    expect(
+      invalid,
+      `golden-bugs.jsonl absent lines reference wired kinds (should be positive expectation): ${invalid.join(', ')}`,
+    ).toHaveLength(0);
+  });
+
+  it('all positive expectations have a signaturePrefix', () => {
+    const golden = loadGolden();
+    const positives = golden.filter((l): l is PositiveLine => !('expect' in l));
+    const missing = positives.filter(l => !l.signaturePrefix || l.signaturePrefix.trim().length === 0).map(l => l.kind);
+    expect(missing, `positive expectations without signaturePrefix: ${missing.join(', ')}`).toHaveLength(0);
+  });
+
+  it('all positive expectations have a fixture field', () => {
+    const golden = loadGolden();
+    const positives = golden.filter((l): l is PositiveLine => !('expect' in l));
+    const missing = positives.filter(l => !l.fixture).map(l => l.kind);
+    expect(missing, `positive expectations without fixture field: ${missing.join(', ')}`).toHaveLength(0);
+  });
+
+  it('wired kinds count matches registry', () => {
+    const wiredCount = DETECTOR_REGISTRY.filter(e => e.status === 'wired').length;
+    expect(wiredCount).toBeGreaterThan(0);
+    // Sanity: we know from V33 the registry has 72 wired kinds; assert ≥ 60 to be resilient.
+    expect(wiredCount).toBeGreaterThanOrEqual(60);
+  });
+});

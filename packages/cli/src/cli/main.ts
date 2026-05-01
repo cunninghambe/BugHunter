@@ -18,6 +18,7 @@ import { detectorsCommand } from './detectors-cmd.js';
 import { scopeCommand } from './scope.js';
 import { inputsCommand } from './inputs-cmd.js';
 import { configCommand } from './config-cmd.js';
+import { selfTestCommand } from './self-test.js';
 import { diffCommand } from './diff.js';
 import { historyCommand } from './history.js';
 import { ingestCommand } from './ingest.js';
@@ -144,6 +145,15 @@ Diagnostics & introspection:
   bughunter config show [--resolved]
                               Print effective config (--resolved applies defaults)
                               or raw file. JSON output. vision.apiKey is redacted.
+
+Diagnostics (self-test):
+  bughunter self-test [--budget <ms>] [--max-bugs <n>] [--json] [--no-fail-on-flake]
+                      [--keep-run] [--skip-fixture-up]
+                              Runs BugHunter against fixtures/bughunter-self-deliberate-bugs/
+                              and asserts every wired BugKind fires (and every deferred kind
+                              stays absent) within the wallclock budget.
+                              Exit 0 = all pass, 1 = miss/false-positive/budget, 2 = setup error.
+                              Contributor tool only — must run from a BugHunter repo checkout.
 `;
 
 function parseArgs(argv: string[]): { command: string; args: string[]; flags: Record<string, string | boolean> } {
@@ -519,6 +529,19 @@ async function main(): Promise<void> {
           ref: typeof flags['ref'] === 'string' ? flags['ref'] : undefined,
           sha: typeof flags['sha'] === 'string' ? flags['sha'] : undefined,
           report: typeof flags['report'] === 'string' ? flags['report'] : undefined,
+        });
+        break;
+      }
+
+      case 'self-test': {
+        await selfTestCommand({
+          projectDir,
+          budgetMs: typeof flags['budget'] === 'string' ? parseInt(flags['budget'], 10) : undefined,
+          maxBugs: typeof flags['max-bugs'] === 'string' ? parseInt(flags['max-bugs'], 10) : undefined,
+          jsonOutput: flags['json'] === true,
+          failOnFlake: flags['no-fail-on-flake'] === true ? false : true,
+          keepRun: flags['keep-run'] === true,
+          skipFixtureUp: flags['skip-fixture-up'] === true,
         });
         break;
       }
