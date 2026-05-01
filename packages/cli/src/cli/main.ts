@@ -13,6 +13,13 @@ import { paletteCommand } from './palette.js';
 import { forbiddenPathGateCommand } from './forbidden-path-gate.js';
 import { retestCommand } from './retest-cmd.js';
 import { fixSummaryCommand } from './fix-summary.js';
+import { doctorCommand } from './doctor.js';
+import { detectorsCommand } from './detectors-cmd.js';
+import { scopeCommand } from './scope.js';
+import { inputsCommand } from './inputs-cmd.js';
+import { configCommand } from './config-cmd.js';
+import type { DetectorStatus } from '../detectors/registry.js';
+import type { BugKind, PaletteVariant } from '../types.js';
 import { log } from '../log.js';
 
 const USAGE = `
@@ -70,6 +77,28 @@ Performance / heap:
   --heap-snapshot-frequency <auto|n>  Snapshot frequency (default 'auto')
   --heap-diff-min-instances <n>  Min instances for diff (default 10)
   --heap-diff-min-bytes <n>   Min bytes for diff (default 5000000)
+
+Diagnostics & introspection:
+  bughunter doctor [--format table|json]
+                              Reports environment health.
+                              Exit 0 = green, 1 = yellow, 2 = red.
+  bughunter detectors [--kind <bugkind>] [--status wired|dead|deferred] [--format table|json]
+                              Per-BugKind wiring report.
+  bughunter scope [--route <pattern>] [--role <name>] [--format table|json]
+                              Dry-run: print the test matrix 'bughunter run' would
+                              generate. Runs validate + discover + plan; skips
+                              execute. NEVER mutates state.
+  bughunter inputs <toolId> [--palette null|happy|edge|out_of_bounds]
+                              For one tool, print the test inputs the planner
+                              would mint. Output: JSON list of {palette, input}.
+                              Useful for debugging fuzz strategies.
+  bughunter config validate
+                              Run Zod against .bughunter/config.json + palette.json.
+                              Prints multi-issue report on failure. Warns on orphan
+                              fixtures. Exit 0 valid, 1 invalid.
+  bughunter config show [--resolved]
+                              Print effective config (--resolved applies defaults)
+                              or raw file. JSON output. vision.apiKey is redacted.
 `;
 
 function parseArgs(argv: string[]): { command: string; args: string[]; flags: Record<string, string | boolean> } {
@@ -240,6 +269,47 @@ async function main(): Promise<void> {
         const runId = args[0] ?? '';
         if (runId === '') throw new Error('Usage: bughunter fix-summary <runId>');
         fixSummaryCommand(projectDir, runId);
+        break;
+      }
+
+      case 'doctor': {
+        const format = flags['format'] === 'json' ? 'json' : 'table';
+        await doctorCommand(projectDir, { format });
+        break;
+      }
+
+      case 'detectors': {
+        const kind = typeof flags['kind'] === 'string' ? flags['kind'] as BugKind : undefined;
+        const statusFlag = flags['status'];
+        const status = (statusFlag === 'wired' || statusFlag === 'dead' || statusFlag === 'deferred') ? statusFlag as DetectorStatus : undefined;
+        const format = flags['format'] === 'json' ? 'json' : 'table';
+        detectorsCommand(projectDir, { kind, status, format });
+        break;
+      }
+
+      case 'scope': {
+        await scopeCommand(projectDir, {
+          route: typeof flags['route'] === 'string' ? flags['route'] : undefined,
+          role: typeof flags['role'] === 'string' ? flags['role'] : undefined,
+          format: flags['format'] === 'json' ? 'json' : 'table',
+        });
+        break;
+      }
+
+      case 'inputs': {
+        const toolId = args[0] ?? '';
+        if (toolId === '') throw new Error('Usage: bughunter inputs <toolId> [--palette <variant>]');
+        const palette = typeof flags['palette'] === 'string' ? flags['palette'] as PaletteVariant : undefined;
+        await inputsCommand(projectDir, toolId, { palette, format: 'json' });
+        break;
+      }
+
+      case 'config': {
+        const sub = args[0] ?? '';
+        if (sub !== 'validate' && sub !== 'show') {
+          throw new Error('Usage: bughunter config validate | show [--resolved]');
+        }
+        configCommand(projectDir, sub, { resolved: flags['resolved'] === true });
         break;
       }
 
