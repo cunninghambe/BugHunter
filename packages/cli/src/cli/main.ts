@@ -28,6 +28,7 @@ import { unsuppressCommand } from './unsuppress.js';
 import { triageCliCommand } from './triage.js';
 import { explainCliCommand } from './explain.js';
 import { exportCommand, parseExportArgs } from './export.js';
+import { coverageCommand } from './coverage.js';
 import { ciCommand } from './ci.js';
 import { publishCommand } from './publish.js';
 import type { DetectorStatus } from '../detectors/registry.js';
@@ -289,6 +290,18 @@ async function main(): Promise<void> {
         const inspectId = args[0] ?? '';
         if (inspectId === '') throw new Error('Usage: bughunter inspect <occurrenceId|clusterId>');
         inspectCommand(projectDir, inspectId);
+        break;
+      }
+
+      case 'coverage': {
+        const coverageRunId = args[0];
+        coverageCommand(projectDir, coverageRunId, {
+          latest: flags['latest'] === true,
+          json: flags['json'] === true,
+          dead: flags['dead'] === true,
+          kind: typeof flags['kind'] === 'string' ? flags['kind'] : undefined,
+          verbose: flags['verbose'] === true,
+        });
         break;
       }
 

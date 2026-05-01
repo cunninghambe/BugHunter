@@ -19,6 +19,8 @@ export type RunPaths = {
   heapDir: string;
   /** v0.29: directory for export artifacts (sarif/csv/etc.) */
   exportsDir: string;
+  /** v0.34: per-run detector coverage report */
+  coverageFile: string;
 };
 
 export function runPaths(projectDir: string, runId: string): RunPaths {
@@ -37,6 +39,7 @@ export function runPaths(projectDir: string, runId: string): RunPaths {
     specsDir: path.join(runDir, 'specs'),
     heapDir: path.join(runDir, 'heap'),
     exportsDir: path.join(runDir, 'exports'),
+    coverageFile: path.join(runDir, 'coverage.json'),
   };
 }
 
