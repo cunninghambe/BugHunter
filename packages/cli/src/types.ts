@@ -1247,6 +1247,20 @@ export type BugHunterConfig = {
    * blow-up on deeply-nested admin UIs. Default 3.
    */
   navStateDeepLinkMaxDepth?: number;
+  /**
+   * v0.49: which browser adapter transport to use.
+   * 'mcp-http' (default) — SDK Client + StreamableHTTPClientTransport.
+   * 'mcp-stdio' — SDK Client + StdioClientTransport (per-run subprocess).
+   * 'http-legacy' — deprecated hand-rolled JSON-RPC over fetch. Will be removed in v0.50.
+   */
+  browserTransport?: 'mcp-http' | 'mcp-stdio' | 'http-legacy';
+  /** v0.49: Bearer token for camofox-mcp authentication. Falls back to CAMOFOX_MCP_KEY env var. */
+  browserMcpAuthKey?: string;
+  /** v0.49: stdio transport config — required when browserTransport === 'mcp-stdio'. */
+  browserMcpStdio?: {
+    command: string;
+    args?: string[];
+  };
 };
 
 // --- v0.14 seed-data hook types ---

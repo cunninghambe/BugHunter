@@ -24,11 +24,15 @@ export class BrowserMcpError extends Error {
   }
 }
 
-/** Map a JSON-RPC error message from camofox to a typed kind. */
+/** Map a JSON-RPC error message from camofox (or SDK McpError.message) to a typed kind. */
 export function classifyRpcError(message: string, toolName: string): BrowserMcpErrorKind {
   const lower = message.toLowerCase();
   if (lower.includes('timeout')) return 'timeout';
   if (lower.includes('not found') || lower.includes('no element')) return 'element_not_found';
+  // SDK McpError code -32601: method/tool not found — treat as transport (tool typo on our end)
+  if (lower.includes('-32601') || lower.includes('method not found')) return 'transport';
+  // SDK McpError code -32700: parse error — transport-level failure
+  if (lower.includes('-32700') || lower.includes('parse error')) return 'transport';
   if (toolName === 'screenshot') return 'screenshot_failed';
   if (toolName === 'snapshot') return 'snapshot_failed';
   return 'unknown';

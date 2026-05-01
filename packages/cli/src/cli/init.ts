@@ -12,6 +12,7 @@ export type InitOptions = {
   projectName?: string;
   surfaceMcpUrl?: string;
   browserMcpUrl?: string;
+  browserTransport?: 'mcp-http' | 'mcp-stdio' | 'http-legacy';
   resetCommand?: string;
   resetPolicy?: 'transactional' | 'per-test' | 'per-page' | 'per-run';
 };
@@ -51,6 +52,7 @@ async function resolveInteractive(_projectDir: string): Promise<BugHunterConfig>
     projectName,
     surfaceMcpUrl,
     browserMcpUrl: browserMcpUrlRaw !== '' ? browserMcpUrlRaw : undefined,
+    browserTransport: 'mcp-http',
     resetCommand: resetCommand !== '' ? resetCommand : undefined,
     resetPolicy: resetPolicy as BugHunterConfig['resetPolicy'],
     maxBugs: 200,
@@ -77,6 +79,12 @@ function resolveNonInteractive(projectDir: string, opts: InitOptions): BugHunter
     env['BUGHUNTER_BROWSER_MCP_URL'] ??
     undefined;
 
+  const browserTransport = (
+    opts.browserTransport ??
+    (env['BUGHUNTER_BROWSER_TRANSPORT'] as InitOptions['browserTransport']) ??
+    'mcp-http'
+  );
+
   const resetCommand =
     opts.resetCommand ??
     env['BUGHUNTER_RESET_COMMAND'] ??
@@ -87,11 +95,12 @@ function resolveNonInteractive(projectDir: string, opts: InitOptions): BugHunter
     (env['BUGHUNTER_RESET_POLICY'] as InitOptions['resetPolicy']) ??
     'per-page';
 
-  const candidate = { projectName, surfaceMcpUrl, browserMcpUrl, resetCommand, resetPolicy };
+  const candidate = { projectName, surfaceMcpUrl, browserMcpUrl, browserTransport, resetCommand, resetPolicy };
   const result = ConfigSchema.pick({
     projectName: true,
     surfaceMcpUrl: true,
     browserMcpUrl: true,
+    browserTransport: true,
     resetCommand: true,
     resetPolicy: true,
   }).safeParse(candidate);
@@ -107,6 +116,7 @@ function resolveNonInteractive(projectDir: string, opts: InitOptions): BugHunter
     projectName,
     surfaceMcpUrl,
     browserMcpUrl,
+    browserTransport,
     resetCommand,
     resetPolicy,
     maxBugs: 200,

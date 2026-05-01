@@ -480,9 +480,9 @@ export function buildRaceConditionsTelemetry(
   for (const r of raceResults) {
     durationMs += r.durationMs;
     if (r.infrastructureFailure !== undefined) {
-      const detail = r.infrastructureFailure.detail ?? '';
+      const { detail, kind } = r.infrastructureFailure;
       if (/timeout/i.test(detail)) testsTimedOut++;
-      const reason = r.infrastructureFailure.kind ?? 'infrastructure_failure';
+      const reason = kind;
       skipReasonsMap.set(reason, (skipReasonsMap.get(reason) ?? 0) + 1);
       continue;
     }

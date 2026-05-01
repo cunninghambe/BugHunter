@@ -1,0 +1,166 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > closeTab args shape 1`] = `
+{
+  "arguments": {
+    "tabId": "tab-close-test",
+  },
+  "name": "close_tab",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > closeTabExplicit args shape 1`] = `
+{
+  "arguments": {
+    "tabId": "tab-explicit-close",
+  },
+  "name": "close_tab",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > cookies args shape — no urls 1`] = `
+{
+  "arguments": {
+    "tabId": "tab-shape-test",
+  },
+  "name": "cookies",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > cookies args shape — with urls 1`] = `
+{
+  "arguments": {
+    "tabId": "tab-shape-test",
+    "urls": [
+      "http://example.com",
+    ],
+  },
+  "name": "cookies",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > evaluate args shape 1`] = `
+{
+  "arguments": {
+    "expression": "document.title",
+    "tabId": "tab-shape-test",
+  },
+  "name": "evaluate",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > listTabs args shape 1`] = `
+{
+  "arguments": {},
+  "name": "list_tabs",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > navigate args shape — existing tab (with tabId) 1`] = `
+{
+  "arguments": {
+    "tabId": "tab-shape-test",
+    "url": "http://second",
+  },
+  "name": "navigate",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > navigate args shape — new tab 1`] = `
+{
+  "arguments": {
+    "url": "http://example.com",
+  },
+  "name": "navigate",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > openTab args shape — always new tab (no tabId) 1`] = `
+{
+  "arguments": {
+    "url": "http://newtab.com",
+  },
+  "name": "navigate",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > routeFulfill args shape 1`] = `
+{
+  "arguments": {
+    "body": "{"ok":true}",
+    "contentType": "application/json",
+    "method": "POST",
+    "path": "/api/items",
+    "status": 200,
+    "tabId": "tab-shape-test",
+  },
+  "name": "route_fulfill",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > routeFulfill with bodyHash args shape 1`] = `
+{
+  "arguments": {
+    "body": "",
+    "bodyHash": "abc123",
+    "contentType": "application/json",
+    "method": "DELETE",
+    "path": "/api/items/1",
+    "status": 204,
+    "tabId": "tab-shape-test",
+  },
+  "name": "route_fulfill",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > screenshot args shape 1`] = `
+{
+  "arguments": {
+    "fullPage": false,
+    "tabId": "tab-shape-test",
+  },
+  "name": "screenshot",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > scroll args shape — down with custom distance 1`] = `
+{
+  "arguments": {
+    "amount": 300,
+    "direction": "down",
+    "tabId": "tab-shape-test",
+  },
+  "name": "scroll",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > scroll args shape — up with default distance 1`] = `
+{
+  "arguments": {
+    "amount": 500,
+    "direction": "up",
+    "tabId": "tab-shape-test",
+  },
+  "name": "scroll",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > setViewport args shape 1`] = `
+{
+  "arguments": {
+    "height": 720,
+    "tabId": "tab-shape-test",
+    "width": 1280,
+  },
+  "name": "set_viewport",
+}
+`;
+
+exports[`CamofoxBrowserMcpAdapter — callTool argument shapes (§7.2) > snapshot args shape 1`] = `
+{
+  "arguments": {
+    "tabId": "tab-shape-test",
+  },
+  "name": "snapshot",
+}
+`;

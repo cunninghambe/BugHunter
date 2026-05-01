@@ -201,6 +201,13 @@ export const ConfigSchema = z.object({
   enableHistoryCorruption: z.boolean().optional(),
   navStateSkipRoutes: z.array(z.string()).optional(),
   navStateDeepLinkMaxDepth: z.number().int().positive().optional(),
+  // v0.49 browser transport config
+  browserTransport: z.enum(['mcp-http', 'mcp-stdio', 'http-legacy']).default('mcp-http'),
+  browserMcpAuthKey: z.string().min(1).optional(),
+  browserMcpStdio: z.object({
+    command: z.string().min(1),
+    args: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

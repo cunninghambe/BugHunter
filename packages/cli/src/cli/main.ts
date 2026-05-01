@@ -38,7 +38,8 @@ BugHunter v0.1 — exhaustive UI + API bug hunting for local dev apps
 
 Usage:
   bughunter init [--no-interactive] [--project-name <name>] [--surface-mcp-url <url>]
-                 [--browser-mcp-url <url>] [--reset-command <cmd>] [--reset-policy <policy>]
+                 [--browser-mcp-url <url>] [--browser-transport <mcp-http|mcp-stdio|http-legacy>]
+                 [--reset-command <cmd>] [--reset-policy <policy>]
   bughunter run [options]
   bughunter replay <occurrenceId>
   bughunter inspect <occurrenceId|clusterId>
@@ -176,6 +177,9 @@ async function main(): Promise<void> {
           projectName: typeof flags['project-name'] === 'string' ? flags['project-name'] : undefined,
           surfaceMcpUrl: typeof flags['surface-mcp-url'] === 'string' ? flags['surface-mcp-url'] : undefined,
           browserMcpUrl: typeof flags['browser-mcp-url'] === 'string' ? flags['browser-mcp-url'] : undefined,
+          browserTransport: typeof flags['browser-transport'] === 'string'
+            ? (flags['browser-transport'] as InitOptions['browserTransport'])
+            : undefined,
           resetCommand: typeof flags['reset-command'] === 'string' ? flags['reset-command'] : undefined,
           resetPolicy: typeof flags['reset-policy'] === 'string'
             ? (flags['reset-policy'] as InitOptions['resetPolicy'])

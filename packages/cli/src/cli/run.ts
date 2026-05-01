@@ -5,7 +5,8 @@ import { loadConfig, resolvedConfig } from '../config.js';
 import { initRunState, saveRunState, loadRunState } from '../store/run-state.js';
 import { runPaths } from '../store/filesystem.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
-import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
+import { makeBrowserAdapter } from '../adapters/browser-mcp.js';
+import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import { AnthropicVisionClient } from '../adapters/vision-client.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
 import { ClaudeCliVisionClient } from '../adapters/vision-claude-cli.js';
@@ -196,7 +197,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   });
 
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
-  const browser = resolved.browserMcpUrl !== undefined ? new CamofoxBrowserMcpAdapter(resolved.browserMcpUrl) : undefined;
+  const browser = makeBrowserAdapter(resolved);
 
   // Resolve vision auth — prefer Claude CLI subprocess (Q8); fall back to API key.
   const visionEnabled = resolved.vision?.enabled ?? false;
@@ -913,7 +914,7 @@ function buildRaceConditionsConfig(
   };
 }
 
-async function closeAllExistingTabs(browser: CamofoxBrowserMcpAdapter): Promise<void> {
+async function closeAllExistingTabs(browser: BrowserMcpAdapter): Promise<void> {
   try {
     const { tabs } = await browser.listTabs();
     for (const tab of tabs) {
