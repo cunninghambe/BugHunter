@@ -1,0 +1,14 @@
+{
+  "projectName": "v32-determinism-fixture",
+  "surfaceMcpUrl": "http://localhost:3109/mcp",
+  "browserMcpUrl": "http://localhost:3110/mcp",
+  "appBaseUrl": "http://localhost:8765",
+  "crawl": {
+    "enabled": true,
+    "maxPages": 5,
+    "maxDepth": 1,
+    "stateSettleMs": 100
+  },
+  "enableA11y": true,
+  "maxBugs": 20
+}
