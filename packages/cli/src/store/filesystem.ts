@@ -89,3 +89,5 @@ export function pruneRuns(projectDir: string, maxAgeMs: number): string[] {
   }
   return pruned;
 }
+
+export { historyDbPath } from './history.js';

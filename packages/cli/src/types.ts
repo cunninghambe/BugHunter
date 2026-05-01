@@ -115,6 +115,12 @@ export type BugKind =
  */
 export type OldRaceKinds = 'race_double_submit' | 'optimistic_update_divergence';
 
+/** v0.29: four-level severity assigned per BugKind in DETECTOR_REGISTRY. */
+export type Severity = 'critical' | 'major' | 'minor' | 'info';
+
+/** v0.29: coarse exploitability hint surfaced into SARIF / Linear / Jira output. */
+export type ExploitabilityModel = 'easy' | 'medium' | 'hard' | 'na';
+
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
 export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
 export type ResetPolicy = 'transactional' | 'per-test' | 'per-page' | 'per-run';
@@ -289,6 +295,10 @@ export type BugCluster = {
   replayKind?: ReplayKind;
   /** Stable cluster-signature key stored at mint time; used by static-rerun path to match fresh detections. */
   signatureKey?: string;
+  /** v0.27: stable 16-char hex identity derived from sha256(projectName + ' ' + signatureKey). Absent on pre-V27 clusters. */
+  bugIdentity?: string;
+  /** v0.29: decorated at emit time from DETECTOR_REGISTRY. Optional for backward-compat with old JSONL artifacts. */
+  severity?: Severity;
 };
 
 export type ClusterVerdict =
@@ -1372,6 +1382,10 @@ export type RunSummary = {
   raceConditions?: RaceConditionsTelemetry;
   /** v0.21: IDOR / horizontal-authz telemetry — present when idor.enabled = true. */
   idor?: IdorTelemetry;
+  /** v0.27: cross-run delta vs. the previous run for the same projectName. Absent when history.db has no prior run. */
+  crossRun?: CrossRunSummary;
+  /** v0.29: severity rollup. Always present in v0.29+ summary.json files; absent on older runs. */
+  bySeverity?: Record<Severity, number>;
 };
 
 // --- v0.19 race-condition types ---
@@ -1478,6 +1492,15 @@ export type IdorTelemetry = {
   suppressedByLegitimizedHierarchy: number;
   skippedReasons: Array<{ reason: string; count: number }>;
   durationMs: number;
+};
+
+export type CrossRunSummary = {
+  /** Previous run id used for comparison; null when this is the first run for the project. */
+  previousRunId: string | null;
+  newBugs: number;
+  persistent: number;
+  goneSinceLast: number;
+  regressed: number;
 };
 
 // --- v0.14 seed-hook execution record (defined here so emit.ts can reference it) ---

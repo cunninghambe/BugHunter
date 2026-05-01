@@ -23,14 +23,16 @@
     "micromatch": "4.0.8",
     "picocolors": "1.1.1",
     "playwright-core": "1.52.0",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "better-sqlite3": "11.3.0"
   },
   "devDependencies": {
     "@types/micromatch": "4.0.9",
     "@types/node": "22.19.17",
     "tsx": "4.21.0",
     "typescript": "5.8.3",
-    "vitest": "4.1.5"
+    "vitest": "4.1.5",
+    "@types/better-sqlite3": "7.6.11"
   },
   "engines": {
     "node": ">=20"
