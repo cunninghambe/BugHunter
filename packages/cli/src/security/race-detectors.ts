@@ -120,11 +120,17 @@ export function detectClickThenNavigate(
   }
 
   // Branch 2: silent fail — in-flight request returned non-2xx or was aborted,
-  // AND no console error AND no toast appeared on destination route.
+  // AND no console error AND no toast appeared on destination route AND the
+  // target element isn't itself in an `errored` state (which the user can see).
   const failedRequest = observations.find(o =>
     o.responseStatus !== undefined && (o.responseStatus < 200 || o.responseStatus >= 300)
   );
-  if (failedRequest !== undefined && postNavObs.consoleErrorCount === 0 && !postNavObs.toastVisible) {
+  if (
+    failedRequest !== undefined &&
+    postNavObs.consoleErrorCount === 0 &&
+    !postNavObs.toastVisible &&
+    postNavObs.targetSelectorState !== 'errored'
+  ) {
     const raceContext: RaceDetectionContext = {
       variantKind: 'click_then_navigate',
       navigateTarget: plan.variant.targetRoute,

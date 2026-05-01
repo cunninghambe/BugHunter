@@ -98,17 +98,24 @@ describe('detectClickThenNavigate', () => {
   });
 
   it('detects silent post-unmount failure', () => {
+    // 'final' state means the optimistic UI committed despite the request failing —
+    // user sees success-looking UI while the mutation actually 4xx'd. This is the silent case.
+    const observations = [
+      obs({ offsetMs: 0, targetSelectorState: 'pre', responseStatus: 400 }),
+      obs({ offsetMs: 2000, targetSelectorState: 'final', consoleErrorCount: 0, toastVisible: false }),
+    ];
+    const result = detectClickThenNavigate(plan, observations);
+    expect(result).not.toBeNull();
+    expect(result?.raceContext?.proof).toBe('silent_post_unmount_failure');
+  });
+
+  it('does NOT fire silent_post_unmount when DOM shows errored state (user-visible)', () => {
     const observations = [
       obs({ offsetMs: 0, targetSelectorState: 'pre', responseStatus: 400 }),
       obs({ offsetMs: 2000, targetSelectorState: 'errored', consoleErrorCount: 0, toastVisible: false }),
     ];
-    // post-nav state is 'errored' so stale branch won't fire; but failed request with no user feedback
-    // Note: targetSelectorState='errored' means did NOT revert — but the branch checks 'pre' specifically
-    // So this tests the second branch: failed request + no console error + no toast
-    const result = detectClickThenNavigate(plan, observations);
-    // errored != pre so branch 1 doesn't fire; branch 2: failedRequest exists, no error, no toast
-    expect(result).not.toBeNull();
-    expect(result?.raceContext?.proof).toBe('silent_post_unmount_failure');
+    // 'errored' state is visible to the user — failure is not silent
+    expect(detectClickThenNavigate(plan, observations)).toBeNull();
   });
 
   it('returns null when a console error surfaced the failure', () => {
