@@ -48,7 +48,8 @@ function runValidate(projectDir: string): void {
   if (!result.success) {
     process.stdout.write(`Invalid .bughunter/config.json:\n`);
     for (const issue of result.error.issues) {
-      process.stdout.write(`  ${issue.path.join('.') || '(root)'}: ${issue.message}\n`);
+      const loc = issue.path.length > 0 ? issue.path.join('.') : '(root)';
+      process.stdout.write(`  ${loc}: ${issue.message}\n`);
     }
     process.stdout.write(`\nFound ${result.error.issues.length} issue(s). Fix and re-run.\n`);
     process.exitCode = 1;
