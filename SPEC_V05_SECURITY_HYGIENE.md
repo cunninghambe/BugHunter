@@ -231,7 +231,7 @@ export async function probeHeaders(req: HeaderProbeRequest): Promise<HeaderProbe
 **Cost / time budget:** the probe is one extra HTTP request per discovered page. Default `maxHeaderProbes: 100` per run. Cached so the same origin isn't re-probed; a 500-page crawl probes ~50 unique origins.
 
 **False-positive shape and filter:**
-- CSP weakness on apps using inline scripts intentionally → `severityThreshold` knob. Default reports informational; `--strict-csp` flag promotes to major.
+- CSP weakness on apps using inline scripts intentionally → `severityThreshold` knob. Default reports informational. (Note: `--strict-csp` flag was never landed; severity is currently a fixed default. Override via `headers.severityThreshold` config field.)
 - Cookie flag findings on `http://localhost*` → suppressed by default per above.
 - CSRF missing where the route uses double-submit-cookie pattern (cookie-bound token without an `X-CSRF-Token` header) — detection must check the `Set-Cookie` jar for a CSRF cookie before flagging missing.
 
@@ -852,14 +852,13 @@ In a separate shell:
 cd /root/BugHunter
 npm install
 npm run build
-node packages/cli/dist/cli/index.js \
-  --project /tmp/TraiderJo \
-  --surface-mcp http://127.0.0.1:3104 \
-  --enable-auth-probes \
-  --vision \
-  --static-analysis \
-  --synthetic \
-  --max-runtime-ms 1800000
+# bughunter respects process.cwd() rather than --project; cd into the target.
+# vision is config-only (set vision.enabled in .bughunter/config.json).
+# auth probes / static analysis / synthetic mode run unconditionally on main —
+# previous --enable-* flags never landed; behavior is now always-on.
+cd /tmp/TraiderJo
+node /root/BugHunter/packages/cli/dist/cli/index.js run \
+  --max-runtime 1800000
 ```
 
 ### 10.2 Expected findings (the demo passes if at least 3 fire)

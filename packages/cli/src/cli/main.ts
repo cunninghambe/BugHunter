@@ -33,23 +33,42 @@ Usage:
   bughunter fix-summary <runId>
 
 Run options:
-  --route <pattern>      Limit to routes matching glob
-  --role <name>          Limit to a single role
-  --max-bugs <n>         Stop-and-emit at N clusters (default 200)
-  --max-runtime <ms>     Run-level timeout (default 86400000 = 24h)
-  --budget <ms>          Time-box the run
-  --concurrency <n>      Browser concurrency (default 4)
-  --api-concurrency <n>  API concurrency (default 16)
-  --reset                Run resetCommand before discovery
-  --resume <runId>       Continue from saved state
-  --force-resume         Resume even if SurfaceMCP revision differs
-  --a11y                 Enable accessibility_critical checks
-  --a11y-strict          Enable a11y baseline + keyboard-trap + focus-lost (implies --a11y)
-  --seo                  Enable SEO hygiene cluster
-  --keyboard-trap-max=N  Max Tab presses during keyboard trap probe (default 20)
-  --no-seo-duplicate-titles  Suppress seo_title_duplicate_across_routes detections
-  --include-external              Allow external side-effect API calls
-  --form-reachability-timeout <ms>  Max wait for form to appear in probe/execute (default: asyncMaxWaitMs from config)
+  --route <pattern>           Limit to routes matching glob
+  --role <name>               Limit to a single role
+  --max-bugs <n>              Stop-and-emit at N clusters (default 200)
+  --max-runtime <ms>          Run-level timeout (default 86400000 = 24h)
+  --budget <ms>               Time-box the run
+  --concurrency <n>           Browser concurrency (default 4)
+  --api-concurrency <n>       API concurrency (default 16)
+  --reset                     Run resetCommand before discovery
+  --resume <runId>            Continue from saved state
+  --force-resume              Resume even if SurfaceMCP revision differs
+  --include-external          Allow external side-effect API calls
+
+Accessibility / SEO:
+  --a11y                      Enable accessibility_critical checks
+  --a11y-strict               Enable a11y baseline + keyboard-trap + focus-lost (implies --a11y)
+  --seo                       Enable SEO hygiene cluster
+  --no-seo-duplicate-titles   Suppress seo_title_duplicate_across_routes detections
+  --keyboard-trap-max <n>     Max Tab presses during keyboard trap probe (default 20)
+  --form-reachability-timeout <ms>  Max wait for form to appear in probe/execute (default from config)
+
+Performance / heap:
+  --enable-perf               Enable web vitals + long task + heap sampling
+  --enable-bundle-probe       Enable bundle size probe
+  --enable-memory-profile     Enable heap-sample collection (subset of --enable-perf)
+  --enable-all-v06            Shortcut for --enable-perf + --enable-bundle-probe + --enable-memory-profile
+  --lcp-threshold <ms>        LCP slow threshold (default 2500)
+  --inp-threshold <ms>        INP slow threshold (default 200)
+  --cls-threshold <n>         CLS threshold (default 0.1)
+  --n-plus-one-threshold <n>  N+1 request threshold (default 8)
+  --bundle-js-budget <KB>     Initial JS budget gzipped (default 500)
+  --bundle-css-budget <KB>    Initial CSS budget gzipped (default 200)
+  --enable-heap-attribution   Enable heap diff retainer attribution (implies --enable-memory-profile)
+  --no-heap-attribution       Disable heap attribution even if config has it on
+  --heap-snapshot-frequency <auto|n>  Snapshot frequency (default 'auto')
+  --heap-diff-min-instances <n>  Min instances for diff (default 10)
+  --heap-diff-min-bytes <n>   Min bytes for diff (default 5000000)
 `;
 
 function parseArgs(argv: string[]): { command: string; args: string[]; flags: Record<string, string | boolean> } {
@@ -126,7 +145,6 @@ async function main(): Promise<void> {
           forceResume: flags['force-resume'] === true,
           a11y: flags['a11y'] === true,
           includeExternal: flags['include-external'] === true,
-          strict: flags['strict'] === true,
           enablePerf: flags['enable-perf'] === true || enableAll,
           enableBundleProbe: flags['enable-bundle-probe'] === true || enableAll,
           enableMemoryProfile: flags['enable-memory-profile'] === true || enableAll,
@@ -138,6 +156,7 @@ async function main(): Promise<void> {
           bundleCssBudgetKb: typeof flags['bundle-css-budget'] === 'string' ? parseInt(flags['bundle-css-budget'], 10) : undefined,
           a11yStrict: flags['a11y-strict'] === true,
           seoEnabled: flags['seo'] === true,
+          noSeoDuplicateTitles: flags['no-seo-duplicate-titles'] === true,
           keyboardTrapMax: typeof flags['keyboard-trap-max'] === 'string' ? parseInt(flags['keyboard-trap-max'], 10) : undefined,
           formReachabilityTimeout: typeof flags['form-reachability-timeout'] === 'string' ? parseInt(flags['form-reachability-timeout'], 10) : undefined,
           enableHeapAttribution: flags['enable-heap-attribution'] === true,

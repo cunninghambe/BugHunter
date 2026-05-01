@@ -18,6 +18,11 @@ import { XSS_OBSERVER_START_SCRIPT, XSS_OBSERVER_DRAIN_SCRIPT } from '../securit
 import type { XssContext } from '../types.js';
 import { classifyConsoleErrors } from '../classify/console.js';
 import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
+import { harEntriesToNetworkRequests } from '../adapters/har-writer.js';
+import { classifyVitals } from '../classify/vitals.js';
+import { classifyLongTasks } from '../classify/long-tasks.js';
+import { classifyExcessiveRerenders } from '../classify/rerenders.js';
+import { classifyNPlusOne, classifyDedupMissing } from '../classify/request-hygiene.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
 import { classifyVisualAnomaliesConsistent } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
@@ -80,6 +85,8 @@ export type ExecuteOptions = {
   a11yStrict?: boolean;
   /** v0.6 SEO: enable SEO corpus pass after execute. */
   seoEnabled?: boolean;
+  /** v0.6 SEO: suppresses seo_title_duplicate_across_routes detections. */
+  seoSuppressDuplicateTitles?: boolean;
   /** v0.6 keyboard trap: max Tab presses (default 20). */
   keyboardTrapMaxPresses?: number;
   /** v0.11 max wait for form to appear after trigger click. Default 2000ms. */
@@ -101,7 +108,7 @@ export type ExecuteResult = {
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
-  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, keyboardTrapMaxPresses, asyncMaxWaitMs } = opts;
+  const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, seoSuppressDuplicateTitles, keyboardTrapMaxPresses, asyncMaxWaitMs } = opts;
   const paths = runPaths(runState.projectDir, runState.runId);
   const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
@@ -243,11 +250,47 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
       // Perf drain: collect vitals/HAR after the action completes
       if (perfCollector !== undefined && tc.action.via === 'ui') {
-        const { perf } = await perfCollector.drain(result.occurrenceId).catch(err => {
+        const { perf, har } = await perfCollector.drain(result.occurrenceId).catch(err => {
           log.warn('perf-collector: drain failed', { err: String(err), occurrenceId: result.occurrenceId });
           return { perf: { occurrenceId: result.occurrenceId, webVitals: [], longTasks: [], heapSamples: [], renderEvents: [] }, har: { log: { version: '1.2' as const, creator: { name: 'bughunter', version: '0.6' }, entries: [] } } };
         });
         perfArtifacts.set(result.occurrenceId, perf);
+
+        // Audit-fix: HAR entries → NetworkRequest[] for UI-path classification.
+        // Without this, network_5xx / network_4xx_unexpected / 404_for_linked_route
+        // could only fire on direct API tests; UI tests had postState.networkRequests = []
+        // hardcoded so the classifier saw nothing.
+        if (har.log.entries.length > 0 && result.postState !== undefined) {
+          const networkRequests = harEntriesToNetworkRequests(har.log.entries);
+          result.postState.networkRequests = networkRequests;
+          const networkBugs = classifyNetworkRequests(networkRequests, tc.expectedOutcome, true);
+          result.bugs.push(...networkBugs);
+          if (networkBugs.length > 0) result.passed = false;
+        }
+
+        // Audit-fix: wire dead perf classifiers (slow_lcp/inp/high_cls, main_thread_blocked,
+        // excessive_re_renders, n_plus_one_api_calls, request_dedup_missing). These existed
+        // as exported functions with passing unit tests but were never called from any
+        // production runner — perfCollector captured PerfArtifacts and HAR but the
+        // classification half of v0.6 was never wired. Threshold lookup respects config.
+        const perfCfg = runState.config.perf;
+        const vitalsBugs = classifyVitals(perf, tc.page, tc.action.kind, {
+          lcpMs: perfCfg?.vitalsThresholds?.lcpMs,
+          inpMs: perfCfg?.vitalsThresholds?.inpMs,
+          cls: perfCfg?.vitalsThresholds?.cls,
+        });
+        const longTaskBugs = classifyLongTasks(perf, tc.page, perfCfg?.longTaskMs);
+        const rerenderBugs = classifyExcessiveRerenders(perf, {
+          rerenderCountThreshold: perfCfg?.rerenderCountThreshold,
+          rerenderWindowMs: perfCfg?.rerenderWindowMs,
+        });
+        const nplusOneBugs = classifyNPlusOne(har, perfCfg?.requestHygiene?.nPlusOneThreshold);
+        const dedupBugs = classifyDedupMissing(har);
+        const allPerfBugs = [...vitalsBugs, ...longTaskBugs, ...rerenderBugs, ...nplusOneBugs, ...dedupBugs];
+        if (allPerfBugs.length > 0) {
+          result.bugs.push(...allPerfBugs);
+          result.passed = false;
+        }
       }
 
       return result;
@@ -321,7 +364,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   if (seoEnabled === true && seoPageInputs.length > 0) {
     const origin = appBaseUrl ?? (pageUrls?.[0] !== undefined ? new URL(pageUrls[0].startsWith('http') ? pageUrls[0] : `http://localhost${pageUrls[0]}`).origin : '');
     const robotsTxt = await fetchRobotsTxt(origin);
-    seoDetections = classifySeoCorpus({ pages: seoPageInputs, robotsTxt, origin });
+    seoDetections = classifySeoCorpus({ pages: seoPageInputs, robotsTxt, origin, suppressDuplicateTitles: seoSuppressDuplicateTitles });
     log.info('seo-corpus: complete', { pagesScraped: seoPageInputs.length, detections: seoDetections.length });
   }
 

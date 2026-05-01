@@ -23,6 +23,7 @@ import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
 import type { BugDetection, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry } from '../types.js';
 import { runEmit } from '../phases/emit.js';
+import { classifyMemoryLeak } from '../classify/memory-leak.js';
 import { runFormReachabilityProbes } from '../phases/form-reachability-probe.js';
 import type { ProbeKey, ProbeResult } from '../phases/form-reachability-probe.js';
 import { log } from '../log.js';
@@ -55,7 +56,6 @@ export type RunOptions = {
   forceResume?: boolean;
   a11y?: boolean;
   includeExternal?: boolean;
-  strict?: boolean;
   // v0.6 performance flags
   enablePerf?: boolean;
   enableBundleProbe?: boolean;
@@ -69,6 +69,7 @@ export type RunOptions = {
   // v0.6 a11y/SEO flags
   a11yStrict?: boolean;
   seoEnabled?: boolean;
+  noSeoDuplicateTitles?: boolean;
   keyboardTrapMax?: number;
   // v0.11 form-reachability probe
   formReachabilityTimeout?: number;
@@ -122,6 +123,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   const a11yStrict = opts.a11yStrict === true || (config.a11yStrict ?? false);
   const seoEnabled = opts.seoEnabled === true || (config.seoEnabled ?? false);
+  const seoSuppressDuplicateTitles = opts.noSeoDuplicateTitles === true || (config.seoSuppressDuplicateTitles ?? false);
   const keyboardTrapMaxPresses = opts.keyboardTrapMax ?? config.keyboardTrapMaxPresses ?? 20;
 
   const resolved = resolvedConfig({
@@ -136,6 +138,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(opts.a11y !== undefined || a11yStrict ? { enableA11y: opts.a11y === true || a11yStrict } : {}),
     ...(a11yStrict ? { a11yStrict } : {}),
     ...(seoEnabled ? { seoEnabled } : {}),
+    ...(seoSuppressDuplicateTitles ? { seoSuppressDuplicateTitles } : {}),
     ...(keyboardTrapMaxPresses !== 20 ? { keyboardTrapMaxPresses } : {}),
     ...(perfConfig !== undefined ? { perf: perfConfig } : {}),
     ...(bundleProbeConfig !== undefined ? { bundleProbe: bundleProbeConfig } : {}),
@@ -379,6 +382,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       perfCollector,
       a11yStrict: resolved.a11yStrict ?? false,
       seoEnabled: resolved.seoEnabled ?? false,
+      seoSuppressDuplicateTitles: resolved.seoSuppressDuplicateTitles ?? false,
       keyboardTrapMaxPresses: resolved.keyboardTrapMaxPresses ?? 20,
       asyncMaxWaitMs: opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs,
     });
@@ -567,10 +571,27 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       authMode: visionAuthMode,
       consistency: discovery.visionConsistencyTelemetry,
       byViewport: discovery.visionByViewport,
+      baseline: discovery.visionBaselineTelemetry,
     } : undefined;
 
     // v0.6: build perf summary from collected artifacts
     const perfSummary: RunSummary['perfSummary'] = buildPerfSummary(perfArtifacts);
+
+    // Audit-fix: cross-occurrence memory_leak_suspected classification.
+    // The detector existed but no production caller ever invoked it. runs heap-sample
+    // linear regression across all occurrences to flag a possible leak.
+    if (perfArtifacts !== undefined && perfArtifacts.size > 0) {
+      const memoryLeakBugs = classifyMemoryLeak(Array.from(perfArtifacts.values()));
+      for (const bug of memoryLeakBugs) {
+        results.push({
+          testId: createId(),
+          occurrenceId: createId(),
+          passed: false,
+          bugs: [bug],
+          durationMs: 0,
+        });
+      }
+    }
 
     // v0.6: run bundle probe sidecar
     const bundleProbeResult = bundleProbeConfig !== undefined

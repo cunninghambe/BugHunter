@@ -71,7 +71,9 @@ export function runEmit(
   const summary = {
     runId: runState.runId,
     bugs_filed: clusters.length,
+    bugs_specced: 0,
     bugs_attempted_fix: 0,
+    bugs_architect_refused: 0,
     bugs_verified_fixed: 0,
     partially_verified: 0,
     bugs_persistent: 0,

@@ -16,6 +16,8 @@ export type SeoCorpusInput = {
   pages: SeoPageInput[];
   robotsTxt: string | null;
   origin: string;
+  /** When true, suppresses seo_title_duplicate_across_routes detections. */
+  suppressDuplicateTitles?: boolean;
 };
 
 /**
@@ -40,7 +42,7 @@ function robotsTxtBlocksRoot(robotsTxt: string): boolean {
 }
 
 export function classifySeoCorpus(input: SeoCorpusInput): BugDetection[] {
-  const { pages, robotsTxt, origin } = input;
+  const { pages, robotsTxt, origin, suppressDuplicateTitles } = input;
   const detections: BugDetection[] = [];
 
   const homepageRoutes = new Set([`${origin}/`, origin, '/']);
@@ -124,7 +126,7 @@ export function classifySeoCorpus(input: SeoCorpusInput): BugDetection[] {
   }
 
   for (const [normalizedTitle, routes] of titleGroups) {
-    if (routes.length > 1) {
+    if (routes.length > 1 && suppressDuplicateTitles !== true) {
       detections.push({
         kind: 'seo_title_duplicate_across_routes',
         rootCause: `Title "${normalizedTitle}" is shared across ${routes.length} distinct routes: ${routes.join(', ')}`,

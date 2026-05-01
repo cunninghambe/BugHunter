@@ -689,7 +689,7 @@ For Hermes / Paperclip agents that want to trigger a discovery bug hunt without 
 10. **Long-running async actions.** Polls for up to 30s; final state is post-state. Configurable `asyncMaxWaitMs`.
 11. **Role with zero accessible routes.** Logged as config issue; run continues for other roles.
 12. **Auto-fix touches a forbidden path.** Post-hoc gate hard-resets the branch; cluster marked `bugs_skipped: touched_forbidden_path`.
-13. **Cluster from a transient flake.** Re-run mode (default): every occurrence runs twice; if second doesn't reproduce, downgrade to `flaky`, exclude from auto-fix. `--strict` disables.
+13. **Cluster from a transient flake.** Re-run mode is **deferred to v0.7** — `reRunForFlakes` config field exists but no flake-downgrade pipeline is wired. The `--strict` flag has been removed pending implementation. v0.19 race-condition tests use a separate consensus voting mechanism (see SPEC_V19) for that feature's flake gate.
 14. **Hot-reload during run.** SurfaceMCP `revision_changed` error → `infrastructure_failure` (not bug). Run continues; affected test re-queued unless `--no-requeue`.
 15. **Modal/parallel/intercepted Next.js routes.** Out of scope v0.1. User must surface via fixtures or `discoveryHints`.
 16. **Suspected file in `node_modules` or `.next/`.** `thirdPartyOrGenerated: true` flag; `bugs_skipped: third_party_or_generated` in auto-fix.

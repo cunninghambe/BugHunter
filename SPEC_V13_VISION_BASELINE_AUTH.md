@@ -487,12 +487,12 @@ curl -s -o /dev/null -w '%{http_code}' http://localhost:5173/ || echo 'web not u
 cd /root/BugHunter && git log --oneline -3
 
 # 4. Run the smoke
+# bughunter respects process.cwd(); --project-dir was never wired.
+# Vision is config-only — set vision.enabled = true in .bughunter/config.json.
+# --json output not implemented — summary.json is written to .bughunter/runs/<id>/.
 cd /root/Aspectv3 && \
   npx -y @bughunter/cli run \
-    --project-dir . \
-    --role owner \
-    --vision-enabled \
-    --json | tee /tmp/v13-smoke.json
+    --role owner | tee /tmp/v13-smoke.log
 
 # 5. Inspect the result
 jq '.discovery.visualBaselineDetections | length' < ~/.bughunter/runs/$(jq -r .runId /tmp/v13-smoke.json)/state.json

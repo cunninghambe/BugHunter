@@ -930,13 +930,12 @@ The v0.6 feature branch is mergeable when **all** of the following hold:
 ```bash
 cd /tmp/TraiderJo
 npm run build                                                   # produce dist/
-cd /root/BugHunter
-node packages/cli/dist/cli/main.js run \
-  --project /tmp/TraiderJo \
+# discoveryFixtures is config-only — set in /tmp/TraiderJo/.bughunter/config.json
+# bughunter run uses process.cwd(); --project flag was never wired
+node /root/BugHunter/packages/cli/dist/cli/main.js run \
   --enable-all-v06 \
-  --discovery-fixtures fixtures/traiderjo-discovery.json \
   --max-bugs 50 \
-  --max-runtime-ms 1800000
+  --max-runtime 1800000
 ```
 
 **Acceptance:**
