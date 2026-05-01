@@ -266,7 +266,6 @@ describe('runPlan v0.11 — probe-filtered submit tests', () => {
   });
 });
 
-<<<<<<< HEAD
 describe('HTTP method filter (v0.12 T4) — apiTestCases', () => {
   const MUTATING_PALETTES = new Set(['null', 'xss_inject', 'out_of_bounds']);
 
