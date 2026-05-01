@@ -160,6 +160,23 @@ export const ConfigSchema = z.object({
     booleanDeltaThreshold: z.number().min(0).max(1).optional(),
     maxProbesPerEndpoint: z.number().int().positive().optional(),
   }).optional(),
+  idor: z.object({
+    enabled: z.boolean().optional(),
+    tiers: z.record(z.number().int().nonnegative()).optional(),
+    peerRoles: z.array(z.tuple([z.string(), z.string()])).optional(),
+    legitimizedHierarchies: z.array(z.object({
+      from: z.string(),
+      to: z.string(),
+    }).refine(h => h.from !== h.to, { message: 'legitimizedHierarchies: from and to must be different roles' })).optional(),
+    skipResources: z.array(z.string()).optional(),
+    skipFixtureFromTools: z.array(z.string()).optional(),
+    resourceTypeOverrides: z.record(z.string()).optional(),
+    resourceTypeOverridesByPath: z.record(z.string()).optional(),
+    maxFixturesPerRoleResource: z.number().int().positive().optional(),
+    maxReplays: z.number().int().positive().optional(),
+    probeMutating: z.boolean().optional(),
+    allowRemoteHost: z.boolean().optional(),
+  }).optional(),
   authFlow: z.object({
     enabled: z.boolean().optional(),
     sessionFixation: z.object({

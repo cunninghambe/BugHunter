@@ -31,15 +31,22 @@ export function inspectCommand(projectDir: string, id: string): void {
   process.exitCode = 1;
 }
 
+const DEPRECATED_IDOR_KINDS = new Set(['idor_horizontal', 'idor_vertical_role_escalate']);
+
 function printCluster(cluster: BugCluster, focusOcc: Occurrence | null): void {
   const relatedIds = cluster.relatedClusterIds;
   const relatedLine = (relatedIds !== undefined && relatedIds.length > 0)
     ? [`Related clusters: ${relatedIds.join(', ')}`]
     : [];
 
+  const deprecatedLine = DEPRECATED_IDOR_KINDS.has(cluster.kind)
+    ? [`[DEPRECATED] Kind '${cluster.kind}' is superseded by v0.21 kinds (idor_horizontal_read / idor_horizontal_mutate / idor_vertical_suspicious). Enable --idor to get precise IDOR classification.`]
+    : [];
+
   const lines = [
     `\n=== Bug Cluster ${cluster.id} ===`,
     `Kind: ${cluster.kind}`,
+    ...deprecatedLine,
     `Root Cause: ${cluster.rootCause}`,
     `Cluster Size: ${cluster.clusterSize}`,
     `First Seen: ${cluster.firstSeenAt}`,

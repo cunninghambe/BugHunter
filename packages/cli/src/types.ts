@@ -61,6 +61,10 @@ export type BugKind =
   | 'race_condition_interleaved_mutations'
   | 'race_condition_cross_tab'
   | 'hallucinated_route'
+  // v0.21 IDOR / horizontal-authz kinds (replace the v0.5 'idor_horizontal' umbrella)
+  | 'idor_horizontal_read'
+  | 'idor_horizontal_mutate'
+  | 'idor_vertical_suspicious'
   // v0.16 active pen-testing kinds
   | 'sql_injection'
   | 'command_injection'
@@ -609,6 +613,14 @@ export type IdorContext = {
   targetRole: string;
   resourceField: string;
   resourceValue: string;
+  // v0.21 additions
+  resourceType?: string;          // 'order', 'invoice', '_unknown', ...
+  mutating?: boolean;             // true for idor_horizontal_mutate
+  tier?: 'peer' | 'cross';        // peer-tier or cross-tier replay
+  sourceTier?: string;            // tier number or name when idor.tiers is set
+  targetTier?: string;
+  /** Set when this finding requires user adjudication. Drives the skill UX. */
+  requiresAdjudication?: boolean; // true for idor_vertical_suspicious
 };
 
 /** Context populated by the static-analysis runner for source-code findings. */
@@ -893,6 +905,12 @@ export type RunState = {
   partialEmit: boolean;
   /** Resource IDs harvested during execute for cross-user IDOR replay. Populated by execute phase. */
   discoveredIds?: DiscoveredIds;
+  /**
+   * v0.21: per-(role, resourceType) fixture ids for cross-role IDOR replay.
+   * Derived from discoveredIds at the start of runCrossUser with v0.21 filters applied.
+   * Not persisted to state.json — reconstructed from discoveredIds on resume.
+   */
+  roleFixtures?: Map<string, Map<string, Set<string>>>;
 };
 
 export type BrowserLoginConfig = {
@@ -1047,6 +1065,34 @@ export type CrossUserConfig = {
   adminRoleHints?: string[];
 };
 
+/** v0.21 IDOR / horizontal-authz configuration. */
+export type IdorConfig = {
+  /** Master switch. True when --security or --idor; false otherwise. */
+  enabled?: boolean;
+  /** Role-to-tier map. Higher = more privileged. Falls back to adminRoleHints. */
+  tiers?: Record<string, number>;
+  /** Explicit peer pairs. Overrides auto-inference for the listed pairs only. */
+  peerRoles?: Array<[string, string]>;
+  /** Cross-tier directions that are by-design; suppressed entirely at classify-time. */
+  legitimizedHierarchies?: Array<{ from: string; to: string }>;
+  /** Resource types where cross-role access is intentional (skipped in collect + replay). */
+  skipResources?: string[];
+  /** ToolIds excluded from fixture collection (extends the baked-in deny-list). */
+  skipFixtureFromTools?: string[];
+  /** Per-tool resource-type overrides. Wins over heuristics. */
+  resourceTypeOverrides?: Record<string, string>;
+  /** Per-URL-pattern resource-type overrides. Wins over heuristic, loses to per-tool. */
+  resourceTypeOverridesByPath?: Record<string, string>;
+  /** Cap fixtures per (role, resourceType). Default: 5. */
+  maxFixturesPerRoleResource?: number;
+  /** Cap total swap replays. Default: 400. */
+  maxReplays?: number;
+  /** Probe mutating tools too. Default: false; requires resetPolicy in {transactional, per-test}. */
+  probeMutating?: boolean;
+  /** Opt-in escape hatch for idor.probeMutating against non-loopback hosts. Default: false. */
+  allowRemoteHost?: boolean;
+};
+
 export type BugHunterConfig = {
   projectName: string;
   surfaceMcpUrl: string;
@@ -1110,6 +1156,8 @@ export type BugHunterConfig = {
   penTesting?: PenTestingConfig;
   /** v0.19 race-condition interleaving tests. Default: disabled (opt-in). */
   raceConditions?: RaceConditionsConfig;
+  /** v0.21 IDOR / horizontal-authz testing. Default: disabled (opt-in via --idor or --security). */
+  idor?: IdorConfig;
   /** v0.6 performance subsystem. Disabled by default until users opt in. */
   perf?: {
     enabled: boolean;
@@ -1310,6 +1358,8 @@ export type RunSummary = {
   penTesting?: PenTestingTelemetry;
   /** v0.19: race-condition telemetry — present when raceConditions.enabled = true. */
   raceConditions?: RaceConditionsTelemetry;
+  /** v0.21: IDOR / horizontal-authz telemetry — present when idor.enabled = true. */
+  idor?: IdorTelemetry;
 };
 
 // --- v0.19 race-condition types ---
@@ -1399,6 +1449,22 @@ export type RaceConditionsTelemetry = {
   testsSkipped: Array<{ reason: string; count: number }>;
   detectionsByKind: Record<string, number>;
   flakyDetections: number;
+  durationMs: number;
+};
+
+/** v0.21 IDOR telemetry block in summary.json. */
+export type IdorTelemetry = {
+  enabled: boolean;
+  fixturesCollected: Record<string, Record<string, number>>;
+  swapsAttempted: number;
+  swapsByPair: Array<{ from: string; to: string; count: number }>;
+  detectionsByKind: {
+    idor_horizontal_read: number;
+    idor_horizontal_mutate: number;
+    idor_vertical_suspicious: number;
+  };
+  suppressedByLegitimizedHierarchy: number;
+  skippedReasons: Array<{ reason: string; count: number }>;
   durationMs: number;
 };
 

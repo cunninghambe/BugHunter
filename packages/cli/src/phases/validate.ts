@@ -19,6 +19,17 @@ export type ValidateResult = {
 };
 
 export async function runValidate(opts: ValidateOptions): Promise<ValidateResult> {
+  // 0. Production-host guard for IDOR mutating probes (v0.21 SPEC §2: local apps only).
+  // V21 fires cross-user-id mutations; refuse non-loopback unless explicitly opted in.
+  if (opts.config.idor?.probeMutating === true && opts.config.idor.allowRemoteHost !== true) {
+    if (!isLoopbackUrl(opts.config.surfaceMcpUrl)) {
+      throw new Error(
+        `idor.probeMutating refuses non-loopback surfaceMcpUrl (${opts.config.surfaceMcpUrl}). ` +
+        `BugHunter is local-only by design. Set idor.allowRemoteHost: true to override (you are responsible).`
+      );
+    }
+  }
+
   // v0.19 EC-12: race tests require per-test or per-page reset policy
   if (
     opts.config.raceConditions?.enabled === true &&
@@ -86,4 +97,13 @@ function extractRolesFromCatalog(_tools: unknown[]): string[] {
   // If no roles configured, default to ['anonymous']
   // Real role extraction would come from SurfaceMCP tool metadata
   return ['anonymous'];
+}
+
+function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost');
+  } catch {
+    return false;
+  }
 }
