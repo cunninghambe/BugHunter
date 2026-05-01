@@ -46,7 +46,8 @@ Run options:
   --include-external          Allow external side-effect API calls
 
 Accessibility / SEO:
-  --a11y                      Enable accessibility_critical checks
+  --a11y                      Enable accessibility_critical baseline + delta checks.
+                              Delta runs axe pre/post each UI action; adds ~400ms/action.
   --a11y-strict               Enable a11y baseline + keyboard-trap + focus-lost (implies --a11y)
   --seo                       Enable SEO hygiene cluster
   --no-seo-duplicate-titles   Suppress seo_title_duplicate_across_routes detections

@@ -29,23 +29,31 @@ export function isReactError(text: string): boolean {
 }
 
 export function classifyReactErrors(errors: ConsoleError[], pageRoute: string): BugDetection[] {
-  return errors
-    .filter(e => isReactError(e.text))
-    .map(e => {
-      // Hydration errors are a more-specific subkind of react_error.
-      if (isHydrationError(e.text)) {
-        return {
-          kind: 'hydration_mismatch' as const,
-          rootCause: e.text,
-          stackTrace: e.stack,
-          pageRoute,
-        };
-      }
+  return errors.map(e => {
+    // Hydration errors are a more-specific subkind of react_error.
+    if (isHydrationError(e.text)) {
+      return {
+        kind: 'hydration_mismatch' as const,
+        rootCause: e.text,
+        stackTrace: e.stack,
+        pageRoute,
+      };
+    }
+    if (isReactError(e.text)) {
       return {
         kind: 'react_error' as const,
         rootCause: e.text,
         stackTrace: e.stack,
         pageRoute,
       };
-    });
+    }
+    // V24: fall through to console_error for non-React errors so classifyReactErrors
+    // is a complete drop-in replacement for classifyConsoleErrors (spec §3.4, option B).
+    return {
+      kind: 'console_error' as const,
+      rootCause: e.text,
+      stackTrace: e.stack,
+      pageRoute,
+    };
+  });
 }

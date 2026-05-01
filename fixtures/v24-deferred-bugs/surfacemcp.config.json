@@ -1,0 +1,17 @@
+{
+  "surfaces": [
+    {
+      "name": "v24-deferred-bugs",
+      "stack": "vite",
+      "root": ".",
+      "baseUrl": "http://localhost:5780",
+      "port": 3107,
+      "launchDevCommand": "npm run dev",
+      "watchPaths": ["src"],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [],
+      "excludedRoutes": []
+    }
+  ]
+}

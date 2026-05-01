@@ -77,6 +77,7 @@ export function createPerfCollector(opts: PerfCollectorOptions): PerfCollector {
         longTasks: injectionFailed ? [] : drained.longTasks,
         heapSamples: heapSampling ? [...heapSamples] : [],
         renderEvents: injectionFailed ? [] : drained.renderEvents,
+        navigationEvents: [...drained.navigationEvents],  // V24: surface for classifyCancelMissing
         cdpConsoleErrors: drained.consoleErrors,
       };
 

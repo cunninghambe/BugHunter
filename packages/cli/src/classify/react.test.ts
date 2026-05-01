@@ -50,9 +50,32 @@ describe('classifyReactErrors', () => {
     expect(detections[1].kind).toBe('react_error');
   });
 
-  it('returns empty array for non-React errors', () => {
+  it('returns console_error for non-React errors (V24 fallthrough)', () => {
     const errors = [makeError('TypeError: Cannot read property of undefined')];
     const detections = classifyReactErrors(errors, '/page');
-    expect(detections).toHaveLength(0);
+    expect(detections).toHaveLength(1);
+    expect(detections[0].kind).toBe('console_error');
+    expect(detections[0].rootCause).toBe('TypeError: Cannot read property of undefined');
+  });
+
+  it('emits console_error with stack trace when provided (V24 fallthrough)', () => {
+    const errors = [makeError('Unchecked error', 'at foo.ts:1:1')];
+    const detections = classifyReactErrors(errors, '/checkout');
+    expect(detections).toHaveLength(1);
+    expect(detections[0].kind).toBe('console_error');
+    expect(detections[0].stackTrace).toBe('at foo.ts:1:1');
+  });
+
+  it('mixes all three kinds in a single batch (V24 extended)', () => {
+    const errors = [
+      makeError('Hydration failed because the initial UI does not match'),
+      makeError('Warning: Each child in a list should have a unique "key" prop.'),
+      makeError('TypeError: Cannot read property of undefined'),
+    ];
+    const detections = classifyReactErrors(errors, '/page');
+    expect(detections).toHaveLength(3);
+    expect(detections[0].kind).toBe('hydration_mismatch');
+    expect(detections[1].kind).toBe('react_error');
+    expect(detections[2].kind).toBe('console_error');
   });
 });

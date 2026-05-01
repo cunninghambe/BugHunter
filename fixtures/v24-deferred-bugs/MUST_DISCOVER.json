@@ -1,0 +1,10 @@
+{
+  "pages": [
+    { "route": "/" },
+    { "route": "/long-list" },
+    { "route": "/error-toast" },
+    { "route": "/hydration" },
+    { "route": "/cancel" },
+    { "route": "/a11y" }
+  ]
+}
