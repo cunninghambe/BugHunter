@@ -2,6 +2,7 @@
 // Pure function; no playwright-core dependency.
 
 import type { NetworkEvent, NetworkRequestEvent, NetworkResponseEvent } from './cdp-session.js';
+import type { NetworkRequest } from '../types.js';
 
 export type HarEntry = {
   startedDateTime: string;
@@ -72,6 +73,31 @@ function parseQueryString(url: string): Array<{ name: string; value: string }> {
 function cdpTimestampToMs(ts: number): number {
   // CDP timestamps are in seconds since epoch
   return ts * 1000;
+}
+
+/**
+ * Convert HAR entries into the NetworkRequest shape consumed by classifiers.
+ * Used by the UI execute path to feed classifyNetworkRequests / classifyMissingStateChange
+ * with real HAR-captured data instead of an empty array (audit-found defect).
+ */
+export function harEntriesToNetworkRequests(entries: HarEntry[]): NetworkRequest[] {
+  const out: NetworkRequest[] = [];
+  for (const e of entries) {
+    let path: string;
+    try {
+      const u = new URL(e.request.url);
+      path = u.pathname + u.search;
+    } catch {
+      path = e.request.url;
+    }
+    out.push({
+      method: e.request.method,
+      path,
+      status: e.response.status,
+      duration: e.time,
+    });
+  }
+  return out;
 }
 
 /** Convert a set of CDP Network.* events into a HAR 1.2 log. */

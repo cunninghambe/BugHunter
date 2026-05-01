@@ -18,6 +18,7 @@ import { XSS_OBSERVER_START_SCRIPT, XSS_OBSERVER_DRAIN_SCRIPT } from '../securit
 import type { XssContext } from '../types.js';
 import { classifyConsoleErrors } from '../classify/console.js';
 import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
+import { harEntriesToNetworkRequests } from '../adapters/har-writer.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
 import { classifyVisualAnomaliesConsistent } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
@@ -245,11 +246,23 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
       // Perf drain: collect vitals/HAR after the action completes
       if (perfCollector !== undefined && tc.action.via === 'ui') {
-        const { perf } = await perfCollector.drain(result.occurrenceId).catch(err => {
+        const { perf, har } = await perfCollector.drain(result.occurrenceId).catch(err => {
           log.warn('perf-collector: drain failed', { err: String(err), occurrenceId: result.occurrenceId });
           return { perf: { occurrenceId: result.occurrenceId, webVitals: [], longTasks: [], heapSamples: [], renderEvents: [] }, har: { log: { version: '1.2' as const, creator: { name: 'bughunter', version: '0.6' }, entries: [] } } };
         });
         perfArtifacts.set(result.occurrenceId, perf);
+
+        // Audit-fix: HAR entries → NetworkRequest[] for UI-path classification.
+        // Without this, network_5xx / network_4xx_unexpected / 404_for_linked_route
+        // could only fire on direct API tests; UI tests had postState.networkRequests = []
+        // hardcoded so the classifier saw nothing.
+        if (har.log.entries.length > 0 && result.postState !== undefined) {
+          const networkRequests = harEntriesToNetworkRequests(har.log.entries);
+          result.postState.networkRequests = networkRequests;
+          const networkBugs = classifyNetworkRequests(networkRequests, tc.expectedOutcome, true);
+          result.bugs.push(...networkBugs);
+          if (networkBugs.length > 0) result.passed = false;
+        }
       }
 
       return result;
