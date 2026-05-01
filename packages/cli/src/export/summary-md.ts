@@ -2,6 +2,7 @@
 // Spec §6.5 exact template. Pure function — no I/O.
 
 import type { BugCluster, Severity } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import { severityForCluster } from './severity.js';
 import type { DiffSummary, FailOnRule } from './fail-on.js';
 import { describeFailOn } from './fail-on.js';
@@ -54,7 +55,7 @@ export function renderSummaryMd(opts: SummaryMdOptions): string {
   const top = topFindings(clusters);
   const topRows = top.map(c => {
     const sev = severityForCluster(c);
-    const file = c.suspectedFiles[0] ?? 'unknown';
+    const file = c.suspectedFiles[0] !== undefined ? suspectedFilePath(c.suspectedFiles[0]) : 'unknown';
     const desc = c.rootCause.slice(0, 60);
     return `| \`${c.id.slice(0, 8)}\` | ${c.kind} | ${sev} | ${file} | ${desc} |`;
   }).join('\n');

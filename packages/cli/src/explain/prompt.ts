@@ -1,4 +1,5 @@
 import type { BugCluster } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import type { FileExcerpt } from './excerpt.js';
 
 const MAX_PROMPT_CHARS = 100_000;
@@ -31,7 +32,7 @@ export function renderPrompt(cluster: BugCluster, excerpts: FileExcerpt[]): stri
 - Identity: ${cluster.signatureKey ?? '(none)'}
 - Cluster size: ${cluster.clusterSize}
 - Root cause text: "${cluster.rootCause}"
-- Suspected files: ${cluster.suspectedFiles.join(', ')}
+- Suspected files: ${cluster.suspectedFiles.map(suspectedFilePath).join(', ')}
 
 ${evidenceSection}
 

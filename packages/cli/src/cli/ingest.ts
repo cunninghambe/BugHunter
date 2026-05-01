@@ -17,7 +17,7 @@ const IngestClusterSchema = z.object({
   firstSeenAt: z.string(),
   lastSeenAt: z.string(),
   occurrences: z.array(z.unknown()),
-  suspectedFiles: z.array(z.string()),
+  suspectedFiles: z.array(z.union([z.string(), z.object({ path: z.string(), line: z.number().optional(), reason: z.string().optional() })])),
   fixHints: z.array(z.string()),
   thirdPartyOrGenerated: z.boolean(),
   signatureKey: z.string().optional(),

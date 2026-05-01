@@ -3,6 +3,7 @@
 // §3.20 invocation, §3.27 result, §3.28 location, §3.49 reportingDescriptor.
 
 import type { BugCluster, BugKind } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import type { DetectorMetadata } from '../detectors/registry.js';
 import { DETECTOR_REGISTRY_MAP } from '../detectors/registry.js';
 import { severityForCluster, severityToSarifLevel, severityToSarifSecurity } from './severity.js';
@@ -115,8 +116,9 @@ export function renderSarif(clusters: BugCluster[], state: SarifRunState): Sarif
 
   const results: SarifResult[] = clusters.map(cluster => {
     const severity = severityForCluster(cluster);
-    const fileUri = cluster.suspectedFiles.length > 0
-      ? toSarifUri(cluster.suspectedFiles[0] ?? 'unknown')
+    const firstFile = cluster.suspectedFiles[0];
+    const fileUri = firstFile !== undefined
+      ? toSarifUri(suspectedFilePath(firstFile))
       : 'unknown';
     const replayCmd = cluster.occurrences[0]?.fullArtifacts ? cluster.occurrences[0].replayCommand : undefined;
 

@@ -1,6 +1,7 @@
 // v0.29: GitLab Security Report 15.0.0 emitter.
 
 import type { BugCluster } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import type { DetectorMetadata } from '../detectors/registry.js';
 import { DETECTOR_REGISTRY_MAP } from '../detectors/registry.js';
 import { severityForCluster, severityToGitlabSeverity } from './severity.js';
@@ -65,7 +66,7 @@ export function renderGitlab(clusters: BugCluster[], startedAt: string): GitlabR
       severity: severityToGitlabSeverity(severity),
       scanner: { id: 'bughunter', name: 'BugHunter' },
       location: {
-        file: cluster.suspectedFiles[0] ?? 'unknown',
+        file: cluster.suspectedFiles[0] !== undefined ? suspectedFilePath(cluster.suspectedFiles[0]) : 'unknown',
         start_line: 1,
       },
       identifiers,

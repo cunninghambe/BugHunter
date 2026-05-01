@@ -1,5 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { SuspectedFileLike } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 
 export type FileExcerpt = {
   path: string;
@@ -25,10 +27,11 @@ function readTruncated(filePath: string, maxLines: number): { lines: string[] } 
   return { lines: [...head, `... (omitted ${omitted} lines)`, ...tail] };
 }
 
-export function excerptSuspectedFiles(suspectedFiles: string[], projectDir: string): FileExcerpt[] {
+export function excerptSuspectedFiles(suspectedFiles: SuspectedFileLike[], projectDir: string): FileExcerpt[] {
   const results: FileExcerpt[] = [];
 
-  for (const relPath of suspectedFiles.slice(0, 3)) {
+  for (const entry of suspectedFiles.slice(0, 3)) {
+    const relPath = suspectedFilePath(entry);
     if (SKIP_PATTERNS.test(relPath)) continue;
 
     const absPath = path.isAbsolute(relPath) ? relPath : path.join(projectDir, relPath);

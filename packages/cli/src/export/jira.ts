@@ -3,6 +3,7 @@
 // We control the input so a full MD library is not needed.
 
 import type { BugCluster, BugKind, Severity } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import type { DetectorMetadata } from '../detectors/registry.js';
 import { DETECTOR_REGISTRY_MAP } from '../detectors/registry.js';
 import { severityForCluster, severityToJiraPriority } from './severity.js';
@@ -50,7 +51,7 @@ function buildAdf(cluster: BugCluster, replayCmd: string | undefined): AdfDocume
     heading(3, 'Summary'),
     para(cluster.rootCause),
     heading(3, 'Suspected Files'),
-    bulletList(cluster.suspectedFiles.length > 0 ? cluster.suspectedFiles : ['(none)']),
+    bulletList(cluster.suspectedFiles.length > 0 ? cluster.suspectedFiles.map(suspectedFilePath) : ['(none)']),
   ];
 
   if (replayCmd !== undefined) {
