@@ -8,6 +8,7 @@ import { canonicalStringify } from '../lib/canonical.js';
 import { openHistoryDb, previousRunForProject, clustersForRun, writeRunToHistory } from '../store/history.js';
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import { log } from '../log.js';
+import { fireNotifications } from '../notify/send.js';
 
 const BUGHUNTER_VERSION = '0.1.0';
 // v0.29: severity not yet in DetectorRegistryEntry — defaults to 'info' for all entries.
@@ -179,6 +180,35 @@ export function runEmit(
     writeJsonFile(paths.coverageFile, coverage);
   } catch (err) {
     log.warn('coverage.json write failed (non-fatal)', { error: err instanceof Error ? err.message : String(err) });
+  }
+
+  // v0.48: Fire notifications concurrently after summary.json is written.
+  if (runState.config.notifications !== undefined) {
+    const notifyConfig = runState.config.notifications;
+    fireNotifications({
+      config: notifyConfig,
+      projectDir: runState.projectDir,
+      runId: runState.runId,
+      projectName: runState.config.projectName,
+      clusters,
+      bySeverity: Object.fromEntries(Object.entries(bySeverity)) as Record<string, number>,
+      byKind,
+      crossRun,
+      actualRuntimeMs,
+    }).then(results => {
+      const failed = results.filter(r => !r.ok);
+      if (failed.length > 0) {
+        log.warn('notify: some notifications failed', { count: failed.length });
+        if (notifyConfig.failOnNotifyError === true) {
+          process.exitCode = 1;
+        }
+      }
+    }).catch(err => {
+      log.warn('notify: unexpected error', { error: err instanceof Error ? err.message : String(err) });
+      if (notifyConfig.failOnNotifyError === true) {
+        process.exitCode = 1;
+      }
+    });
   }
 
   const skipLines = skipReasons.map(r => `Skipped: ${r.reason} (${r.count})`);

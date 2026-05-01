@@ -34,6 +34,7 @@ import { publishCommand } from './publish.js';
 import { bisectCommand } from './bisect/bisect-cmd.js';
 import { runBisectStep } from './bisect/bisect-step.js';
 import { calibrateCommand, CalibrateSetupError, CalibrateEnvironmentError, CalibrateGoldError, CalibrateRunError } from './calibrate.js';
+import { notifyTestCommand } from './notify-test.js';
 import type { DetectorStatus } from '../detectors/registry.js';
 import type { BugKind, PaletteVariant } from '../types.js';
 import { log } from '../log.js';
@@ -672,6 +673,13 @@ async function main(): Promise<void> {
             throw e;
           }
         }
+        break;
+      }
+
+      case 'notify-test': {
+        await notifyTestCommand(projectDir, {
+          json: flags['json'] === true,
+        });
         break;
       }
 
