@@ -116,3 +116,34 @@ export function pruneRuns(projectDir: string, maxAgeMs: number): string[] {
 }
 
 export { historyDbPath } from './history.js';
+
+export type BisectRunPaths = {
+  bisectRunDir: string;
+  actionLogFile: string;
+  clusterFile: string;
+  bisectConfigFile: string;
+  logFile: string;
+  resultFile: string;
+  stateFile: string;
+  commitsDir: string;
+};
+
+/** v0.35: filesystem layout for .bughunter/bisect-runs/<bisectId>/. */
+export function bisectRunPaths(projectDir: string, bisectId: string): BisectRunPaths {
+  const bisectRunDir = path.join(projectDir, '.bughunter', 'bisect-runs', bisectId);
+  return {
+    bisectRunDir,
+    actionLogFile: path.join(bisectRunDir, 'action-log.json'),
+    clusterFile: path.join(bisectRunDir, 'cluster.json'),
+    bisectConfigFile: path.join(bisectRunDir, 'bisect-config.json'),
+    logFile: path.join(bisectRunDir, 'log.json'),
+    resultFile: path.join(bisectRunDir, 'result.json'),
+    stateFile: path.join(bisectRunDir, 'state.json'),
+    commitsDir: path.join(bisectRunDir, 'commits'),
+  };
+}
+
+/** v0.35: worktree path for a bisect session. */
+export function bisectWorktreePath(projectDir: string, bisectId: string): string {
+  return path.join(projectDir, '.bughunter', 'bisect-wt', bisectId);
+}

@@ -31,6 +31,8 @@ import { exportCommand, parseExportArgs } from './export.js';
 import { coverageCommand } from './coverage.js';
 import { ciCommand } from './ci.js';
 import { publishCommand } from './publish.js';
+import { bisectCommand } from './bisect/bisect-cmd.js';
+import { runBisectStep } from './bisect/bisect-step.js';
 import type { DetectorStatus } from '../detectors/registry.js';
 import type { BugKind, PaletteVariant } from '../types.js';
 import { log } from '../log.js';
@@ -62,6 +64,10 @@ Usage:
   bughunter unsuppress <pattern>
   bughunter triage [--interactive] [--run-id <id>]
   bughunter explain <clusterId> [--no-cache] [--run-id <id>]
+  bughunter bisect <bug-id> [--commit-range <a..b>] [--consensus <n>] [--threshold <m>]
+                            [--strict] [--build-command <cmd>] [--app-command <cmd>]
+                            [--resume] [--no-cleanup] [--format json|text] [--json-log]
+                            [--quiet] [--no-build]
   bughunter export <runId> --format <sarif|github|gitlab|csv|linear|jira>
                            [--out <path>] [--severity-min <level>] [--truncate <n>] [--no-third-party]
   bughunter ci [run-options] [--runId <id>] [--fail-on <spec>]
@@ -125,6 +131,17 @@ Performance / heap:
   --heap-snapshot-frequency <auto|n>  Snapshot frequency (default 'auto')
   --heap-diff-min-instances <n>  Min instances for diff (default 10)
   --heap-diff-min-bytes <n>   Min bytes for diff (default 5000000)
+
+Cross-run / regression / history:
+  bughunter bisect <bug-id> [--commit-range <a..b>] [--consensus <n>] [--threshold <m>]
+                            [--strict] [--build-command <cmd>] [--app-command <cmd>]
+                            [--resume] [--no-cleanup] [--format json|text] [--json-log]
+                            [--quiet] [--no-build]
+                              Binary-search for the commit that introduced a bug.
+                              <bug-id>: bugIdentity (16-hex), cluster id (cuid), or occurrenceId.
+                              Requires bisect.appCommand in config (and bisect.buildCommand if
+                              the project needs a build step).
+  (see also: bughunter diff, bughunter history, bughunter aging)
 
 Diagnostics & introspection:
   bughunter doctor [--format table|json]
@@ -547,6 +564,44 @@ async function main(): Promise<void> {
           sha: typeof flags['sha'] === 'string' ? flags['sha'] : undefined,
           report: typeof flags['report'] === 'string' ? flags['report'] : undefined,
         });
+        break;
+      }
+
+      case 'bisect': {
+        const bisectBugId = args[0] ?? '';
+        const strict = flags['strict'] === true;
+        const consensusN = typeof flags['consensus'] === 'string' ? parseInt(flags['consensus'], 10) : 3;
+        const thresholdM = typeof flags['threshold'] === 'string'
+          ? parseInt(flags['threshold'], 10)
+          : Math.ceil(consensusN / 2);
+        await bisectCommand(projectDir, bisectBugId, {
+          commitRange: typeof flags['commit-range'] === 'string' ? flags['commit-range'] : undefined,
+          consensus: strict ? 1 : consensusN,
+          threshold: strict ? 1 : thresholdM,
+          strict,
+          buildCommand: typeof flags['build-command'] === 'string' ? flags['build-command'] : undefined,
+          appCommand: typeof flags['app-command'] === 'string' ? flags['app-command'] : undefined,
+          resume: flags['resume'] === true,
+          noCleanup: flags['no-cleanup'] === true,
+          format: flags['format'] === 'json' ? 'json' : 'text',
+          jsonLog: flags['json-log'] === true,
+          quiet: flags['quiet'] === true,
+          noBuild: flags['no-build'] === true,
+        });
+        break;
+      }
+
+      case 'bisect-step': {
+        // Hidden subcommand: invoked by git bisect run — not listed in USAGE.
+        const stepBugId = typeof flags['bug-id'] === 'string' ? flags['bug-id'] : '';
+        const bisectId = typeof flags['bisect-id'] === 'string' ? flags['bisect-id'] : '';
+        const worktreeDir = typeof flags['worktree-dir'] === 'string' ? flags['worktree-dir'] : process.cwd();
+        const stepProjectDir = typeof flags['project-dir'] === 'string' ? flags['project-dir'] : projectDir;
+        if (stepBugId === '' || bisectId === '') {
+          process.stderr.write('bisect-step: --bug-id and --bisect-id are required\n');
+          process.exit(125);
+        }
+        await runBisectStep({ bugId: stepBugId, bisectId, projectDir: stepProjectDir, worktreeDir });
         break;
       }
 

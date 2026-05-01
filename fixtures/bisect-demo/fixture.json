@@ -1,0 +1,35 @@
+{
+  "description": "12-commit bisect demo: commit 7 introduces dom_error_text bug",
+  "totalCommits": 12,
+  "introducingCommitIndex": 7,
+  "bugKind": "dom_error_text",
+  "errorText": "Something went wrong",
+  "route": "/products",
+  "role": "user",
+  "expectedBisectVisits": 4,
+  "commits": [
+    { "index": 1, "label": "clean", "hasBug": false, "buildBreaks": false },
+    { "index": 2, "label": "clean", "hasBug": false, "buildBreaks": false },
+    { "index": 3, "label": "clean", "hasBug": false, "buildBreaks": false },
+    { "index": 4, "label": "clean", "hasBug": false, "buildBreaks": false },
+    { "index": 5, "label": "clean-with-broken-build", "hasBug": false, "buildBreaks": true },
+    { "index": 6, "label": "clean", "hasBug": false, "buildBreaks": false },
+    { "index": 7, "label": "introduces-bug", "hasBug": true, "buildBreaks": false },
+    { "index": 8, "label": "carries-bug", "hasBug": true, "buildBreaks": false },
+    { "index": 9, "label": "carries-bug", "hasBug": true, "buildBreaks": false },
+    { "index": 10, "label": "carries-bug", "hasBug": true, "buildBreaks": false },
+    { "index": 11, "label": "carries-bug", "hasBug": true, "buildBreaks": false },
+    { "index": 12, "label": "carries-bug-head", "hasBug": true, "buildBreaks": false }
+  ],
+  "bisectConfig": {
+    "buildCommand": "",
+    "appCommand": "node server.js",
+    "appReadyUrl": "http://localhost:3101/",
+    "appReadyTimeoutMs": 10000,
+    "buildTimeoutMs": 30000,
+    "consensusRuns": 1,
+    "consensusThreshold": 1,
+    "killGracePeriodMs": 1000,
+    "resetCommandsBetweenCommits": []
+  }
+}

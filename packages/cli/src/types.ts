@@ -1284,6 +1284,8 @@ export type BugHunterConfig = {
     command: string;
     args?: string[];
   };
+  /** v0.35: git bisect configuration. */
+  bisect?: BisectConfig;
 };
 
 // --- v0.14 seed-data hook types ---
@@ -1567,4 +1569,84 @@ export type SeedHookExecution = {
   lifecyclePoint: 'beforeRun' | 'afterLogin' | 'perRole' | 'beforeExecute' | 'cleanup';
   /** Present when lifecyclePoint is 'afterLogin' or 'perRole'. */
   role?: string;
+};
+
+// --- v0.35 bisect types ---
+
+export type SkipReason =
+  | 'build_failed'
+  | 'app_start_timeout'
+  | 'replay_setup_failed'
+  | 'replay_inconclusive'
+  | 'flaky_on_commit'
+  | 'surface_revision_changed'
+  | 'unexpected_exit'
+  | 'bisect_unsupported_kind'
+  | 'bisect_nondeterministic_kind';
+
+export type BisectVerdict =
+  | { kind: 'good' }
+  | { kind: 'bad'; signal: BugSignal }
+  | { kind: 'skip'; reason: SkipReason };
+
+export type BugSignal = {
+  present: boolean;
+  confidence: 'high' | 'low';
+  reason: string;
+};
+
+/** Snapshot of a BugCluster stored at bisect-start so signal-classifier has stable criteria. */
+export type BisectClusterSnapshot = {
+  id: string;
+  kind: BugKind;
+  rootCause: string;
+  signatureKey?: string;
+  bugIdentity?: string;
+  endpoint?: string;
+  errorText?: string;
+  xssCanary?: string;
+};
+
+export type BisectLogEntry = {
+  ts: string;
+  sha: string;
+  verdict: BisectVerdict['kind'];
+  durationMs: number;
+  signal?: BugSignal;
+  skipReason?: SkipReason;
+  consensusVotes?: { present: number; absent: number; inconclusive: number };
+};
+
+export type BisectConfig = {
+  buildCommand?: string;
+  appCommand?: string;
+  appReadyUrl?: string;
+  appReadyTimeoutMs?: number;
+  buildTimeoutMs?: number;
+  consensusRuns?: number;
+  consensusThreshold?: number;
+  defaultRange?: string;
+  killGracePeriodMs?: number;
+  resetCommandsBetweenCommits?: string[];
+  appPortRange?: string;
+};
+
+export type BisectRunSummary = {
+  bisectId: string;
+  bugId: string;
+  occurrenceId: string;
+  runId: string;
+  commitRange: { good: string; bad: string };
+  introducingCommit?: {
+    sha: string;
+    author: string;
+    date: string;
+    subject: string;
+  };
+  status: 'found' | 'not_found' | 'all_skipped' | 'preflight_failed' | 'aborted';
+  commitsVisited: number;
+  commitsSkipped: number;
+  durationMs: number;
+  bisectLogPath: string;
+  actionLogPath: string;
 };
