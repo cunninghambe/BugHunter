@@ -24,7 +24,7 @@ import { harEntriesToNetworkRequests } from '../adapters/har-writer.js';
 import { classifyVitals } from '../classify/vitals.js';
 import { classifyLongTasks } from '../classify/long-tasks.js';
 import { classifyExcessiveRerenders } from '../classify/rerenders.js';
-import { classifyNPlusOne, classifyDedupMissing } from '../classify/request-hygiene.js';
+import { classifyNPlusOne, classifyDedupMissing, classifyCancelMissing } from '../classify/request-hygiene.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
 import { classifyVisualAnomaliesConsistent } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
@@ -312,7 +312,10 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
         });
         const nplusOneBugs = classifyNPlusOne(har, perfCfg?.requestHygiene?.nPlusOneThreshold);
         const dedupBugs = classifyDedupMissing(har);
-        const allPerfBugs = [...vitalsBugs, ...longTaskBugs, ...rerenderBugs, ...nplusOneBugs, ...dedupBugs];
+        // V24: wire request_cancellation_missing — requires NavigationEvent[] from CDP session.
+        // Returns [] when navigationEvents.length < 2 (single-page test), so no false positives.
+        const cancelBugs = classifyCancelMissing(har, perf.navigationEvents ?? []);
+        const allPerfBugs = [...vitalsBugs, ...longTaskBugs, ...rerenderBugs, ...nplusOneBugs, ...dedupBugs, ...cancelBugs];
         if (allPerfBugs.length > 0) {
           result.bugs.push(...allPerfBugs);
           result.passed = false;
