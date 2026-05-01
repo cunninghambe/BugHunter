@@ -1,22 +1,39 @@
 /**
- * Adapter wrapping the camofox HTTP MCP server (port 3104 by default).
+ * Browser MCP adapters — two implementations of BrowserMcpAdapter:
  *
- * Public interface stays selector-shaped so callers (dom-walker.ts, replay.ts,
- * phases/execute.ts) need no changes. This class internalises:
- *   - Tab tracking (single tab per session)
- *   - Snapshot → ref resolution (see browser-mcp-snapshot.ts)
- *   - JSON-RPC transport + envelope parsing
- *   - Error mapping to BrowserMcpError
+ * - CamofoxBrowserMcpAdapter (v0.49 default): uses @modelcontextprotocol/sdk Client
+ *   + StreamableHTTPClientTransport (mode:'http') or StdioClientTransport (mode:'stdio').
+ *   Honest naming: this adapter actually speaks MCP.
  *
- * URL convention: `baseUrl` is the base URL without `/mcp` (e.g.
- * "http://127.0.0.1:3104"). The adapter appends `/mcp` internally.
- * A trailing `/mcp` (with optional slash) is stripped for backward-compat.
+ * - CamofoxBrowserHttpAdapter (deprecated, was CamofoxBrowserMcpAdapter): hand-rolled
+ *   JSON-RPC over fetch. Kept for one minor version (v0.49); deleted in v0.50.
+ *   Use browserTransport:'http-legacy' to opt in; emits a deprecation warning.
  *
- * Limitation: `navigate`'s `extraHeaders` parameter is accepted but silently
- * dropped — camofox v0.1 has no per-tab header passthrough.
+ * Factory: makeBrowserAdapter(config) returns the correct implementation.
+ *
+ * Public interface (BrowserMcpAdapter) is unchanged — all 42 call-sites compile
+ * without modification. The 6 construction sites call makeBrowserAdapter(config) instead.
+ *
+ * URL convention: browserMcpUrl is the full MCP endpoint URL, e.g.
+ * "http://127.0.0.1:3104/mcp". For the legacy adapter, baseUrl strips the trailing
+ * "/mcp" and re-appends it internally (backward-compat).
+ *
+ * Concurrency: the SDK Client is concurrency-safe. Multiple callTool calls may be
+ * in flight on one Client. Callers sharing the Client (parallel tests via withTab)
+ * each bind their own tabId; no locking needed.
+ *
+ * dispose() must be called at run end (in a finally block). In-flight calls at
+ * dispose time are best-effort: the SDK cancels them and they reject with a transport
+ * error. The upstream phase is responsible for awaiting them before disposing.
+ *
+ * Do NOT log request/response bodies — they may contain cookies, JWTs, page content.
+ * Log only {tool, ok, latencyMs} at TRACE level when needed.
  */
 
 import * as fs from 'node:fs';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import {
   BrowserMcpError,
   classifyRpcError,
@@ -29,6 +46,7 @@ import {
 } from './browser-mcp-snapshot.js';
 import type { StructuredSelector, SnapshotNode } from './browser-mcp-snapshot.js';
 import type { TriggerSelectorHint } from '../types.js';
+import type { BugHunterConfig } from '../types.js';
 import { runEvaluateClick } from '../phases/click-runner.js';
 import type { EvaluateClickResult } from '../phases/click-runner.js';
 
@@ -160,31 +178,595 @@ export type RouteFulfillResponse = {
 /** Call to remove the route interception installed by routeFulfill. */
 export type UnregisterFn = () => Promise<void>;
 
-// Raw camofox result shapes.
-// Note: camofox v0.1 navigate returns {tabId, url} — the SPEC.md frozen surface
-// lists {tabId, ok, finalUrl, title?} but the running daemon returns {tabId, url}.
-// We accept both shapes: ok is optional (undefined = success), url/finalUrl interchangeable.
+// ---- Raw camofox result shapes (shared by both adapters) ----
+
 type CamofoxNavigateResult = { tabId: string; ok?: boolean; finalUrl?: string; url?: string; title?: string };
 type CamofoxSnapshotResult = { tabId: string; snapshot: string };
 type CamofoxScreenshotResult = { tabId: string; dataUrl?: string };
 type CamofoxEvaluateResult = { tabId: string; result?: unknown; value?: unknown };
 type CamofoxListTabsResult = { tabs: Array<{ tabId?: string; id?: string; url: string; title: string }> };
 
-type McpRpcEnvelope = {
-  result?: {
-    content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>;
-    isError?: boolean;
-  };
-  error?: { message?: string; code?: unknown };
+// ---- MCP SDK content block shape ----
+
+type SdkContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string }
+  | { type: string; [key: string]: unknown };
+
+type SdkCallToolResult = {
+  content: SdkContentBlock[];
+  isError?: boolean;
+  [key: string]: unknown;
+};
+
+// ---- SDK-based content parsers (used by CamofoxBrowserMcpAdapter) ----
+
+function sdkTextOf(content: SdkContentBlock[]): string | undefined {
+  for (const block of content) {
+    if (block.type === 'text' && 'text' in block) return String(block.text);
+  }
+  return undefined;
+}
+
+function sdkParseText<T>(result: SdkCallToolResult, tool: string): T {
+  const text = sdkTextOf(result.content);
+  if (text === undefined || text === '') {
+    throw new BrowserMcpError('transport', `No text content in camofox response for ${tool}`);
+  }
+  return JSON.parse(text) as T;
+}
+
+function sdkParseImage(result: SdkCallToolResult): { dataUrl: string } {
+  const block = result.content.find(b => b.type === 'image');
+  if (block?.type === 'image') {
+    return { dataUrl: `data:${block.mimeType};base64,${block.data}` };
+  }
+  // Fallback: text content may contain a JSON object with dataUrl
+  const text = sdkTextOf(result.content);
+  if (text !== undefined && text !== '') {
+    const parsed = JSON.parse(text) as { dataUrl?: string };
+    return { dataUrl: parsed.dataUrl ?? '' };
+  }
+  throw new BrowserMcpError('screenshot_failed', 'No image content in camofox screenshot response');
+}
+
+/** Strip Authorization / Cookie values from an error message (EC-7). */
+function sanitizeErrorMessage(msg: string): string {
+  return msg
+    .replace(/Authorization:\s*Bearer\s+\S+/gi, 'Authorization: Bearer [REDACTED]')
+    .replace(/Bearer\s+[A-Za-z0-9\-._~+/]+=*/g, 'Bearer [REDACTED]')
+    .replace(/Cookie:\s*\S+/gi, 'Cookie: [REDACTED]');
+}
+
+// ---- CamofoxBrowserMcpAdapter — SDK Client transport (v0.49 default) ----
+
+type McpAdapterOpts = {
+  mode: 'http' | 'stdio';
+  /** HTTP mode: full MCP endpoint URL (e.g. "http://127.0.0.1:3104/mcp"). */
+  url?: string;
+  /** Stdio mode: path to the camofox-mcp binary. */
+  command?: string;
+  /** Stdio mode: CLI arguments for the binary. */
+  args?: string[];
+  /** Stdio mode: additional environment variables for the subprocess. */
+  env?: Record<string, string>;
+  /** Bearer token for Authorization header. Falls back to CAMOFOX_MCP_KEY env var. */
+  authKey?: string;
+  /** Extra HTTP headers forwarded to the transport (HTTP mode only). */
+  extraHeaders?: Record<string, string>;
 };
 
 export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
+  private client?: Client;
+  private transport?: StreamableHTTPClientTransport | StdioClientTransport;
+  private currentTabId?: string;
+  private connectPromise?: Promise<void>;
+  private readonly opts: McpAdapterOpts;
+  /**
+   * Backward-compat: callers that passed a bare URL string pre-v49 get a
+   * CamofoxBrowserHttpAdapter delegate so existing tests and call-sites continue to work.
+   * The delegate is used for all BrowserMcpAdapter interface methods.
+   */
+  private readonly legacyDelegate?: CamofoxBrowserHttpAdapter;
+
+  /**
+   * Accepts either a full McpAdapterOpts object (v0.49+) or a bare URL string
+   * (pre-v49 compat). String form delegates to CamofoxBrowserHttpAdapter internally.
+   */
+  constructor(opts: McpAdapterOpts | string) {
+    if (typeof opts === 'string') {
+      this.opts = { mode: 'http', url: opts };
+      this.legacyDelegate = new CamofoxBrowserHttpAdapter(opts);
+    } else {
+      this.opts = opts;
+    }
+  }
+
+  // ---- Connection lifecycle ----
+
+  private async connect(): Promise<void> {
+    const client = new Client({ name: 'bughunter', version: '0.49.0' }, { capabilities: {} });
+
+    if (this.opts.mode === 'http') {
+      const url = new URL(this.opts.url ?? 'http://127.0.0.1:3104/mcp');
+      const authKey = this.opts.authKey ?? process.env['CAMOFOX_MCP_KEY'];
+      const headers: Record<string, string> = {
+        ...(authKey !== undefined ? { Authorization: `Bearer ${authKey}` } : {}),
+        ...(this.opts.extraHeaders ?? {}),
+      };
+      const transport = new StreamableHTTPClientTransport(url, {
+        requestInit: Object.keys(headers).length > 0 ? { headers } : undefined,
+      });
+      this.transport = transport;
+      await client.connect(transport);
+    } else {
+      if (this.opts.command === undefined) {
+        throw new BrowserMcpError('transport', 'browserMcpStdio.command is required for mcp-stdio transport');
+      }
+      const transport = new StdioClientTransport({
+        command: this.opts.command,
+        args: this.opts.args,
+        env: this.opts.env,
+        stderr: 'inherit',
+      });
+      this.transport = transport;
+      try {
+        await client.connect(transport);
+      } catch (err) {
+        throw new BrowserMcpError(
+          'transport',
+          `camofox-mcp subprocess failed to start: ${sanitizeErrorMessage(String(err))}`,
+          undefined,
+          err,
+        );
+      }
+    }
+
+    this.client = client;
+  }
+
+  private async ensureConnected(): Promise<Client> {
+    if (this.client !== undefined) return this.client;
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+    if (this.connectPromise === undefined) {
+      this.connectPromise = this.connect();
+    }
+    await this.connectPromise;
+    // connect() sets this.client synchronously before resolving — the eslint rule cannot see this
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    return this.client!;
+  }
+
+  async dispose(): Promise<void> {
+    if (this.legacyDelegate !== undefined) return; // legacy adapter has no resources to release
+    const c = this.client;
+    const t = this.transport;
+    this.client = undefined;
+    this.transport = undefined;
+    this.connectPromise = undefined;
+    if (c !== undefined) await c.close().catch(() => {});
+    if (t !== undefined) await t.close().catch(() => {});
+  }
+
+  // ---- Generic tool dispatcher (internal — accessible by V20/V22/V23 callers) ----
+
+  async tool<T>(name: string, args: Record<string, unknown>, expect: 'json' | 'image' = 'json'): Promise<T> {
+    const client = await this.ensureConnected();
+    let res: SdkCallToolResult;
+    try {
+      res = await client.callTool({ name, arguments: args }) as SdkCallToolResult;
+    } catch (err) {
+      throw new BrowserMcpError(
+        'transport',
+        `camofox ${name} transport error: ${sanitizeErrorMessage(String(err))}`,
+        undefined,
+        err,
+      );
+    }
+    if (res.isError === true) {
+      const msg = sdkTextOf(res.content) ?? 'Unknown MCP tool error';
+      throw new BrowserMcpError(classifyRpcError(msg, name), `camofox ${name} error: ${msg}`);
+    }
+    if (expect === 'image') return sdkParseImage(res) as T;
+    return sdkParseText<T>(res, name);
+  }
+
+  // ---- Private helpers ----
+
+  private requireTab(): string {
+    if (this.currentTabId === undefined) {
+      throw new BrowserMcpError('no_tab', 'Adapter has no active tab; call navigate(url) first');
+    }
+    return this.currentTabId;
+  }
+
+  private async resolveRef(tabId: string, selector: string | StructuredSelector): Promise<string> {
+    const raw = await this.tool<CamofoxSnapshotResult>('snapshot', { tabId });
+    const nodes = parseSnapshot(raw.snapshot);
+    if (nodes.length === 0) {
+      throw new BrowserMcpError('snapshot_failed', 'Snapshot parsed 0 elements; tab may have crashed');
+    }
+    const ref = resolveSelectorInSnapshot(selector, nodes);
+    if (ref !== null) return ref;
+
+    if (typeof selector !== 'string') {
+      throw new BrowserMcpError('element_not_found', 'No matching ref in snapshot', String(selector));
+    }
+    return this.resolveViaEvaluate(tabId, selector, nodes);
+  }
+
+  private async resolveViaEvaluate(tabId: string, selector: string, _nodes: SnapshotNode[]): Promise<string> {
+    const safeSelector = selector.replace(/'/g, "\\'");
+    const expr = `document.querySelector('${safeSelector}')?.outerHTML?.slice(0, 200) ?? null`;
+    let evalResult: CamofoxEvaluateResult;
+    try {
+      evalResult = await this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+    } catch {
+      throw new BrowserMcpError('element_not_found', 'No matching ref in snapshot or DOM', selector);
+    }
+
+    const html = String(evalResult.result ?? evalResult.value ?? '');
+    if (html === '' || html === 'null') {
+      throw new BrowserMcpError('element_not_found', 'No matching ref in snapshot or DOM', selector);
+    }
+
+    const fresh = await this.tool<CamofoxSnapshotResult>('snapshot', { tabId });
+    const freshNodes = parseSnapshot(fresh.snapshot);
+    const tagMatch = /^\.?(\w+)/.exec(selector);
+    const tag = tagMatch?.[1] ?? 'div';
+    const ref = resolveByHtml(html, tag, freshNodes);
+    if (ref === null) {
+      throw new BrowserMcpError(
+        'element_not_found',
+        'Element exists in DOM but has no accessible name in snapshot',
+        selector,
+      );
+    }
+    return ref;
+  }
+
+  private makeEvaluateScope(tabId: string) {
+    return {
+      evaluate: (script: string) =>
+        this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: script }).then(r => ({
+          value: r.result ?? r.value,
+        })),
+    };
+  }
+
+  private static escapeAttr(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  private async evaluateClickByCss(tabId: string, css: string): Promise<boolean> {
+    const expr = `(function(){var el=document.querySelector(${JSON.stringify(css)});if(!el)return false;var r=el.getBoundingClientRect();if(el.offsetParent===null&&(r.width===0||r.height===0))return false;el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window,button:0}));return true;})()`;
+    try {
+      const result = await this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+      return (result.result ?? result.value) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async evaluateClickByText(tabId: string, text: string): Promise<boolean> {
+    const expr = `(function(){var text=${JSON.stringify(text.toLowerCase())};var sel='button, a, [role="button"], [role="tab"], [role="link"]';var els=Array.from(document.querySelectorAll(sel));function visible(el){var r=el.getBoundingClientRect();return el.offsetParent!==null||(r.width>0&&r.height>0);}var candidates=els.filter(visible);var target=candidates.find(function(el){return(el.textContent||'').trim().toLowerCase()===text;})||candidates.find(function(el){return(el.textContent||'').toLowerCase().includes(text);});if(!target)return false;target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window,button:0}));return true;})()`;
+    try {
+      const result = await this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+      return (result.result ?? result.value) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ---- Public interface ----
+
+  async navigate(url: string, extraHeaders?: ExtraHeaders): Promise<NavigateResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.navigate(url, extraHeaders);
+    // extraHeaders silently dropped — camofox v0.1 has no per-tab header support.
+    // When extraHeaders is non-empty, the no-op is intentional (EC-14).
+    const args: Record<string, unknown> = this.currentTabId !== undefined
+      ? { tabId: this.currentTabId, url }
+      : { url };
+    const result = await this.tool<CamofoxNavigateResult>('navigate', args);
+    this.currentTabId = result.tabId;
+    if (result.ok === false) {
+      throw new BrowserMcpError('navigation_failed', `navigate returned ok:false for ${url}`);
+    }
+    return { url: result.finalUrl ?? result.url ?? url, title: result.title };
+  }
+
+  async click(selector: string | StructuredSelector): Promise<ClickResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.click(selector);
+    const tabId = this.requireTab();
+    if (typeof selector === 'string') {
+      await runEvaluateClick(this.makeEvaluateScope(tabId), selector);
+      return { clicked: true };
+    }
+    try {
+      const ref = await this.resolveRef(tabId, selector);
+      await this.tool<{ tabId: string; ok: boolean }>('click', { tabId, ref });
+      return { clicked: true };
+    } catch (err) {
+      if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
+        // Single retry after re-snapshot (dynamic-render race) — structured path only
+        const ref = await this.resolveRef(tabId, selector);
+        await this.tool<{ tabId: string; ok: boolean }>('click', { tabId, ref });
+        return { clicked: true };
+      }
+      throw err;
+    }
+  }
+
+  async type(selector: string | StructuredSelector, text: string): Promise<TypeResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.type(selector, text);
+    const tabId = this.requireTab();
+    try {
+      const ref = await this.resolveRef(tabId, selector);
+      await this.tool<{ tabId: string; ok: boolean }>('type', { tabId, ref, text, submit: false });
+      return { typed: true };
+    } catch (err) {
+      if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
+        const ref = await this.resolveRef(tabId, selector);
+        await this.tool<{ tabId: string; ok: boolean }>('type', { tabId, ref, text, submit: false });
+        return { typed: true };
+      }
+      throw err;
+    }
+  }
+
+  async scroll(selector: string, direction: 'up' | 'down', distance?: number): Promise<ScrollResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.scroll(selector, direction, distance);
+    const tabId = this.requireTab();
+    await this.tool<{ tabId: string; ok: boolean }>('scroll', {
+      tabId,
+      direction: toCamofoxScrollDirection(direction),
+      amount: distance ?? 500,
+    });
+    return { scrolled: true };
+  }
+
+  async snapshot(): Promise<SnapshotResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.snapshot();
+    const tabId = this.requireTab();
+    const result = await this.tool<CamofoxSnapshotResult>('snapshot', { tabId });
+    return { snapshot: result.snapshot };
+  }
+
+  async screenshot(outputPath?: string): Promise<ScreenshotResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.screenshot(outputPath);
+    const tabId = this.requireTab();
+    const result = await this.tool<CamofoxScreenshotResult>('screenshot', { tabId, fullPage: false }, 'image');
+    const base64 = result.dataUrl ?? '';
+    if (outputPath !== undefined) {
+      if (outputPath === '') throw new Error('screenshot: outputPath is empty — caller bug?');
+      const pngData = base64.replace(/^data:image\/\w+;base64,/, '');
+      fs.writeFileSync(outputPath, Buffer.from(pngData, 'base64'));
+      return { path: outputPath, data: base64 };
+    }
+    return { path: '', data: base64 };
+  }
+
+  async evaluate(script: string): Promise<EvaluateResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.evaluate(script);
+    const tabId = this.requireTab();
+    const result = await this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: script });
+    return { value: result.result ?? result.value };
+  }
+
+  async listTabs(): Promise<ListTabsResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.listTabs();
+    const result = await this.tool<CamofoxListTabsResult>('list_tabs', {});
+    const tabs = result.tabs.map(t => ({
+      id: t.tabId ?? t.id ?? '',
+      url: t.url,
+      title: t.title,
+    }));
+    return { tabs };
+  }
+
+  async closeTab(tabId: string): Promise<CloseTabResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.closeTab(tabId);
+    await this.tool<{ ok: boolean }>('close_tab', { tabId });
+    if (tabId === this.currentTabId) this.currentTabId = undefined;
+    return { closed: true };
+  }
+
+  async openTab(url: string, extraHeaders?: ExtraHeaders): Promise<{ tabId: string; finalUrl: string; title?: string }> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.openTab(url, extraHeaders);
+    const result = await this.tool<CamofoxNavigateResult>('navigate', { url });
+    if (result.ok === false) {
+      throw new BrowserMcpError('navigation_failed', `openTab navigate returned ok:false for ${url}`);
+    }
+    return {
+      tabId: result.tabId,
+      finalUrl: result.finalUrl ?? result.url ?? url,
+      title: result.title,
+    };
+  }
+
+  async closeTabExplicit(tabId: string): Promise<void> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.closeTabExplicit(tabId);
+    await this.tool<{ ok: boolean }>('close_tab', { tabId });
+  }
+
+  async cookies(urls?: string[]): Promise<CookiesResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.cookies(urls);
+    const tabId = this.requireTab();
+    const args: Record<string, unknown> = { tabId };
+    if (urls !== undefined && urls.length > 0) args.urls = urls;
+    return this.tool<CookiesResult>('cookies', args);
+  }
+
+  async clickByHint(hint: TriggerSelectorHint): Promise<ClickByHintResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.clickByHint(hint);
+    return this.clickByHintForTab(this.requireTab(), hint);
+  }
+
+  async setViewport(width: number, height: number): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.setViewport(width, height);
+    const tabId = this.requireTab();
+    try {
+      await this.tool<{ ok: boolean; width: number; height: number }>('set_viewport', { tabId, width, height });
+      return { ok: true };
+    } catch (err) {
+      const errMsg = String(err);
+      if (/unknown tool|tool not found|not registered/i.test(errMsg)) {
+        const expr = `(function(){window.resizeTo(${width},${height});window.dispatchEvent(new Event('resize'));return true;})()`;
+        try {
+          await this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+          return { ok: true };
+        } catch (fallbackErr) {
+          return { ok: false, reason: `set_viewport unavailable + resizeTo failed: ${String(fallbackErr)}` };
+        }
+      }
+      return { ok: false, reason: errMsg };
+    }
+  }
+
+  async routeFulfill(scope: RouteFulfillScope, response: RouteFulfillResponse): Promise<UnregisterFn> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.routeFulfill(scope, response);
+    const tabId = this.requireTab();
+    const args: Record<string, unknown> = {
+      tabId,
+      method: scope.method,
+      path: scope.path,
+      status: response.status,
+      body: response.body,
+      contentType: response.contentType ?? 'application/json',
+      ...(scope.bodyHash !== undefined ? { bodyHash: scope.bodyHash } : {}),
+    };
+    const result = await this.tool<{ fulfillId: string }>('route_fulfill', args);
+    const fulfillId = result.fulfillId;
+    return async () => {
+      await this.tool<{ ok: boolean }>('route_fulfill_remove', { tabId, fulfillId }).catch(() => {});
+    };
+  }
+
+  async withTab<T>(
+    url: string,
+    extraHeaders: ExtraHeaders | undefined,
+    fn: (scope: TabScope) => Promise<T>
+  ): Promise<T> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.withTab(url, extraHeaders, fn);
+    const { tabId } = await this.openTab(url, extraHeaders);
+    const scope = this.makeTabScope(tabId);
+    try {
+      return await fn(scope);
+    } finally {
+      await this.closeTabExplicit(tabId).catch(() => {});
+    }
+  }
+
+  private makeTabScope(tabId: string): TabScope {
+    return {
+      tabId,
+      navigate: (url, _extraHeaders?) =>
+        this.tool<CamofoxNavigateResult>('navigate', { tabId, url }).then(r => ({
+          url: r.finalUrl ?? r.url ?? url,
+          title: r.title,
+        })),
+      click: (selector) => {
+        if (typeof selector === 'string') {
+          return runEvaluateClick(this.makeEvaluateScope(tabId), selector).then(() => ({ clicked: true }));
+        }
+        return this.resolveRef(tabId, selector).then(ref =>
+          this.tool<{ tabId: string; ok: boolean }>('click', { tabId, ref }).then(() => ({ clicked: true }))
+        );
+      },
+      clickWithObservation: (selector) => {
+        if (typeof selector === 'string') {
+          return runEvaluateClick(this.makeEvaluateScope(tabId), selector);
+        }
+        return this.resolveRef(tabId, selector)
+          .then(ref => this.tool<{ tabId: string; ok: boolean }>('click', { tabId, ref }))
+          .then((): EvaluateClickResult & { ok: true } => ({
+            ok: true,
+            accessibleNameAbsent: false,
+            ariaLabelSource: null,
+            tagName: 'unknown',
+            role: null,
+          }));
+      },
+      type: (selector, text) => this.resolveRef(tabId, selector).then(ref =>
+        this.tool<{ tabId: string; ok: boolean }>('type', { tabId, ref, text, submit: false }).then(() => ({ typed: true }))
+      ),
+      scroll: (_selector, direction, distance?) =>
+        this.tool<{ tabId: string; ok: boolean }>('scroll', {
+          tabId,
+          direction: toCamofoxScrollDirection(direction),
+          amount: distance ?? 500,
+        }).then(() => ({ scrolled: true })),
+      snapshot: () =>
+        this.tool<CamofoxSnapshotResult>('snapshot', { tabId }).then(r => ({ snapshot: r.snapshot })),
+      screenshot: (outputPath?) =>
+        this.tool<CamofoxScreenshotResult>('screenshot', { tabId, fullPage: false }, 'image').then(r => {
+          const base64 = r.dataUrl ?? '';
+          if (outputPath !== undefined) {
+            if (outputPath === '') throw new Error('screenshot: outputPath is empty — caller bug?');
+            const pngData = base64.replace(/^data:image\/\w+;base64,/, '');
+            fs.writeFileSync(outputPath, Buffer.from(pngData, 'base64'));
+            return { path: outputPath, data: base64 };
+          }
+          return { path: '', data: base64 };
+        }),
+      evaluate: (script) =>
+        this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: script }).then(r => ({
+          value: r.result ?? r.value,
+        })),
+      clickByHint: (hint) => this.clickByHintForTab(tabId, hint),
+    };
+  }
+
+  private async clickByHintForTab(tabId: string, hint: TriggerSelectorHint): Promise<ClickByHintResult> {
+    if (hint.testId !== undefined && hint.testId !== '') {
+      if (await this.evaluateClickByCss(tabId, `[data-testid="${CamofoxBrowserMcpAdapter.escapeAttr(hint.testId)}"]`)) {
+        return { clicked: true, matchedBy: 'testId' };
+      }
+    }
+    if (hint.ariaLabel !== undefined && hint.ariaLabel !== '') {
+      if (await this.evaluateClickByCss(tabId, `[aria-label="${CamofoxBrowserMcpAdapter.escapeAttr(hint.ariaLabel)}"]`)) {
+        return { clicked: true, matchedBy: 'ariaLabel' };
+      }
+    }
+    if (hint.text !== undefined && hint.text !== '') {
+      if (await this.evaluateClickByText(tabId, hint.text)) {
+        return { clicked: true, matchedBy: 'text' };
+      }
+    }
+
+    const hasPopulatedField =
+      (hint.testId !== undefined && hint.testId !== '') ||
+      (hint.ariaLabel !== undefined && hint.ariaLabel !== '') ||
+      (hint.text !== undefined && hint.text !== '');
+    return { clicked: false, reason: hasPopulatedField ? 'not_found' : 'no_hint_fields' };
+  }
+}
+
+// ---- CamofoxBrowserHttpAdapter — deprecated legacy (hand-rolled JSON-RPC) ----
+
+/**
+ * @deprecated Use CamofoxBrowserMcpAdapter (SDK Client) instead.
+ * This class was previously named CamofoxBrowserMcpAdapter. Renamed in v0.49 to
+ * CamofoxBrowserHttpAdapter to reflect what it actually does: hand-rolled JSON-RPC
+ * over fetch, targeting the camofox-mcp HTTP server at port 3104.
+ *
+ * Will be removed in v0.50. Select via browserTransport:'http-legacy' in config,
+ * or construct directly for testing. Each construction emits a console.warn.
+ */
+export class CamofoxBrowserHttpAdapter implements BrowserMcpAdapter {
   private readonly baseUrl: string;
   private currentTabId?: string;
+  private static deprecationWarned = false;
 
   constructor(baseUrl: string = 'http://127.0.0.1:3100') {
-    // Strip one trailing /mcp (with optional slash) for backward-compat, then
-    // strip any remaining trailing slash — the adapter appends /mcp internally.
+    // Emit deprecation warning once per process (not per instance)
+    if (!CamofoxBrowserHttpAdapter.deprecationWarned) {
+      CamofoxBrowserHttpAdapter.deprecationWarned = true;
+      console.warn(
+        '[bughunter] CamofoxBrowserHttpAdapter (browserTransport: http-legacy) is deprecated; ' +
+        'switch to mcp-http (SDK Client) before v0.50.'
+      );
+    }
     this.baseUrl = baseUrl.replace(/\/mcp\/?$/, '').replace(/\/$/, '');
   }
 
@@ -223,7 +805,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
       throw new BrowserMcpError(classifyRpcError(msg, tool), `camofox ${tool} error: ${msg}`, undefined);
     }
 
-    // MCP tool-level errors use result.isError = true with text content
     if (envelope.result?.isError === true) {
       const msg = envelope.result.content?.[0]?.text ?? 'Unknown MCP tool error';
       throw new BrowserMcpError(classifyRpcError(msg, tool), `camofox ${tool} error: ${msg}`, undefined);
@@ -251,7 +832,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     const ref = resolveSelectorInSnapshot(selector, nodes);
     if (ref !== null) return ref;
 
-    // Evaluate fallback for .class, :nth-of-type, #id, unknown selectors
     if (typeof selector !== 'string') {
       throw new BrowserMcpError('element_not_found', `No matching ref in snapshot`, String(selector));
     }
@@ -273,7 +853,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
       throw new BrowserMcpError('element_not_found', `No matching ref in snapshot or DOM`, selector);
     }
 
-    // Re-snapshot and walk
     const fresh = await this.mcpCall<CamofoxSnapshotResult>('snapshot', { tabId });
     const freshNodes = parseSnapshot(fresh.snapshot);
     const tagMatch = /^\.?(\w+)/.exec(selector);
@@ -289,9 +868,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     return ref;
   }
 
-  // ---- Private helpers ----
-
-  /** Thin evaluate-scope shim for runEvaluateClick / runFormSubmit. */
   private makeEvaluateScope(tabId: string) {
     return {
       evaluate: (script: string) =>
@@ -300,8 +876,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
         })),
     };
   }
-
-  // ---- Private evaluate-click helpers (React-safe MouseEvent dispatch) ----
 
   private static escapeAttr(value: string): string {
     return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -327,27 +901,18 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     }
   }
 
-  // ---- Public interface ----
-
   async navigate(url: string, _extraHeaders?: ExtraHeaders): Promise<NavigateResult> {
-    // extraHeaders silently dropped — camofox v0.1 has no per-tab header support
     const args: Record<string, unknown> = this.currentTabId !== undefined
       ? { tabId: this.currentTabId, url }
       : { url };
     const result = await this.mcpCall<CamofoxNavigateResult>('navigate', args);
     this.currentTabId = result.tabId;
-    // Only throw if ok is explicitly false; undefined means the field is absent (real camofox shape)
     if (result.ok === false) {
       throw new BrowserMcpError('navigation_failed', `navigate returned ok:false for ${url}`);
     }
     return { url: result.finalUrl ?? result.url ?? url, title: result.title };
   }
 
-  /**
-   * Click an element. String selectors use a single evaluate round-trip (v0.12),
-   * bypassing the camofox a11y-snapshot lookup. Structured selectors continue
-   * through the snapshot path — they have unambiguous a11y-tree refs.
-   */
   async click(selector: string | StructuredSelector): Promise<ClickResult> {
     const tabId = this.requireTab();
     if (typeof selector === 'string') {
@@ -360,7 +925,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
       return { clicked: true };
     } catch (err) {
       if (err instanceof BrowserMcpError && err.kind === 'element_not_found') {
-        // Single retry after re-snapshot (dynamic-render race) — structured path only
         const ref = await this.resolveRef(tabId, selector);
         await this.mcpCall<{ tabId: string; ok: boolean }>('click', { tabId, ref });
         return { clicked: true };
@@ -369,10 +933,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     }
   }
 
-  /**
-   * Type into an element. Accepts a CSS selector string or structured {role, name?, nth?}.
-   * Takes one fresh snapshot per call. Retries once on element_not_found.
-   */
   async type(selector: string | StructuredSelector, text: string): Promise<TypeResult> {
     const tabId = this.requireTab();
     try {
@@ -389,10 +949,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     }
   }
 
-  /**
-   * Scroll the page. The `selector` parameter is accepted for API compatibility
-   * but ignored — camofox is whole-page scroll only.
-   */
   async scroll(_selector: string, direction: 'up' | 'down', distance?: number): Promise<ScrollResult> {
     const tabId = this.requireTab();
     await this.mcpCall<{ tabId: string; ok: boolean }>('scroll', {
@@ -409,10 +965,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     return { snapshot: result.snapshot };
   }
 
-  /**
-   * Take a screenshot. If `outputPath` is provided, writes the base64 PNG to disk.
-   * Returns `{path: outputPath, data: base64}` or `{path: '', data: base64}`.
-   */
   async screenshot(outputPath?: string): Promise<ScreenshotResult> {
     const tabId = this.requireTab();
     const result = await this.mcpCall<CamofoxScreenshotResult>('screenshot', { tabId, fullPage: false }, 'image');
@@ -448,9 +1000,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     return { closed: true };
   }
 
-  /** Create a new tab unconditionally. Does NOT mutate currentTabId. */
   async openTab(url: string, _extraHeaders?: ExtraHeaders): Promise<{ tabId: string; finalUrl: string; title?: string }> {
-    // extraHeaders silently dropped — camofox v0.1 has no per-tab header support
     const result = await this.mcpCall<CamofoxNavigateResult>('navigate', { url });
     if (result.ok === false) {
       throw new BrowserMcpError('navigation_failed', `openTab navigate returned ok:false for ${url}`);
@@ -462,7 +1012,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     };
   }
 
-  /** Close a specific tab by id. Does NOT mutate currentTabId. */
   async closeTabExplicit(tabId: string): Promise<void> {
     await this.mcpCall<{ ok: boolean }>('close_tab', { tabId });
   }
@@ -480,17 +1029,11 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
 
   async setViewport(width: number, height: number): Promise<{ ok: true } | { ok: false; reason: string }> {
     const tabId = this.requireTab();
-    // Prefer the native set_viewport MCP tool (Playwright setViewportSize) which
-    // triggers a real layout reflow so SPAs that listen for resize events
-    // actually re-render. Falls back to evaluate(window.resizeTo) for older
-    // camofox-mcp builds — that fallback is mostly cosmetic; many SPAs ignore
-    // synthetic resize events.
     try {
       await this.mcpCall<{ ok: boolean; width: number; height: number }>('set_viewport', { tabId, width, height });
       return { ok: true };
     } catch (err) {
       const errMsg = String(err);
-      // If set_viewport tool isn't available (old camofox-mcp), fall back.
       if (/unknown tool|tool not found|not registered/i.test(errMsg)) {
         const expr = `(function(){window.resizeTo(${width},${height});window.dispatchEvent(new Event('resize'));return true;})()`;
         try {
@@ -504,14 +1047,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     }
   }
 
-  /**
-   * v0.19: register a forced network response for requests matching the given scope.
-   * Delegates to camofox's `route_fulfill` MCP tool (Playwright route interception).
-   *
-   * Scope is scoped to (method + path + optional body hash) to prevent intercepting
-   * unrelated requests (EC-9). If the camofox build does not expose this tool, the
-   * call rejects and the caller should skip optimistic_revert with 'no_route_fulfill_support'.
-   */
   async routeFulfill(scope: RouteFulfillScope, response: RouteFulfillResponse): Promise<UnregisterFn> {
     const tabId = this.requireTab();
     const args: Record<string, unknown> = {
@@ -526,16 +1061,10 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     const result = await this.mcpCall<{ fulfillId: string }>('route_fulfill', args);
     const fulfillId = result.fulfillId;
     return async () => {
-      await this.mcpCall<{ ok: boolean }>('route_fulfill_remove', { tabId, fulfillId }).catch(() => {
-        // Best-effort unregister — don't throw on cleanup failure
-      });
+      await this.mcpCall<{ ok: boolean }>('route_fulfill_remove', { tabId, fulfillId }).catch(() => {});
     };
   }
 
-  /**
-   * Open an isolated tab, call fn with a bound TabScope, then close the tab.
-   * The tab is closed even if fn throws, ensuring no tab leakage per test.
-   */
   async withTab<T>(
     url: string,
     extraHeaders: ExtraHeaders | undefined,
@@ -546,7 +1075,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     try {
       return await fn(scope);
     } finally {
-      await this.closeTabExplicit(tabId).catch(() => { /* best-effort close */ });
+      await this.closeTabExplicit(tabId).catch(() => {});
     }
   }
 
@@ -570,7 +1099,6 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
         if (typeof selector === 'string') {
           return runEvaluateClick(this.makeEvaluateScope(tabId), selector);
         }
-        // Structured selector: degraded shape — caller named the element, so absent-name case doesn't apply
         return this.resolveRef(tabId, selector)
           .then(ref => this.mcpCall<{ tabId: string; ok: boolean }>('click', { tabId, ref }))
           .then((): EvaluateClickResult & { ok: true } => ({
@@ -613,12 +1141,12 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
 
   private async clickByHintForTab(tabId: string, hint: TriggerSelectorHint): Promise<ClickByHintResult> {
     if (hint.testId !== undefined && hint.testId !== '') {
-      if (await this.evaluateClickByCss(tabId, `[data-testid="${CamofoxBrowserMcpAdapter.escapeAttr(hint.testId)}"]`)) {
+      if (await this.evaluateClickByCss(tabId, `[data-testid="${CamofoxBrowserHttpAdapter.escapeAttr(hint.testId)}"]`)) {
         return { clicked: true, matchedBy: 'testId' };
       }
     }
     if (hint.ariaLabel !== undefined && hint.ariaLabel !== '') {
-      if (await this.evaluateClickByCss(tabId, `[aria-label="${CamofoxBrowserMcpAdapter.escapeAttr(hint.ariaLabel)}"]`)) {
+      if (await this.evaluateClickByCss(tabId, `[aria-label="${CamofoxBrowserHttpAdapter.escapeAttr(hint.ariaLabel)}"]`)) {
         return { clicked: true, matchedBy: 'ariaLabel' };
       }
     }
@@ -636,7 +1164,66 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
   }
 }
 
-// ---- Transport helpers (pure) ----
+// ---- Factory ----
+
+/**
+ * Create the correct BrowserMcpAdapter for the resolved config.
+ * Returns undefined when no browser transport is configured.
+ *
+ * Resolution logic:
+ * - 'mcp-http' (default): SDK Client + StreamableHTTPClientTransport. Requires browserMcpUrl.
+ * - 'mcp-stdio': SDK Client + StdioClientTransport. Requires browserMcpStdio.command.
+ *   Can operate without browserMcpUrl (subprocess is self-contained).
+ * - 'http-legacy': deprecated hand-rolled fetch adapter. Requires browserMcpUrl.
+ *
+ * Conservative defaults for open questions (per spec §15):
+ * Q1: Legacy class is exported — users can migrate by name.
+ * Q2: SDK Client used directly — dispatcher (tool<T>) is the abstraction.
+ * Q3: Factory co-located in browser-mcp.ts for v0.49.
+ * Q4: network_fault etc. deferred; callers use the tool<T> escape via the MCP adapter.
+ * Q5: bughunter doctor prints transport config info only (no round-trip in v0.49).
+ * Q6: No per-call timeout in v0.49; SDK default applies (~30s). Add browserMcpRequestTimeoutMs in v0.50.
+ * Q7: mcp-stdio errors surface immediately; auto-restart is policy for the runner, not the adapter.
+ */
+export function makeBrowserAdapter(config: BugHunterConfig): BrowserMcpAdapter | undefined {
+  const transport = config.browserTransport ?? 'mcp-http';
+  const authKey = config.browserMcpAuthKey ?? process.env['CAMOFOX_MCP_KEY'];
+
+  if (transport === 'mcp-stdio') {
+    if (config.browserMcpStdio === undefined) {
+      throw new Error('browserTransport: mcp-stdio requires browserMcpStdio.command to be set in config');
+    }
+    return new CamofoxBrowserMcpAdapter({
+      mode: 'stdio',
+      command: config.browserMcpStdio.command,
+      args: config.browserMcpStdio.args,
+      authKey,
+    });
+  }
+
+  if (transport === 'http-legacy') {
+    if (config.browserMcpUrl === undefined) return undefined;
+    return new CamofoxBrowserHttpAdapter(config.browserMcpUrl);
+  }
+
+  // Default: mcp-http
+  if (config.browserMcpUrl === undefined) return undefined;
+  return new CamofoxBrowserMcpAdapter({
+    mode: 'http',
+    url: config.browserMcpUrl,
+    authKey,
+  });
+}
+
+// ---- Legacy transport helpers (used by CamofoxBrowserHttpAdapter only) ----
+
+type McpRpcEnvelope = {
+  result?: {
+    content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>;
+    isError?: boolean;
+  };
+  error?: { message?: string; code?: unknown };
+};
 
 async function parseEnvelope(res: Response, contentType: string): Promise<McpRpcEnvelope> {
   if (contentType.includes('text/event-stream')) {
@@ -657,7 +1244,6 @@ function parseTextContent(envelope: McpRpcEnvelope, tool: string): unknown {
     throw new BrowserMcpError('transport', `No content in camofox response for ${tool}`);
   }
   if (content.type === 'image') {
-    // Shouldn't happen on a json-expecting call, but guard
     return { dataUrl: `data:${content.mimeType ?? 'image/png'};base64,${content.data ?? ''}` };
   }
   const text = content.text;
@@ -672,7 +1258,6 @@ function parseImageContent(envelope: McpRpcEnvelope): { dataUrl: string } {
   if (content?.type === 'image') {
     return { dataUrl: `data:${content.mimeType ?? 'image/png'};base64,${content.data ?? ''}` };
   }
-  // Fallback: if text content, treat as JSON with dataUrl inside
   const text = content?.text;
   if (text !== undefined && text !== '') {
     const parsed = JSON.parse(text) as { dataUrl?: string };

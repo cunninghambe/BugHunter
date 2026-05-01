@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { loadConfig, effectiveForbiddenPaths } from '../config.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
-import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
+import { makeBrowserAdapter } from '../adapters/browser-mcp.js';
 import { detectVisionAuth } from '../adapters/vision-auth-detect.js';
 import { listRunIds } from '../store/filesystem.js';
 import type { BugHunterConfig } from '../types.js';
@@ -67,7 +67,7 @@ async function runAllChecks(projectDir: string): Promise<DoctorResult> {
 
   const [d2, d3, d4, d5, d6, d7, d8, d9, d10] = await Promise.allSettled([
     checkSurfaceMcp(config.surfaceMcpUrl),
-    checkBrowserMcp(config.browserMcpUrl),
+    checkBrowserMcp(config),
     checkVisionAuth(),
     checkCamofoxVersion(config.browserMcpUrl),
     Promise.resolve(checkPlaywrightVersion(projectDir)),
@@ -136,17 +136,31 @@ async function checkSurfaceMcp(url: string): Promise<DoctorCheck> {
   }
 }
 
-async function checkBrowserMcp(url: string | undefined): Promise<DoctorCheck> {
+async function checkBrowserMcp(config: BugHunterConfig): Promise<DoctorCheck> {
+  const url = config.browserMcpUrl;
+  const transport = config.browserTransport ?? 'mcp-http';
+  if (transport === 'mcp-stdio') {
+    const cmd = config.browserMcpStdio?.command ?? '(not set)';
+    return { id: 'D3', label: 'Browser MCP reachable', status: 'info', detail: `transport: mcp-stdio (SDK Client)  cmd=${cmd}` };
+  }
   if (url === undefined) {
     return { id: 'D3', label: 'Browser MCP reachable', status: 'info', detail: 'not configured (optional)' };
   }
-  const adapter = new CamofoxBrowserMcpAdapter(url);
+  const adapter = makeBrowserAdapter(config);
+  if (adapter === undefined) {
+    return { id: 'D3', label: 'Browser MCP reachable', status: 'info', detail: 'not configured (optional)' };
+  }
   try {
     const result = await withTimeout(adapter.listTabs(), 5000);
-    return { id: 'D3', label: 'Browser MCP reachable', status: 'green', detail: `${url}  tabs=${result.tabs.length}` };
+    const transportLabel = transport === 'http-legacy' ? 'http-legacy (deprecated)' : `${transport} (SDK Client)`;
+    return {
+      id: 'D3',
+      label: 'Browser MCP reachable',
+      status: 'green',
+      detail: `${url}  tabs=${result.tabs.length}  transport: ${transportLabel}`,
+    };
   } catch {
-    const detail = 'timeout after 5000ms';
-    return { id: 'D3', label: 'Browser MCP reachable', status: 'yellow', detail };
+    return { id: 'D3', label: 'Browser MCP reachable', status: 'yellow', detail: 'timeout after 5000ms' };
   }
 }
 

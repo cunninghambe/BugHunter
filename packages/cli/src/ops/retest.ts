@@ -13,7 +13,7 @@ import { hashSchema } from '../util/hash.js';
 import { runPaths } from '../store/filesystem.js';
 import { loadConfig } from '../config.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
-import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
+import { makeBrowserAdapter } from '../adapters/browser-mcp.js';
 import { clusterSignature } from '../cluster/signature.js';
 import { runStaticTool } from '../static/runner.js';
 import type { StaticTool } from '../static/runner.js';
@@ -310,7 +310,7 @@ export async function retestOp(
 ): Promise<RetestResult> {
   const config = loadConfig(projectDir);
   const surface = new HttpSurfaceMcpAdapter(config.surfaceMcpUrl);
-  const browser = config.browserMcpUrl !== undefined ? new CamofoxBrowserMcpAdapter(config.browserMcpUrl) : undefined;
+  const browser = makeBrowserAdapter(config);
 
   // baseBranch and fixBranch are available for the skill's context;
   // the retest itself replays against the current dev server regardless of branch.

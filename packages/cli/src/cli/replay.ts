@@ -2,7 +2,7 @@
 
 import { loadConfig, resolvedConfig } from '../config.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
-import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
+import { makeBrowserAdapter } from '../adapters/browser-mcp.js';
 import { readActionLog } from '../repro/action-log.js';
 import { replayActionLog } from '../repro/replay.js';
 import { listRunIds, runPaths } from '../store/filesystem.js';
@@ -11,7 +11,7 @@ import { log } from '../log.js';
 export async function replayCommand(projectDir: string, occurrenceId: string): Promise<void> {
   const config = resolvedConfig(loadConfig(projectDir));
   const surface = new HttpSurfaceMcpAdapter(config.surfaceMcpUrl);
-  const browser = config.browserMcpUrl !== undefined ? new CamofoxBrowserMcpAdapter(config.browserMcpUrl) : undefined;
+  const browser = makeBrowserAdapter(config);
 
   // Find the action log across all runs
   const runIds = listRunIds(projectDir);
