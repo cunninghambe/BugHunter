@@ -24,16 +24,46 @@ async function captureUrl(scope: TabScope): Promise<string> {
 }
 
 /**
- * Compute a SHA-1 over the visible text of the <main> element (or body as fallback).
- * Used for domSignature in InterimState and post-state comparison.
- * The hash is truncated to 20 hex chars for readability.
+ * Compute a domSignature describing the post-transition page state.
+ *
+ * Format: `<prefix:>?<sha1-hash-20-chars>` where prefix may be `modal:`,
+ * `arialive:`, or `auth:` to signal the false-positive guards in
+ * classify/nav-state.ts (those branches short-circuit on user-visible
+ * banners/modals so that nav transitions don't fire bogus 'corruption'
+ * findings when the app is showing a legitimate overlay).
+ *
+ * Without prefixes the guards are dead code — synthetic test fixtures
+ * can produce them but real captures cannot. Reviewer-flagged.
  */
 async function captureDomSignature(scope: TabScope): Promise<string> {
+  // Combined evaluate: detect modal/aria-live/auth state AND extract main text in one round-trip.
   const result = await scope.evaluate(
-    `(function(){var el=document.querySelector('[role="main"],main');var text=(el||document.body||{}).textContent||'';return text.trim().slice(0,4000);})()`,
+    `(function(){
+      var d = document;
+      // Auth wall: explicit signals first (login form / NextAuth / common auth markers).
+      var authForm = d.querySelector('form[action*="login" i],form[action*="signin" i],input[name="password"]');
+      var authText = (d.body && d.body.textContent || '').toLowerCase();
+      var hasAuthBanner = authText.indexOf('please sign in') >= 0 || authText.indexOf('please log in') >= 0;
+      if (authForm || hasAuthBanner) return { prefix: 'auth', text: authForm ? 'auth-form' : 'auth-banner' };
+      // Open modal: dialog/aria-modal/role=dialog visible.
+      var modal = d.querySelector('dialog[open], [aria-modal="true"], [role="dialog"][aria-hidden="false"]');
+      if (modal && modal instanceof HTMLElement && modal.offsetParent !== null) {
+        return { prefix: 'modal', text: (modal.textContent || '').trim().slice(0, 200) };
+      }
+      // Live region content: aria-live polite/assertive elements with text.
+      var live = d.querySelector('[aria-live="polite"],[aria-live="assertive"],[role="status"],[role="alert"]');
+      if (live && live instanceof HTMLElement && (live.textContent || '').trim() !== '') {
+        return { prefix: 'arialive', text: (live.textContent || '').trim().slice(0, 200) };
+      }
+      var el = d.querySelector('[role="main"],main');
+      return { prefix: '', text: ((el || d.body || {}).textContent || '').trim().slice(0, 4000) };
+    })()`,
   );
-  const text = typeof result.value === 'string' ? result.value : '';
-  return createHash('sha1').update(text).digest('hex').slice(0, 20);
+  const v = result.value as { prefix?: string; text?: string } | undefined;
+  const prefix = typeof v?.prefix === 'string' ? v.prefix : '';
+  const text = typeof v?.text === 'string' ? v.text : '';
+  const hash = createHash('sha1').update(text).digest('hex').slice(0, 20);
+  return prefix !== '' ? `${prefix}:${hash}` : hash;
 }
 
 /**
