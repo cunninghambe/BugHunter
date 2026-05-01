@@ -4,6 +4,7 @@ import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   BugHunterConfig, DiscoveredForm, DiscoveredPage, DiscoveryOutput, TestCase, ToolMeta,
   RaceConditionsConfig, InterleavingVariant,
+  Action,
 } from '../types.js';
 import {
   DEFAULT_VARIANTS,
@@ -114,6 +115,92 @@ export async function runPlan(
             xssCount += allowed;
           }
         }
+      }
+    }
+
+    // v0.22 nav-state test generation (§3.4) — runs after all per-page test factories.
+    // Master toggle: enableNavState (or implied by enableNavStateRefreshRace / enableHistoryCorruption).
+    const navEnabled = config.enableNavState === true || config.enableNavStateRefreshRace === true || config.enableHistoryCorruption === true;
+    if (navEnabled) {
+      const navSkipRoutes = config.navStateSkipRoutes ?? [];
+      const deepLinkMaxDepth = config.navStateDeepLinkMaxDepth ?? 3;
+      const navStateCount = { count: 0 };
+
+      for (const page of discovery.pages) {
+        if (isNavSkipped(page.route, navSkipRoutes)) continue;
+
+        // State-page seeds: skip back/forward (history not meaningful); refresh and deep-link still apply.
+        const isStatePage = page.kind === 'state';
+
+        // Collect mutating-success seeds from already-generated TestCases for this (role, page).
+        const mutatingSeeds = testCases.filter(tc =>
+          tc.role === role &&
+          tc.page === page.route &&
+          tc.action.expectedOutcome === 'success' &&
+          (tc.action.kind === 'click' || tc.action.kind === 'submit') &&
+          tc.action.palette === 'happy'
+        );
+
+        const formSeeds = testCases.filter(tc =>
+          tc.role === role &&
+          tc.page === page.route &&
+          tc.action.kind === 'submit' &&
+          tc.action.palette === 'happy'
+        );
+
+        // Generate back-after-mutation + forward-after-back (skipped for state-pages)
+        if (!isStatePage) {
+          for (const seed of mutatingSeeds) {
+            // back-after-mutation
+            testCases.push(navTransitionTestCase(runId, role, page.route, 'back', seed.action, seed.formSignature));
+            navStateCount.count++;
+            // forward-after-back (always paired with back-after-mutation)
+            testCases.push(navTransitionTestCase(runId, role, page.route, 'back_then_forward', seed.action, seed.formSignature));
+            navStateCount.count++;
+          }
+        }
+
+        // refresh-mid-mutation (flag-gated, state-pages still allowed)
+        if (config.enableNavStateRefreshRace === true) {
+          for (const seed of mutatingSeeds) {
+            testCases.push(navTransitionTestCase(runId, role, page.route, 'refresh', seed.action, seed.formSignature));
+            navStateCount.count++;
+          }
+        }
+
+        // back-after-form-fill (all roles, all pages with forms; not skipped for state-pages)
+        for (const seed of formSeeds) {
+          if (seed.action.selector !== undefined) {
+            const fillOnlySeed: Action = { ...seed.action, fillOnly: true };
+            testCases.push(navTransitionTestCase(runId, role, page.route, 'back', fillOnlySeed, seed.formSignature));
+            navStateCount.count++;
+          }
+        }
+
+        // deep-link-no-auth: one per page for non-public roles, respecting depth cap.
+        // Q3 conservative: lazy URL = appBaseUrl + route. PR #51 established that
+        // camofox.scope.navigate rejects relative URLs ("Invalid url"), so absolutize here.
+        if (role !== 'public' && role !== 'anonymous') {
+          const routeDepth = page.route.split('/').filter(Boolean).length;
+          if (routeDepth <= deepLinkMaxDepth) {
+            const base = config.appBaseUrl !== undefined ? config.appBaseUrl.replace(/\/$/, '') : '';
+            const capturedUrl = base !== '' && page.route.startsWith('/')
+              ? `${base}${page.route}`
+              : page.route;
+            testCases.push(navDeepLinkTestCase(runId, role, page.route, capturedUrl));
+            navStateCount.count++;
+          }
+        }
+
+        // history-state-corruption (flag-gated; one per route)
+        if (config.enableHistoryCorruption === true) {
+          testCases.push(navHistoryCorruptTestCase(runId, role, page.route));
+          navStateCount.count++;
+        }
+      }
+
+      if (navStateCount.count > 0) {
+        log.info(`nav-state: +${navStateCount.count} tests for role=${role}`);
       }
     }
 
@@ -284,6 +371,114 @@ function clickTestCase(runId: string, role: string, page: string, selector: stri
     expectedOutcome: 'success',
     palette: 'happy',
     stateContext,
+  };
+}
+
+// ---- v0.22 nav-state test-case factories ----
+
+/**
+ * Check if a route matches any of the navStateSkipRoutes glob patterns.
+ * Simple prefix/glob matching: '*' matches any segment.
+ */
+function isNavSkipped(route: string, patterns: string[]): boolean {
+  for (const pattern of patterns) {
+    // Simple glob: convert 'checkout/*' → regex
+    const regexStr = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape special chars except *
+      .replace(/\*/g, '[^/]*');
+    if (new RegExp(`^${regexStr}$`).test(route)) return true;
+    // Also check without leading slash if pattern doesn't have one
+    if (!pattern.startsWith('/') && new RegExp(`^/?${regexStr}$`).test(route)) return true;
+  }
+  return false;
+}
+
+/**
+ * Build a nav_transition TestCase for back/refresh/forward/back_then_forward transitions.
+ */
+function navTransitionTestCase(
+  runId: string,
+  role: string,
+  page: string,
+  transitionKind: 'back' | 'refresh' | 'back_then_forward',
+  seedAction: Action,
+  formSignature?: string,
+): TestCase {
+  return {
+    id: createId(),
+    runId,
+    role,
+    page,
+    action: {
+      kind: 'nav_transition',
+      via: 'ui',
+      expectedOutcome: 'success',
+      palette: 'happy',
+      transition: { kind: transitionKind },
+      navSeed: seedAction,
+    },
+    expectedOutcome: 'success',
+    palette: 'happy',
+    formSignature,
+  };
+}
+
+/**
+ * Build a deep-link-no-auth nav_transition TestCase.
+ * Q3 conservative: uses lazy URL (appBaseUrl + route) rather than a captured post-auth URL.
+ */
+function navDeepLinkTestCase(
+  runId: string,
+  role: string,
+  page: string,
+  capturedUrl: string,
+): TestCase {
+  return {
+    id: createId(),
+    runId,
+    role,
+    page,
+    action: {
+      kind: 'nav_transition',
+      via: 'ui',
+      expectedOutcome: 'success',
+      palette: 'happy',
+      transition: { kind: 'deep_link_no_auth', capturedUrl },
+    },
+    expectedOutcome: 'success',
+    palette: 'happy',
+  };
+}
+
+/**
+ * Build a history-state-corruption nav_transition TestCase.
+ * Uses two conflicting pushState entries per §3.2.
+ */
+function navHistoryCorruptTestCase(
+  runId: string,
+  role: string,
+  page: string,
+): TestCase {
+  return {
+    id: createId(),
+    runId,
+    role,
+    page,
+    action: {
+      kind: 'nav_transition',
+      via: 'ui',
+      expectedOutcome: 'success',
+      palette: 'happy',
+      transition: {
+        kind: 'history_corrupt',
+        pushStates: [
+          { state: { v22: 'corrupt-a' }, url: `${page}?v22=a` },
+          { state: { v22: 'corrupt-b' }, url: `${page}?v22=b` },
+        ],
+      },
+    },
+    expectedOutcome: 'success',
+    palette: 'happy',
   };
 }
 

@@ -172,6 +172,11 @@ async function main(): Promise<void> {
           raceVariants: typeof flags['race-variants'] === 'string' ? flags['race-variants'] : undefined,
           raceCrossTab: flags['race-cross-tab'] === true,
           raceStrict: flags['race-strict'] === true,
+          enableNavState: flags['enable-nav-state'] === true,
+          navStateRefreshRace: flags['nav-state-refresh-race'] === true,
+          enableHistoryCorruption: flags['enable-history-corruption'] === true,
+          navStateSkipRoute: typeof flags['nav-state-skip-route'] === 'string' ? flags['nav-state-skip-route'] : undefined,
+          navStateDeepLinkMaxDepth: typeof flags['nav-state-deep-link-max-depth'] === 'string' ? parseInt(flags['nav-state-deep-link-max-depth'], 10) : undefined,
         });
         break;
       }

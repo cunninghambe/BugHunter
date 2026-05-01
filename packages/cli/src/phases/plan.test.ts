@@ -332,3 +332,245 @@ describe('HTTP method filter (v0.12 T4) — apiTestCases', () => {
     expect(palettes.has('out_of_bounds')).toBe(true);
   });
 });
+
+// ---- v0.22 nav-state test generation (§8 acceptance criteria) ----
+
+function makeNavSurface() {
+  return {
+    surface_describe_self: vi.fn().mockResolvedValue({ capabilities: { listNavigations: false, enumerateRoutesRuntime: false } }),
+    surface_list_navigations: vi.fn().mockResolvedValue({ navigations: [] }),
+    surface_sample_inputs: vi.fn().mockResolvedValue({ samples: [] }),
+    surface_probe: vi.fn().mockResolvedValue(null),
+    surface_call: vi.fn().mockResolvedValue({ ok: true, status: 200, body: {}, durationMs: 0 }),
+    surface_list_routes: vi.fn().mockResolvedValue({ routes: [] }),
+    surface_postprocess_runtime_routes: vi.fn().mockResolvedValue({ routes: [], summary: { dedupedRoutes: 0, detectedRouters: [] } }),
+    surface_enumerate_routes_runtime: vi.fn().mockResolvedValue({ script: '', timeoutMs: 1000 }),
+  };
+}
+
+/** A url-kind page with one click button and one POST form. */
+const navPageWithMutation: import('../types.js').DiscoveredPage = {
+  route: '/orders',
+  elements: [{ tag: 'button', selector: '#submit-btn', ancestorStack: '', disabled: false }],
+  forms: [{ formSelector: '#order-form', method: 'POST', fields: [{ name: 'qty', type: 'number', required: true }] }],
+  links: [],
+  kind: 'url',
+};
+
+/** A state-kind page with one click button. */
+const navStatePage: import('../types.js').DiscoveredPage = {
+  route: '/?setTab=orders',
+  elements: [{ tag: 'button', selector: '#tab-order-btn', ancestorStack: '', disabled: false }],
+  forms: [],
+  links: [],
+  kind: 'state',
+  stateContext: { baseRoute: '/', stateVar: 'setTab', stateValue: 'orders', triggerHint: { text: 'Orders' } },
+};
+
+describe('runPlan v0.22 — nav-state: disabled by default', () => {
+  it('produces zero nav_transition TestCases when enableNavState is not set', async () => {
+    const config: BugHunterConfig = { projectName: 'test', surfaceMcpUrl: 'http://localhost:3105' };
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, config, ['user'], makeNavSurface() as never);
+    expect(testCases.filter(tc => tc.action.kind === 'nav_transition')).toHaveLength(0);
+  });
+});
+
+describe('runPlan v0.22 — nav-state: enabled', () => {
+  const navConfig: BugHunterConfig = {
+    projectName: 'test',
+    surfaceMcpUrl: 'http://localhost:3105',
+    enableNavState: true,
+  };
+
+  it('emits back + back_then_forward for each mutating click/submit seed on a url-kind page', async () => {
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, navConfig, ['user'], makeNavSurface() as never);
+    const navCases = testCases.filter(tc => tc.action.kind === 'nav_transition');
+
+    // back-after-mutation tests
+    const backCases = navCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'back' &&
+      tc.action.navSeed !== undefined && !tc.action.navSeed.fillOnly
+    );
+    // back_then_forward tests
+    const fwdCases = navCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'back_then_forward'
+    );
+
+    expect(backCases.length).toBeGreaterThan(0);
+    expect(fwdCases.length).toBeGreaterThan(0);
+    expect(fwdCases.length).toBe(backCases.length); // always paired
+  });
+
+  it('emits back-after-form-fill (fillOnly seed) for form pages', async () => {
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, navConfig, ['user'], makeNavSurface() as never);
+    const navCases = testCases.filter(tc => tc.action.kind === 'nav_transition');
+
+    const fillOnlyCases = navCases.filter(tc =>
+      tc.action.kind === 'nav_transition' &&
+      tc.action.transition?.kind === 'back' &&
+      tc.action.navSeed?.fillOnly === true
+    );
+    expect(fillOnlyCases.length).toBeGreaterThan(0);
+  });
+
+  it('does not emit back + back_then_forward for state-kind page seeds', async () => {
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navStatePage], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, navConfig, ['user'], makeNavSurface() as never);
+    const navCases = testCases.filter(tc => tc.action.kind === 'nav_transition');
+
+    // State pages should not produce back-after-mutation (button on state page is not a mutating happy click seed)
+    // The state-page button may produce a click test, but the back/back_then_forward should not pair with it
+    const backThenFwdCases = navCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'back_then_forward'
+    );
+    expect(backThenFwdCases).toHaveLength(0);
+  });
+
+  it('emits deep-link-no-auth for non-public roles on url-kind pages within depth cap', async () => {
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, navConfig, ['owner'], makeNavSurface() as never);
+    const deepLinkCases = testCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'deep_link_no_auth'
+    );
+    expect(deepLinkCases.length).toBeGreaterThan(0);
+  });
+
+  it('does not emit deep-link-no-auth for public role', async () => {
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, navConfig, ['public'], makeNavSurface() as never);
+    const deepLinkCases = testCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'deep_link_no_auth'
+    );
+    expect(deepLinkCases).toHaveLength(0);
+  });
+
+  it('respects navStateSkipRoutes: skipped route produces zero nav_transition tests', async () => {
+    const config: BugHunterConfig = {
+      projectName: 'test',
+      surfaceMcpUrl: 'http://localhost:3105',
+      enableNavState: true,
+      navStateSkipRoutes: ['/orders'],
+    };
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, config, ['user'], makeNavSurface() as never);
+    expect(testCases.filter(tc => tc.action.kind === 'nav_transition')).toHaveLength(0);
+  });
+
+  it('respects navStateDeepLinkMaxDepth: deep route beyond cap emits no deep-link test', async () => {
+    const deepPage: import('../types.js').DiscoveredPage = {
+      route: '/a/b/c/d', // depth=4 segments
+      elements: [],
+      forms: [],
+      links: [],
+      kind: 'url',
+    };
+    const config: BugHunterConfig = {
+      projectName: 'test',
+      surfaceMcpUrl: 'http://localhost:3105',
+      enableNavState: true,
+      navStateDeepLinkMaxDepth: 2, // only routes with <= 2 segments
+    };
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [deepPage], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, config, ['owner'], makeNavSurface() as never);
+    const deepLinkCases = testCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'deep_link_no_auth'
+    );
+    expect(deepLinkCases).toHaveLength(0);
+  });
+});
+
+describe('runPlan v0.22 — nav-state: refresh-race flag', () => {
+  it('does not emit refresh tests when enableNavStateRefreshRace is false', async () => {
+    const config: BugHunterConfig = {
+      projectName: 'test',
+      surfaceMcpUrl: 'http://localhost:3105',
+      enableNavState: true,
+      enableNavStateRefreshRace: false,
+    };
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, config, ['user'], makeNavSurface() as never);
+    const refreshCases = testCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'refresh'
+    );
+    expect(refreshCases).toHaveLength(0);
+  });
+
+  it('emits refresh tests for each mutating seed when enableNavStateRefreshRace is true', async () => {
+    const config: BugHunterConfig = {
+      projectName: 'test',
+      surfaceMcpUrl: 'http://localhost:3105',
+      enableNavStateRefreshRace: true, // implies enableNavState
+    };
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, config, ['user'], makeNavSurface() as never);
+    const refreshCases = testCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'refresh'
+    );
+    expect(refreshCases.length).toBeGreaterThan(0);
+  });
+
+  it('state-page seeds still emit refresh when enableNavStateRefreshRace is true', async () => {
+    // State pages do not block refresh — only back/forward are skipped.
+    const statePageWithButton: import('../types.js').DiscoveredPage = {
+      route: '/?setTab=trade',
+      elements: [{ tag: 'button', selector: '#submit-trade', ancestorStack: '', disabled: false }],
+      forms: [],
+      links: [],
+      kind: 'state',
+      stateContext: { baseRoute: '/', stateVar: 'setTab', stateValue: 'trade', triggerHint: { text: 'Trade' } },
+    };
+    const config: BugHunterConfig = {
+      projectName: 'test',
+      surfaceMcpUrl: 'http://localhost:3105',
+      enableNavStateRefreshRace: true,
+    };
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [statePageWithButton], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, config, ['user'], makeNavSurface() as never);
+    // The click on the state-page button generates a click test with expectedOutcome:'success' and palette:'happy'
+    // It should then get a refresh nav-state pair.
+    const refreshCases = testCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'refresh'
+    );
+    expect(refreshCases.length).toBeGreaterThan(0);
+  });
+});
+
+describe('runPlan v0.22 — nav-state: history corruption flag', () => {
+  it('emits history_corrupt tests when enableHistoryCorruption is true', async () => {
+    const config: BugHunterConfig = {
+      projectName: 'test',
+      surfaceMcpUrl: 'http://localhost:3105',
+      enableHistoryCorruption: true, // implies enableNavState
+    };
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, config, ['user'], makeNavSurface() as never);
+    const corruptCases = testCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'history_corrupt'
+    );
+    expect(corruptCases.length).toBeGreaterThan(0);
+    // Verify pushStates are included
+    for (const tc of corruptCases) {
+      if (tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'history_corrupt') {
+        expect(tc.action.transition.pushStates.length).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it('does not emit history_corrupt tests when flag is off', async () => {
+    const config: BugHunterConfig = {
+      projectName: 'test',
+      surfaceMcpUrl: 'http://localhost:3105',
+      enableNavState: true,
+      enableHistoryCorruption: false,
+    };
+    const discovery: import('../types.js').DiscoveryOutput = { pages: [navPageWithMutation], apiTools: [], skipList: [] };
+    const { testCases } = await runPlan('run1', discovery, config, ['user'], makeNavSurface() as never);
+    const corruptCases = testCases.filter(tc =>
+      tc.action.kind === 'nav_transition' && tc.action.transition?.kind === 'history_corrupt'
+    );
+    expect(corruptCases).toHaveLength(0);
+  });
+});

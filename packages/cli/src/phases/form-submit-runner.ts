@@ -26,7 +26,7 @@ export async function runFormSubmit(
   scope: FormSubmitScope,
   formSelector: string,
   input: Record<string, unknown>,
-  opts?: { asyncMaxWaitMs?: number },
+  opts?: { asyncMaxWaitMs?: number; fillOnly?: boolean },
 ): Promise<void> {
   const asyncMaxWaitMs = opts?.asyncMaxWaitMs ?? 2000;
   const coerced: Record<string, string> = {};
@@ -35,9 +35,16 @@ export async function runFormSubmit(
     coerced[name] = String(value);
   }
 
+  // v0.22: fillOnly mode — fill fields but do not submit. Used as nav-state seed
+  // for back-after-form-fill to test whether the browser preserves filled inputs
+  // when the user navigates away and returns (§5, §3.1).
+  const fillScript = opts?.fillOnly === true
+    ? buildFillOnlyScript(formSelector, coerced, asyncMaxWaitMs)
+    : buildFillSubmitScript(formSelector, coerced, asyncMaxWaitMs);
+
   let result: EvaluateResult;
   try {
-    result = await scope.evaluate(buildFillSubmitScript(formSelector, coerced, asyncMaxWaitMs));
+    result = await scope.evaluate(fillScript);
   } catch (err) {
     throw new Error(`submit: page_eval_threw: ${String(err)}`);
   }
@@ -176,6 +183,87 @@ function buildPolledScript(fs: string, inp: string, asyncMaxWaitMs: number): str
   if (typeof f.requestSubmit === 'function') { f.requestSubmit(); return { ok: true, via: 'requestSubmit', missingFields }; }
   try { f.submit(); return { ok: true, via: 'submit_native', missingFields }; }
   catch { return { ok: false, reason: 'submit_failed', via: 'submit_native' }; }
+})()`;
+}
+
+/**
+ * v0.22: fill-only script — fills all named fields but does NOT submit.
+ * Used as the seed for back-after-form-fill nav-state tests (§5).
+ */
+export function buildFillOnlyScript(
+  formSelector: string,
+  input: Record<string, string>,
+  asyncMaxWaitMs = 2000,
+): string {
+  const fs = JSON.stringify(formSelector);
+  const inp = JSON.stringify(input);
+  if (asyncMaxWaitMs <= 0) {
+    return `(() => {
+  const f = document.querySelector(${fs});
+  if (f === null) return { ok: false, reason: 'form_not_found' };
+  const inputMap = ${inp};
+  const missingFields = [];
+  for (const [name, value] of Object.entries(inputMap)) {
+    const el = f.querySelector('[name=' + JSON.stringify(name) + ']');
+    if (el === null) { missingFields.push(name); continue; }
+    if (el.type === 'file') return { ok: false, reason: 'file_field_unsettable', field: name };
+    if (el.type === 'checkbox' || el.type === 'radio') {
+      el.checked = Boolean(value) && value !== 'false' && value !== '0';
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else if (el.tagName === 'SELECT') {
+      const desc = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value');
+      desc.set.call(el, value);
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else if (el.tagName === 'TEXTAREA') {
+      const desc = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+      desc.set.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      const desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+      desc.set.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  return { ok: true, via: 'fill_only', missingFields };
+})()`;
+  }
+  return `(() => {
+  const deadline = Date.now() + ${asyncMaxWaitMs};
+  let f = document.querySelector(${fs});
+  while (f === null && Date.now() < deadline) {
+    const end = Date.now() + 100;
+    while (Date.now() < end) { /* busy-wait 100ms */ }
+    f = document.querySelector(${fs});
+  }
+  if (f === null) return { ok: false, reason: 'form_never_rendered' };
+  const inputMap = ${inp};
+  const missingFields = [];
+  for (const [name, value] of Object.entries(inputMap)) {
+    const el = f.querySelector('[name=' + JSON.stringify(name) + ']');
+    if (el === null) { missingFields.push(name); continue; }
+    if (el.type === 'file') return { ok: false, reason: 'file_field_unsettable', field: name };
+    if (el.type === 'checkbox' || el.type === 'radio') {
+      el.checked = Boolean(value) && value !== 'false' && value !== '0';
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else if (el.tagName === 'SELECT') {
+      const desc = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value');
+      desc.set.call(el, value);
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else if (el.tagName === 'TEXTAREA') {
+      const desc = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+      desc.set.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      const desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+      desc.set.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  return { ok: true, via: 'fill_only', missingFields };
 })()`;
 }
 

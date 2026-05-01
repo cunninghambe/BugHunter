@@ -275,3 +275,124 @@ describe('clusterSignature — v0.17 visual_anomaly viewport clustering', () => 
     expect(sig).toContain('unknown');
   });
 });
+
+describe('clusterSignature — v0.22 nav-state kinds', () => {
+  it('nav_state_corruption clusters by pageRoute + transitionKind + mismatchKind + seedActionKind', () => {
+    const a = make('nav_state_corruption', {
+      pageRoute: '/orders',
+      navStateContext: { transitionKind: 'back', mismatchKind: 'dom', seedActionKind: 'click' },
+    });
+    const b = make('nav_state_corruption', {
+      pageRoute: '/orders',
+      navStateContext: { transitionKind: 'back', mismatchKind: 'dom', seedActionKind: 'click' },
+    });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+    expect(clusterSignature(a)).toBe('nav_state_corruption|/orders|back|dom|click');
+  });
+
+  it('nav_state_corruption: different transitionKind → different cluster', () => {
+    const a = make('nav_state_corruption', {
+      pageRoute: '/orders',
+      navStateContext: { transitionKind: 'back', mismatchKind: 'dom' },
+    });
+    const b = make('nav_state_corruption', {
+      pageRoute: '/orders',
+      navStateContext: { transitionKind: 'refresh', mismatchKind: 'dom' },
+    });
+    expect(clusterSignature(a)).not.toBe(clusterSignature(b));
+  });
+
+  it('nav_resubmit_on_back clusters by pageRoute + endpoint', () => {
+    const a = make('nav_resubmit_on_back', {
+      pageRoute: '/orders',
+      navStateContext: { transitionKind: 'back', endpoint: 'POST /api/orders' },
+    });
+    const b = make('nav_resubmit_on_back', {
+      pageRoute: '/orders',
+      navStateContext: { transitionKind: 'back', endpoint: 'POST /api/orders' },
+    });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+    expect(clusterSignature(a)).toBe('nav_resubmit_on_back|/orders|POST /api/orders');
+  });
+
+  it('nav_resubmit_on_back: two detections with same endpoint collapse to one cluster', () => {
+    const detections = [
+      make('nav_resubmit_on_back', {
+        pageRoute: '/checkout',
+        navStateContext: { transitionKind: 'back', endpoint: 'POST /api/checkout' },
+      }),
+      make('nav_resubmit_on_back', {
+        pageRoute: '/checkout',
+        navStateContext: { transitionKind: 'back', endpoint: 'POST /api/checkout' },
+      }),
+    ];
+    const sigs = detections.map(clusterSignature);
+    expect(new Set(sigs).size).toBe(1);
+  });
+
+  it('nav_refresh_double_mutation clusters by pageRoute + endpoint', () => {
+    const a = make('nav_refresh_double_mutation', {
+      pageRoute: '/payment',
+      navStateContext: { transitionKind: 'refresh', endpoint: 'POST /api/pay' },
+    });
+    const b = make('nav_refresh_double_mutation', {
+      pageRoute: '/payment',
+      navStateContext: { transitionKind: 'refresh', endpoint: 'POST /api/pay' },
+    });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+    expect(clusterSignature(a)).toBe('nav_refresh_double_mutation|/payment|POST /api/pay');
+  });
+
+  it('nav_form_state_lost clusters by pageRoute + formSignature', () => {
+    const a = make('nav_form_state_lost', {
+      pageRoute: '/profile',
+      navStateContext: { transitionKind: 'back', formSignature: 'name:text|email:email' },
+    });
+    const b = make('nav_form_state_lost', {
+      pageRoute: '/profile',
+      navStateContext: { transitionKind: 'back', formSignature: 'name:text|email:email' },
+    });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+    expect(clusterSignature(a)).toBe('nav_form_state_lost|/profile|name:text|email:email');
+  });
+
+  it('nav_form_state_stale clusters by pageRoute + formSignature + staleField', () => {
+    const a = make('nav_form_state_stale', {
+      pageRoute: '/profile',
+      navStateContext: { transitionKind: 'back', formSignature: 'name:text', staleField: 'name' },
+    });
+    const b = make('nav_form_state_stale', {
+      pageRoute: '/profile',
+      navStateContext: { transitionKind: 'back', formSignature: 'name:text', staleField: 'name' },
+    });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+    expect(clusterSignature(a)).toBe('nav_form_state_stale|/profile|name:text|name');
+  });
+
+  it('nav_form_state_stale: different staleField produces different cluster', () => {
+    const a = make('nav_form_state_stale', {
+      pageRoute: '/profile',
+      navStateContext: { transitionKind: 'back', formSignature: 'name:text|bio:text', staleField: 'name' },
+    });
+    const b = make('nav_form_state_stale', {
+      pageRoute: '/profile',
+      navStateContext: { transitionKind: 'back', formSignature: 'name:text|bio:text', staleField: 'bio' },
+    });
+    expect(clusterSignature(a)).not.toBe(clusterSignature(b));
+  });
+
+  it('all nav-state kinds return non-empty strings with pipe separators', () => {
+    const navKinds: BugDetection['kind'][] = [
+      'nav_state_corruption',
+      'nav_resubmit_on_back',
+      'nav_refresh_double_mutation',
+      'nav_form_state_lost',
+      'nav_form_state_stale',
+    ];
+    for (const kind of navKinds) {
+      const sig = clusterSignature(make(kind));
+      expect(sig.length).toBeGreaterThan(0);
+      expect(sig).toContain('|');
+    }
+  });
+});

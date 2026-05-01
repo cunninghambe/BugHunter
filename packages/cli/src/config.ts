@@ -178,6 +178,12 @@ export const ConfigSchema = z.object({
       candidateUrls: z.array(z.string()).optional(),
     }).optional(),
   }).optional(),
+  // v0.22 nav-state config (§6.2)
+  enableNavState: z.boolean().optional(),
+  enableNavStateRefreshRace: z.boolean().optional(),
+  enableHistoryCorruption: z.boolean().optional(),
+  navStateSkipRoutes: z.array(z.string()).optional(),
+  navStateDeepLinkMaxDepth: z.number().int().positive().optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

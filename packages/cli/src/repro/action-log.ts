@@ -3,7 +3,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { Action, TestCase } from '../types.js';
+import type { Action, NavTransition, TestCase } from '../types.js';
 
 export type ActionLogEntry = {
   step: number;
@@ -18,6 +18,10 @@ export type ActionLogEntry = {
   /** SHA-1 hash (first 12 hex chars) of the tool's inputSchema at the time this entry was written. */
   inputSchemaHash?: string;
   timestamp: string;
+  /** v0.22: set when kind === 'nav_transition'. */
+  transition?: NavTransition;
+  /** v0.22: set when kind === 'nav_transition'. The seed action logged verbatim. */
+  navSeed?: ActionLogEntry;
 };
 
 export type ActionLog = {

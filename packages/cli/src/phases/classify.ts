@@ -27,6 +27,9 @@ const KIND_PRIORITY: BugKind[] = [
   'react_error',
   'hydration_mismatch',
   'surface_call_failed',
+  // v0.22 nav-state kinds (§4.1): resubmit + double-mutation rank above generic 4xx
+  'nav_resubmit_on_back',
+  'nav_refresh_double_mutation',
   'network_4xx_unexpected',
   '404_for_linked_route',
   // v0.16 pen-testing kinds (unconditionally critical when tagged proof fires — above idor)
@@ -52,9 +55,15 @@ const KIND_PRIORITY: BugKind[] = [
   'no_rate_limit_on_login',
   'hallucinated_route',
   'swallowed_error_empty_catch',
+  // v0.22 nav-state catch-all (§4.1)
+  'nav_state_corruption',
+  // v0.22 form stale (§4.1)
+  'nav_form_state_stale',
   'dom_error_text',
   'visual_anomaly',
   'missing_state_change',
+  // v0.22 form lost (§4.1) — UX-grade, lower priority
+  'nav_form_state_lost',
   'console_error',
   'accessibility_critical',
   // v0.6 a11y baseline kinds (same tier as accessibility_critical)
