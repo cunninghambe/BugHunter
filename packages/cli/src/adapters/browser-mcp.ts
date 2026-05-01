@@ -126,7 +126,39 @@ export interface BrowserMcpAdapter {
    * Optional to avoid breaking existing test mocks that predate v0.17.
    */
   setViewport?(width: number, height: number): Promise<{ ok: true } | { ok: false; reason: string }>;
+
+  /**
+   * v0.19: register a forced response for requests matching the given scope.
+   * Scope is narrowed to (method + path + optional request-body hash) to avoid
+   * intercepting unrelated requests (EC-9).
+   *
+   * Returns a function that unregisters the fulfillment when called. MUST be called
+   * after the test to restore normal request behaviour.
+   *
+   * Optional: if the camofox MCP build does not expose route interception, this method
+   * will be undefined and the optimistic_revert variant is skipped with
+   * skipReason 'no_route_fulfill_support' (EC-10).
+   */
+  routeFulfill?(scope: RouteFulfillScope, response: RouteFulfillResponse): Promise<UnregisterFn>;
 }
+
+/** Scope narrows which requests are intercepted. All fields are ANDed. */
+export type RouteFulfillScope = {
+  method: string;
+  /** URL path pattern (prefix or exact). */
+  path: string;
+  /** SHA1 of expected request body (first 200 bytes). When set, only matching bodies are intercepted. */
+  bodyHash?: string;
+};
+
+export type RouteFulfillResponse = {
+  status: number;
+  body: string;
+  contentType?: string;
+};
+
+/** Call to remove the route interception installed by routeFulfill. */
+export type UnregisterFn = () => Promise<void>;
 
 // Raw camofox result shapes.
 // Note: camofox v0.1 navigate returns {tabId, url} — the SPEC.md frozen surface
@@ -470,6 +502,34 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
       }
       return { ok: false, reason: errMsg };
     }
+  }
+
+  /**
+   * v0.19: register a forced network response for requests matching the given scope.
+   * Delegates to camofox's `route_fulfill` MCP tool (Playwright route interception).
+   *
+   * Scope is scoped to (method + path + optional body hash) to prevent intercepting
+   * unrelated requests (EC-9). If the camofox build does not expose this tool, the
+   * call rejects and the caller should skip optimistic_revert with 'no_route_fulfill_support'.
+   */
+  async routeFulfill(scope: RouteFulfillScope, response: RouteFulfillResponse): Promise<UnregisterFn> {
+    const tabId = this.requireTab();
+    const args: Record<string, unknown> = {
+      tabId,
+      method: scope.method,
+      path: scope.path,
+      status: response.status,
+      body: response.body,
+      contentType: response.contentType ?? 'application/json',
+      ...(scope.bodyHash !== undefined ? { bodyHash: scope.bodyHash } : {}),
+    };
+    const result = await this.mcpCall<{ fulfillId: string }>('route_fulfill', args);
+    const fulfillId = result.fulfillId;
+    return async () => {
+      await this.mcpCall<{ ok: boolean }>('route_fulfill_remove', { tabId, fulfillId }).catch(() => {
+        // Best-effort unregister — don't throw on cleanup failure
+      });
+    };
   }
 
   /**

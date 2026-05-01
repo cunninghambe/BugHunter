@@ -21,9 +21,11 @@ import { runCrossUser } from '../phases/cross-user.js';
 import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { BugDetection, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry } from '../types.js';
+import type { BugDetection, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant } from '../types.js';
+import { DEFAULT_VARIANTS } from '../security/interleaving-palette.js';
 import { runEmit } from '../phases/emit.js';
 import { classifyMemoryLeak } from '../classify/memory-leak.js';
+import { buildRaceConditionsTelemetry } from '../phases/race-runner.js';
 import { runFormReachabilityProbes } from '../phases/form-reachability-probe.js';
 import type { ProbeKey, ProbeResult } from '../phases/form-reachability-probe.js';
 import { log } from '../log.js';
@@ -79,6 +81,17 @@ export type RunOptions = {
   heapSnapshotFrequency?: 'auto' | number;
   heapDiffMinInstances?: number;
   heapDiffMinBytes?: number;
+  // v0.19 race-condition flags
+  /** --race-conditions: shorthand for raceConditions.enabled = true */
+  raceConditions?: boolean;
+  /** --no-race-conditions: disable even if config has enabled = true */
+  noRaceConditions?: boolean;
+  /** --race-variants: comma-separated subset */
+  raceVariants?: string;
+  /** --race-cross-tab: also enable cross_tab variant */
+  raceCrossTab?: boolean;
+  /** --race-strict: disable consensus voting */
+  raceStrict?: boolean;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -126,6 +139,9 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const seoSuppressDuplicateTitles = opts.noSeoDuplicateTitles === true || (config.seoSuppressDuplicateTitles ?? false);
   const keyboardTrapMaxPresses = opts.keyboardTrapMax ?? config.keyboardTrapMaxPresses ?? 20;
 
+  // v0.19: resolve race-condition config from flags + config file
+  const raceConditionsConfig = buildRaceConditionsConfig(opts, config.raceConditions);
+
   const resolved = resolvedConfig({
     ...config,
     ...(opts.maxBugs !== undefined ? { maxBugs: opts.maxBugs } : {}),
@@ -142,6 +158,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(keyboardTrapMaxPresses !== 20 ? { keyboardTrapMaxPresses } : {}),
     ...(perfConfig !== undefined ? { perf: perfConfig } : {}),
     ...(bundleProbeConfig !== undefined ? { bundleProbe: bundleProbeConfig } : {}),
+    ...(raceConditionsConfig !== undefined ? { raceConditions: raceConditionsConfig } : {}),
   });
 
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
@@ -605,6 +622,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
         }
       : undefined;
 
+    const raceConditionsTelemetry = raceConditionsConfig !== undefined
+      ? buildRaceConditionsTelemetry(testCases, results, raceConditionsConfig)
+      : undefined;
+
     runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
       testsPlanned: testCases.length,
       testsRan: results.length,
@@ -616,6 +637,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(seedHookTelemetry.length > 0 ? { seedHookExecutions: seedHookTelemetry } : {}),
       ...(heapAttributionSummary !== undefined ? { heapAttributionSummary } : {}),
       ...(penTestingTelemetry !== undefined ? { penTesting: penTestingTelemetry } : {}),
+      ...(raceConditionsTelemetry !== undefined ? { raceConditions: raceConditionsTelemetry } : {}),
     });
     runState.emitted = true;
     runState.phase = 'done';
@@ -762,9 +784,11 @@ function synthesiseHeapAttributedClusters(
         thirdPartyOrGenerated: false,
       });
     } else {
-      const c = clusterMap.get(sig)!;
-      c.clusterSize++;
-      c.lastSeenAt = new Date().toISOString();
+      const c = clusterMap.get(sig);
+      if (c !== undefined) {
+        c.clusterSize++;
+        c.lastSeenAt = new Date().toISOString();
+      }
     }
   }
 
@@ -782,6 +806,55 @@ function linkSuspectedToAttributed(clusters: BugCluster[], attributedClusters: B
       suspected.fixHints.push('See memory_leak_attributed clusters for retainer attribution.');
     }
   }
+}
+
+/**
+ * v0.19: Build the effective RaceConditionsConfig from CLI flags + config file.
+ * --no-race-conditions overrides everything (escape hatch).
+ * --race-conditions enables even if config has enabled = false.
+ */
+function buildRaceConditionsConfig(
+  opts: RunOptions,
+  configFileRace: RaceConditionsConfig | undefined,
+): RaceConditionsConfig | undefined {
+  if (opts.noRaceConditions === true) {
+    // --no-race-conditions disables everything regardless of config
+    return { ...(configFileRace ?? {}), enabled: false };
+  }
+
+  const baseEnabled = opts.raceConditions === true || (configFileRace?.enabled ?? false);
+  if (!baseEnabled) return configFileRace;
+
+  // Resolve variants from --race-variants flag.
+  // Validate at the CLI boundary — invalid kinds must fail loud, not propagate silently.
+  let variants: Array<InterleavingVariant['kind']> | undefined = configFileRace?.variants;
+  if (typeof opts.raceVariants === 'string' && opts.raceVariants !== '') {
+    const ALLOWED_VARIANTS: ReadonlyArray<InterleavingVariant['kind']> = [
+      'double_submit', 'click_then_navigate', 'optimistic_revert', 'interleaved_mutations', 'cross_tab',
+    ];
+    const parsed = opts.raceVariants.split(',').map(s => s.trim()).filter(s => s !== '');
+    const invalid = parsed.filter(s => !ALLOWED_VARIANTS.includes(s as InterleavingVariant['kind']));
+    if (invalid.length > 0) {
+      throw new Error(
+        `Invalid --race-variants value(s): ${invalid.join(', ')}. ` +
+        `Allowed: ${ALLOWED_VARIANTS.join(', ')}.`
+      );
+    }
+    variants = parsed as Array<InterleavingVariant['kind']>;
+  }
+
+  // --race-cross-tab: add cross_tab to variants
+  if (opts.raceCrossTab === true) {
+    const base = variants ?? DEFAULT_VARIANTS;
+    if (!base.includes('cross_tab')) variants = [...base, 'cross_tab'];
+  }
+
+  return {
+    ...(configFileRace ?? {}),
+    enabled: true,
+    ...(variants !== undefined ? { variants } : {}),
+    ...(opts.raceStrict === true ? { strict: true } : {}),
+  };
 }
 
 async function closeAllExistingTabs(browser: CamofoxBrowserMcpAdapter): Promise<void> {

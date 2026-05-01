@@ -166,6 +166,12 @@ async function main(): Promise<void> {
             : undefined,
           heapDiffMinInstances: typeof flags['heap-diff-min-instances'] === 'string' ? parseInt(flags['heap-diff-min-instances'], 10) : undefined,
           heapDiffMinBytes: typeof flags['heap-diff-min-bytes'] === 'string' ? parseInt(flags['heap-diff-min-bytes'], 10) : undefined,
+          // v0.19 race-condition flags
+          raceConditions: flags['race-conditions'] === true,
+          noRaceConditions: flags['no-race-conditions'] === true,
+          raceVariants: typeof flags['race-variants'] === 'string' ? flags['race-variants'] : undefined,
+          raceCrossTab: flags['race-cross-tab'] === true,
+          raceStrict: flags['race-strict'] === true,
         });
         break;
       }

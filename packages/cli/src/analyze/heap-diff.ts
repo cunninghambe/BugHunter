@@ -61,14 +61,14 @@ const EXCLUDED_RETAINER_ROOTS = new Set([
 ]);
 
 // V8 snapshot node field indices (from the snapshot meta).
-const NODE_TYPE_OFFSET = 0;
+const _NODE_TYPE_OFFSET = 0;
 const NODE_NAME_OFFSET = 1;
 const NODE_RETAINED_SIZE_OFFSET = 3;
 const NODE_EDGES_COUNT_OFFSET = 4;
 
 // V8 snapshot edge field indices.
 const EDGE_TYPE_OFFSET = 0;
-const EDGE_NAME_OFFSET = 1;
+const _EDGE_NAME_OFFSET = 1;
 const EDGE_TO_OFFSET = 2;
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
@@ -103,10 +103,10 @@ function parseSnapshot(raw: HeapSnapshotRaw): ParsedSnapshot {
     throw new HeapDiffError('parse_failed', `Failed to parse heap snapshot JSON: ${String(err)}`);
   }
 
-  const meta = parsed.snapshot?.meta;
-  if (meta === undefined || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.strings)) {
+  if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.strings)) {
     throw new HeapDiffError('parse_failed', 'Heap snapshot missing required fields (meta, nodes, strings)');
   }
+  const meta = parsed.snapshot.meta;
 
   const nodeFields = meta.node_fields.length;
   const edgeFields = meta.edge_fields.length;

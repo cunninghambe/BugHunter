@@ -93,7 +93,10 @@ describe('clusterSignature — v0.5 security kinds', () => {
       'stack_trace_leak_in_response', 'vulnerable_dependency_high',
       'hardcoded_credentials_in_source', 'swallowed_error_empty_catch',
       'idor_horizontal', 'idor_vertical_role_escalate', 'auth_bypass_via_unauthed_route',
-      'no_rate_limit_on_login', 'race_double_submit', 'optimistic_update_divergence',
+      'no_rate_limit_on_login',
+      'race_condition_double_submit', 'race_condition_click_navigate',
+      'race_condition_optimistic_revert', 'race_condition_interleaved_mutations',
+      'race_condition_cross_tab',
       'hallucinated_route', 'hydration_mismatch',
     ];
     for (const kind of kinds) {

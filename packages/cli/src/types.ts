@@ -48,8 +48,12 @@ export type BugKind =
   | 'idor_vertical_role_escalate'
   | 'auth_bypass_via_unauthed_route'
   | 'no_rate_limit_on_login'
-  | 'race_double_submit'
-  | 'optimistic_update_divergence'
+  // v0.19 race-condition kinds (replaced v0.5 stubs race_double_submit + optimistic_update_divergence)
+  | 'race_condition_double_submit'
+  | 'race_condition_click_navigate'
+  | 'race_condition_optimistic_revert'
+  | 'race_condition_interleaved_mutations'
+  | 'race_condition_cross_tab'
   | 'hallucinated_route'
   // v0.16 active pen-testing kinds
   | 'sql_injection'
@@ -91,6 +95,12 @@ export type BugKind =
   | 'seo_canonical_missing'
   | 'seo_h1_missing_or_multiple'
   | 'seo_robots_blocking_crawl';
+
+/**
+ * v0.19 back-compat alias: old v0.5 JSONL records used these kinds.
+ * The store migration layer rewrites them on read. Do not use for new detections.
+ */
+export type OldRaceKinds = 'race_double_submit' | 'optimistic_update_divergence';
 
 export type SideEffectClass = 'safe' | 'mutating' | 'external';
 export type InputSchemaConfidence = 'introspected' | 'inferred' | 'unknown' | 'partial';
@@ -492,6 +502,11 @@ export type TestCase = {
     stateValue: string;
     triggerHint: TriggerSelectorHint;
   };
+  /**
+   * v0.19 race-condition: present when this test case is a race interleaving test.
+   * Executor branches on this field → executeRaceTest instead of runUiTest.
+   */
+  race?: { variant: InterleavingVariant };
 };
 
 export type TestResult = {
@@ -736,6 +751,8 @@ export type BugDetection = {
   authFlowContext?: AuthFlowContext;
   /** Populated for v0.16 active pen-testing findings (sql_injection, command_injection, path_traversal, jwt_weak_alg). */
   injectionContext?: InjectionDetectionContext;
+  /** Populated for v0.19 race-condition findings (race_condition_*). */
+  raceContext?: RaceDetectionContext;
   /** Populated for v0.6 performance findings; shape varies by BugKind. */
   evidence?: Record<string, unknown>;
   /** Populated for v0.8 heap-snapshot attribution findings. */
@@ -903,7 +920,10 @@ export type SyntheticConfig = {
   allowDestructiveOnPerRunReset?: boolean;
   /** Optimistic-divergence: minimum HTTP status to flag as failure. Default: 400. */
   optimisticDivergence?: { statusThreshold?: number };
-  /** Race double-submit: interval between the two clicks. Default: 50ms. */
+  /**
+   * @deprecated Use `raceConditions` instead. Kept for one minor release; a warning
+   * is emitted at config-load if set. Routes to RaceConditionsConfig.doubleSubmitGapMs.
+   */
   raceDoubleSubmit?: { intervalMs?: number };
 };
 
@@ -1013,6 +1033,8 @@ export type BugHunterConfig = {
   authFlow?: AuthFlowConfig;
   /** v0.16 active pen-testing palette (SQL/CMD/PATH/JWT). Default: disabled (opt-in). */
   penTesting?: PenTestingConfig;
+  /** v0.19 race-condition interleaving tests. Default: disabled (opt-in). */
+  raceConditions?: RaceConditionsConfig;
   /** v0.6 performance subsystem. Disabled by default until users opt in. */
   perf?: {
     enabled: boolean;
@@ -1181,6 +1203,98 @@ export type RunSummary = {
   };
   /** v0.16: pen-testing subsystem telemetry — present when penTesting.enabled = true. */
   penTesting?: PenTestingTelemetry;
+  /** v0.19: race-condition telemetry — present when raceConditions.enabled = true. */
+  raceConditions?: RaceConditionsTelemetry;
+};
+
+// --- v0.19 race-condition types ---
+
+/** Discriminated union of interleaving recipes. One variant per pattern. */
+export type InterleavingVariant =
+  | { kind: 'double_submit'; gapMs: number }
+  | { kind: 'click_then_navigate'; targetRoute: string; preFireDelayMs: number }
+  | { kind: 'optimistic_revert'; forcedStatus: number; forcedBody: string }
+  | { kind: 'interleaved_mutations'; siblingActionId: string; gapMs: number; consensusRuns: number }
+  | { kind: 'cross_tab'; settleMs: number };
+
+export type RaceObservation = {
+  offsetMs: number;
+  url: string;
+  consoleErrorCount: number;
+  /** SHA1 of the target selector's outerHTML, truncated to 12 chars. Empty if selector not found. */
+  targetSelectorHash: string;
+  toastVisible: boolean;
+  /** 'pre' = unchanged from baseline; 'optimistic' = success state shown; 'final' = persisted change present;
+      'reverted' = post-failure revert detected; 'errored' = error state present. */
+  targetSelectorState: 'pre' | 'optimistic' | 'final' | 'reverted' | 'errored';
+  /** Captured when a network request matching the action's tool path completed. */
+  responseStatus?: number;
+};
+
+export type RaceDetectionContext = {
+  /** Variant kind that produced this finding. */
+  variantKind: InterleavingVariant['kind'];
+  gapMs?: number;
+  navigateTarget?: string;
+  forcedStatus?: number;
+  siblingToolId?: string;
+  /** For interleaved_mutations consensus voting. */
+  consensusVotes?: number;
+  consensusTotal?: number;
+  /** Per-detector proof discriminator. */
+  proof:
+    | 'duplicate_state'
+    | 'stale_post_navigation'
+    | 'silent_post_unmount_failure'
+    | 'no_revert_after_failure'
+    | 'order_dependent_final_state'
+    | 'cross_tab_no_reconcile';
+  /** Up to 200-char snippet of the divergence evidence. */
+  evidence: string;
+  /** Whether this detection survived consensus voting. */
+  flaky?: boolean;
+};
+
+export type RaceConditionsConfig = {
+  /** Master switch. Default: false (opt-in; race tests are 60s each + flake-prone). */
+  enabled?: boolean;
+  /** Which sub-patterns to run. Default: ['double_submit','click_then_navigate','optimistic_revert','interleaved_mutations']. cross_tab is opt-in. */
+  variants?: Array<InterleavingVariant['kind']>;
+  /** Cap on total race test cases. Default: 200. */
+  maxTests?: number;
+  /** ToolIds known to be safely idempotent (PUT-by-id, DELETE-by-id, etc.). Skips double_submit on these. */
+  idempotentToolIds?: string[];
+  /** ToolId glob patterns considered too sensitive to race-test without explicit opt-in. */
+  aggressiveRaceTargets?: string[];
+  /** Override gap for double_submit. Default: 50ms. */
+  doubleSubmitGapMs?: number;
+  /** Override forced status for optimistic_revert. Default: 500. */
+  optimisticRevertForcedStatus?: number;
+  /** Consensus runs for interleaved_mutations. Default: 3. */
+  consensusRuns?: number;
+  /** When true, skip the per-test reset before each race test (NOT RECOMMENDED). Default: false. */
+  skipResetBetweenRaceTests?: boolean;
+  /** Concurrency cap for race tests specifically. Default: min(2, config.concurrency). */
+  raceConcurrency?: number;
+  /**
+   * Explicit pairs for interleaved_mutations. Each tuple is [toolIdA, toolIdB].
+   * When provided, these pairs take priority over the auto-pairing heuristic.
+   */
+  pairedToolIds?: [string, string][];
+  /** Disable consensus voting: every detection ships regardless of flakiness. */
+  strict?: boolean;
+};
+
+export type RaceConditionsTelemetry = {
+  enabled: boolean;
+  variantsRun: Array<InterleavingVariant['kind']>;
+  testsAttempted: number;
+  testsSucceeded: number;
+  testsTimedOut: number;
+  testsSkipped: Array<{ reason: string; count: number }>;
+  detectionsByKind: Record<string, number>;
+  flakyDetections: number;
+  durationMs: number;
 };
 
 // --- v0.14 seed-hook execution record (defined here so emit.ts can reference it) ---

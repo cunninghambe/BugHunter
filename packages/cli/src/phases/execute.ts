@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import type { BrowserMcpAdapter, TabScope } from '../adapters/browser-mcp.js';
+import { executeRaceTest } from './race-runner.js';
 import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
@@ -243,6 +244,19 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     }
 
     try {
+      // v0.19: race test cases take a separate path
+      if (tc.race !== undefined && browser !== undefined) {
+        const raceConfig = runState.config.raceConditions ?? {};
+        const result = await executeRaceTest(tc, {
+          browser,
+          runId: runState.runId,
+          appBaseUrl: appBaseUrl ?? '',
+          config: raceConfig,
+          reRunForFlakes: runState.config.reRunForFlakes,
+        });
+        return result;
+      }
+
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
         ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs)

@@ -310,7 +310,7 @@ class CdpSessionImpl implements CdpSession {
     this.cdp.on('HeapProfiler.addHeapSnapshotChunk', onChunk);
     await this.cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
     // Allow in-flight chunk events to arrive before detaching.
-    await new Promise<void>(resolve => setTimeout(resolve, 100));
+    await new Promise<void>(resolve => { setTimeout(resolve, 100); });
     this.cdp.off('HeapProfiler.addHeapSnapshotChunk', onChunk);
 
     return { capturedAtMs: Date.now(), json: chunks.join('') };
@@ -319,7 +319,7 @@ class CdpSessionImpl implements CdpSession {
   async collectGarbage(): Promise<void> {
     if (this.cdp === null) throw new Error('cdp-session: no active CDP session; call newTab first');
     await this.cdp.send('HeapProfiler.collectGarbage');
-    await new Promise<void>(resolve => setTimeout(resolve, 500));
+    await new Promise<void>(resolve => { setTimeout(resolve, 500); });
   }
 
   async close(): Promise<void> {

@@ -19,6 +19,18 @@ export type ValidateResult = {
 };
 
 export async function runValidate(opts: ValidateOptions): Promise<ValidateResult> {
+  // v0.19 EC-12: race tests require per-test or per-page reset policy
+  if (
+    opts.config.raceConditions?.enabled === true &&
+    opts.config.resetPolicy === 'per-run'
+  ) {
+    throw new Error(
+      'race tests require per-test or per-page reset policy, but resetPolicy is "per-run". ' +
+      'Change resetPolicy to "per-test" (recommended for transactional DBs) or disable race tests ' +
+      'with raceConditions.enabled = false.'
+    );
+  }
+
   // 1. SurfaceMCP reachable
   const catalog = await opts.surfaceMcp.surface_list_tools().catch((err: unknown) => {
     throw new Error(`SurfaceMCP unreachable at ${opts.config.surfaceMcpUrl}: ${String(err)}`);

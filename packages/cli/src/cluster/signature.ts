@@ -113,13 +113,30 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     case 'no_rate_limit_on_login':
       return `no_rate_limit_on_login|${detection.endpoint ?? ''}`;
 
-    // Synthetic
-    case 'race_double_submit': {
-      const formSig = detection.headerContext?.expectedShape ?? '';
-      return `race_double_submit|${detection.endpoint ?? ''}|${formSig}`;
+    // v0.19 race-condition kinds
+    case 'race_condition_double_submit': {
+      const tool = detection.endpoint ?? '';
+      return `race_condition_double_submit|${tool}|${detection.raceContext?.gapMs ?? ''}`;
     }
-    case 'optimistic_update_divergence':
-      return `optimistic_update_divergence|${detection.endpoint ?? ''}|${detection.status ?? ''}`;
+    case 'race_condition_click_navigate': {
+      const route = detection.pageRoute ?? '';
+      const target = detection.raceContext?.navigateTarget ?? '';
+      const proof = detection.raceContext?.proof ?? '';
+      return `race_condition_click_navigate|${route}|${target}|${proof}`;
+    }
+    case 'race_condition_optimistic_revert': {
+      const tool = detection.endpoint ?? '';
+      return `race_condition_optimistic_revert|${tool}`;
+    }
+    case 'race_condition_interleaved_mutations': {
+      const tool = detection.endpoint ?? '';
+      const sibling = detection.raceContext?.siblingToolId ?? '';
+      return `race_condition_interleaved_mutations|${tool}|${sibling}`;
+    }
+    case 'race_condition_cross_tab': {
+      const tool = detection.endpoint ?? '';
+      return `race_condition_cross_tab|${tool}`;
+    }
 
     // Hallucinated route
     case 'hallucinated_route':
@@ -196,8 +213,11 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     }
     case 'memory_leak_suspected':
       return 'memory_leak_suspected:run';
-    case 'memory_leak_attributed':
-      return `memory_leak_attributed|${detection.heapContext?.constructorName ?? ''}|${detection.heapContext?.retainerChain?.[0] ?? ''}`;
+    case 'memory_leak_attributed': {
+      const chain = detection.heapContext?.retainerChain;
+      const retainerFirst = chain !== undefined && chain.length > 0 ? chain[0] : '';
+      return `memory_leak_attributed|${detection.heapContext?.constructorName ?? ''}|${retainerFirst}`;
+    }
 
     // v0.6 a11y baseline kinds
     case 'axe_color_contrast_strong':
