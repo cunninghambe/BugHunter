@@ -1089,6 +1089,8 @@ export type IdorConfig = {
   maxReplays?: number;
   /** Probe mutating tools too. Default: false; requires resetPolicy in {transactional, per-test}. */
   probeMutating?: boolean;
+  /** Opt-in escape hatch for idor.probeMutating against non-loopback hosts. Default: false. */
+  allowRemoteHost?: boolean;
 };
 
 export type BugHunterConfig = {

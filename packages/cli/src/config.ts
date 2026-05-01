@@ -175,6 +175,7 @@ export const ConfigSchema = z.object({
     maxFixturesPerRoleResource: z.number().int().positive().optional(),
     maxReplays: z.number().int().positive().optional(),
     probeMutating: z.boolean().optional(),
+    allowRemoteHost: z.boolean().optional(),
   }).optional(),
   authFlow: z.object({
     enabled: z.boolean().optional(),
