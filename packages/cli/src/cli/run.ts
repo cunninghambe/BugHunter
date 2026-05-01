@@ -25,6 +25,7 @@ import type { BugDetection, PerfArtifacts, PreState, PostState, SkippedItem, Tes
 import { DEFAULT_VARIANTS } from '../security/interleaving-palette.js';
 import { runEmit } from '../phases/emit.js';
 import { classifyMemoryLeak } from '../classify/memory-leak.js';
+import { buildRaceConditionsTelemetry } from '../phases/race-runner.js';
 import { runFormReachabilityProbes } from '../phases/form-reachability-probe.js';
 import type { ProbeKey, ProbeResult } from '../phases/form-reachability-probe.js';
 import { log } from '../log.js';
@@ -621,6 +622,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
         }
       : undefined;
 
+    const raceConditionsTelemetry = raceConditionsConfig !== undefined
+      ? buildRaceConditionsTelemetry(testCases, results, raceConditionsConfig)
+      : undefined;
+
     runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
       testsPlanned: testCases.length,
       testsRan: results.length,
@@ -632,6 +637,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(seedHookTelemetry.length > 0 ? { seedHookExecutions: seedHookTelemetry } : {}),
       ...(heapAttributionSummary !== undefined ? { heapAttributionSummary } : {}),
       ...(penTestingTelemetry !== undefined ? { penTesting: penTestingTelemetry } : {}),
+      ...(raceConditionsTelemetry !== undefined ? { raceConditions: raceConditionsTelemetry } : {}),
     });
     runState.emitted = true;
     runState.phase = 'done';
@@ -819,11 +825,22 @@ function buildRaceConditionsConfig(
   const baseEnabled = opts.raceConditions === true || (configFileRace?.enabled ?? false);
   if (!baseEnabled) return configFileRace;
 
-  // Resolve variants from --race-variants flag
+  // Resolve variants from --race-variants flag.
+  // Validate at the CLI boundary — invalid kinds must fail loud, not propagate silently.
   let variants: Array<InterleavingVariant['kind']> | undefined = configFileRace?.variants;
   if (typeof opts.raceVariants === 'string' && opts.raceVariants !== '') {
-    const parsed = opts.raceVariants.split(',').map(s => s.trim()) as Array<InterleavingVariant['kind']>;
-    variants = parsed;
+    const ALLOWED_VARIANTS: ReadonlyArray<InterleavingVariant['kind']> = [
+      'double_submit', 'click_then_navigate', 'optimistic_revert', 'interleaved_mutations', 'cross_tab',
+    ];
+    const parsed = opts.raceVariants.split(',').map(s => s.trim()).filter(s => s !== '');
+    const invalid = parsed.filter(s => !ALLOWED_VARIANTS.includes(s as InterleavingVariant['kind']));
+    if (invalid.length > 0) {
+      throw new Error(
+        `Invalid --race-variants value(s): ${invalid.join(', ')}. ` +
+        `Allowed: ${ALLOWED_VARIANTS.join(', ')}.`
+      );
+    }
+    variants = parsed as Array<InterleavingVariant['kind']>;
   }
 
   // --race-cross-tab: add cross_tab to variants

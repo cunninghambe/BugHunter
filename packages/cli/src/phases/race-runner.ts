@@ -5,6 +5,7 @@ import type { BrowserMcpAdapter, TabScope } from '../adapters/browser-mcp.js';
 import type {
   TestCase, TestResult, BugDetection, InfrastructureFailure,
   RaceObservation, InterleavingVariant, RaceConditionsConfig,
+  RaceConditionsTelemetry,
 } from '../types.js';
 import { createId } from '@paralleldrive/cuid2';
 import { createHash } from 'node:crypto';
@@ -437,5 +438,71 @@ async function verifyWithConsensus(
   if (firstDetection.raceContext !== undefined) {
     return [{ ...firstDetection, raceContext: { ...firstDetection.raceContext, flaky: true } }];
   }
-  return [{ ...firstDetection }];
+  return [firstDetection];
+}
+
+const RACE_BUG_KINDS = new Set([
+  'race_condition_double_submit',
+  'race_condition_click_navigate',
+  'race_condition_optimistic_revert',
+  'race_condition_interleaved_mutations',
+  'race_condition_cross_tab',
+]);
+
+/**
+ * Build summary.raceConditions telemetry from the executed test set.
+ * Race tests are identified by `tc.race !== undefined`. Returns undefined when
+ * race-conditions are disabled so callers can omit the field entirely.
+ */
+export function buildRaceConditionsTelemetry(
+  testCases: readonly TestCase[],
+  results: readonly TestResult[],
+  config: RaceConditionsConfig,
+): RaceConditionsTelemetry | undefined {
+  if (config.enabled !== true) return undefined;
+
+  const raceTcs = testCases.filter(tc => tc.race !== undefined);
+  const raceTcIds = new Set(raceTcs.map(tc => tc.id));
+  const raceResults = results.filter(r => raceTcIds.has(r.testId));
+
+  const variantsRunSet = new Set<InterleavingVariant['kind']>();
+  for (const tc of raceTcs) {
+    if (tc.race?.variant.kind !== undefined) variantsRunSet.add(tc.race.variant.kind);
+  }
+
+  const detectionsByKind: Record<string, number> = {};
+  let flakyDetections = 0;
+  let testsTimedOut = 0;
+  let testsSucceeded = 0;
+  let durationMs = 0;
+  const skipReasonsMap = new Map<string, number>();
+
+  for (const r of raceResults) {
+    durationMs += r.durationMs;
+    if (r.infrastructureFailure !== undefined) {
+      const detail = r.infrastructureFailure.detail ?? '';
+      if (/timeout/i.test(detail)) testsTimedOut++;
+      const reason = r.infrastructureFailure.kind ?? 'infrastructure_failure';
+      skipReasonsMap.set(reason, (skipReasonsMap.get(reason) ?? 0) + 1);
+      continue;
+    }
+    if (r.bugs.length === 0) testsSucceeded++;
+    for (const bug of r.bugs) {
+      if (!RACE_BUG_KINDS.has(bug.kind)) continue;
+      detectionsByKind[bug.kind] = (detectionsByKind[bug.kind] ?? 0) + 1;
+      if (bug.raceContext?.flaky === true) flakyDetections++;
+    }
+  }
+
+  return {
+    enabled: true,
+    variantsRun: Array.from(variantsRunSet),
+    testsAttempted: raceTcs.length,
+    testsSucceeded,
+    testsTimedOut,
+    testsSkipped: Array.from(skipReasonsMap.entries()).map(([reason, count]) => ({ reason, count })),
+    detectionsByKind,
+    flakyDetections,
+    durationMs,
+  };
 }
