@@ -26,6 +26,9 @@ import { suppressCommand } from './suppress.js';
 import { unsuppressCommand } from './unsuppress.js';
 import { triageCliCommand } from './triage.js';
 import { explainCliCommand } from './explain.js';
+import { exportCommand, parseExportArgs } from './export.js';
+import { ciCommand } from './ci.js';
+import { publishCommand } from './publish.js';
 import type { DetectorStatus } from '../detectors/registry.js';
 import type { BugKind, PaletteVariant } from '../types.js';
 import { log } from '../log.js';
@@ -55,6 +58,12 @@ Usage:
   bughunter unsuppress <pattern>
   bughunter triage [--interactive] [--run-id <id>]
   bughunter explain <clusterId> [--no-cache] [--run-id <id>]
+  bughunter export <runId> --format <sarif|github|gitlab|csv|linear|jira>
+                           [--out <path>] [--severity-min <level>] [--truncate <n>] [--no-third-party]
+  bughunter ci [run-options] [--runId <id>] [--fail-on <spec>]
+               [--report <path>] [--summary-md <path>] [--diff-against <runId>] [--upload]
+  bughunter publish <runId> --target github
+                            [--ref <ref>] [--sha <sha>] [--report <path>]
 
 Triage & suppression:
   Pattern grammar: bugIdentity:<exact> | kind:<BugKind> | endpoint:<glob> |
@@ -447,6 +456,50 @@ async function main(): Promise<void> {
           clusterId,
           noCache: flags['no-cache'] === true,
           runId: typeof flags['run-id'] === 'string' ? flags['run-id'] : undefined,
+        });
+        break;
+      }
+
+      case 'export': {
+        const exportOpts = parseExportArgs(args, flags);
+        exportCommand(projectDir, exportOpts);
+        break;
+      }
+
+      case 'ci': {
+        await ciCommand(projectDir, {
+          projectDir,
+          runId: typeof flags['runId'] === 'string' ? flags['runId'] : undefined,
+          failOn: typeof flags['fail-on'] === 'string' ? flags['fail-on'] : undefined,
+          report: typeof flags['report'] === 'string' ? flags['report'] : undefined,
+          summaryMd: typeof flags['summary-md'] === 'string' ? flags['summary-md'] : undefined,
+          diffAgainst: typeof flags['diff-against'] === 'string' ? flags['diff-against'] : undefined,
+          upload: flags['upload'] === true,
+          route: typeof flags['route'] === 'string' ? flags['route'] : undefined,
+          role: typeof flags['role'] === 'string' ? flags['role'] : undefined,
+          maxBugs: typeof flags['max-bugs'] === 'string' ? parseInt(flags['max-bugs'], 10) : undefined,
+          maxRuntime: typeof flags['max-runtime'] === 'string' ? parseInt(flags['max-runtime'], 10) : undefined,
+          budget: typeof flags['budget'] === 'string' ? parseInt(flags['budget'], 10) : undefined,
+          concurrency: typeof flags['concurrency'] === 'string' ? parseInt(flags['concurrency'], 10) : undefined,
+          apiConcurrency: typeof flags['api-concurrency'] === 'string' ? parseInt(flags['api-concurrency'], 10) : undefined,
+        });
+        break;
+      }
+
+      case 'publish': {
+        const pubRunId = args[0] ?? '';
+        if (pubRunId === '') throw new Error('Usage: bughunter publish <runId> --target <github>');
+        const target = typeof flags['target'] === 'string' ? flags['target'] : '';
+        if (target === '') {
+          process.stderr.write('Missing --target. Only --target github is supported.\n');
+          process.exit(2);
+        }
+        publishCommand(projectDir, {
+          runId: pubRunId,
+          target,
+          ref: typeof flags['ref'] === 'string' ? flags['ref'] : undefined,
+          sha: typeof flags['sha'] === 'string' ? flags['sha'] : undefined,
+          report: typeof flags['report'] === 'string' ? flags['report'] : undefined,
         });
         break;
       }

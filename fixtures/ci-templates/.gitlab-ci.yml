@@ -1,0 +1,22 @@
+bughunter:
+  image: node:20-slim
+  stage: test
+  variables:
+    BUGHUNTER_BASE_URL: $BUGHUNTER_BASE_URL
+    BUGHUNTER_ROLES: $BUGHUNTER_ROLES
+  script:
+    - npm ci
+    - |
+      npx bughunter ci \
+        --fail-on major+ \
+        --report gl-sast-report.json \
+        --format gitlab
+    - LAST_RUN=$(cat .bughunter/last-run-id)
+    - npx bughunter export $LAST_RUN --format gitlab --out gl-sast-report.json
+  artifacts:
+    when: always
+    reports:
+      sast: gl-sast-report.json
+    paths:
+      - gl-sast-report.json
+      - .bughunter/last-report.summary.md

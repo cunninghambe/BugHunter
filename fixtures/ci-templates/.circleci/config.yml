@@ -1,0 +1,30 @@
+version: 2.1
+
+orbs:
+  node: circleci/node@5
+
+jobs:
+  bughunter:
+    executor: node/default
+    steps:
+      - checkout
+      - node/install-packages
+      - run:
+          name: Run BugHunter CI
+          command: |
+            npx bughunter ci \
+              --fail-on major+ \
+              --report bughunter.sarif \
+              --summary-md /tmp/bughunter-summary.md
+          environment:
+            BUGHUNTER_BASE_URL: $BUGHUNTER_BASE_URL
+            BUGHUNTER_ROLES: $BUGHUNTER_ROLES
+      - store_artifacts:
+          path: bughunter.sarif
+      - store_artifacts:
+          path: /tmp/bughunter-summary.md
+
+workflows:
+  main:
+    jobs:
+      - bughunter

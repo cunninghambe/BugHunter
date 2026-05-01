@@ -7,7 +7,7 @@ import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import { log } from '../log.js';
 
 const BUGHUNTER_VERSION = '0.1.0';
-// Registry entries do not carry severity yet (added in v0.29). Lookup returns undefined → falls back to 'info'.
+// v0.29: severity not yet in DetectorRegistryEntry — defaults to 'info' for all entries.
 const registryLookup: Record<string, { severity?: Severity }> = Object.fromEntries(
   DETECTOR_REGISTRY.map(e => [e.kind, e as { severity?: Severity }]),
 );
