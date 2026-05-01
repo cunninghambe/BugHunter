@@ -18,7 +18,9 @@ import { harvestIdsFromDom } from '../security/dom-id-harvester.js';
 import { canaryAppearsAsHtml, canaryAppearsAsAttribute, canaryAppearsInScriptTag } from '../security/injection-palette.js';
 import { XSS_OBSERVER_START_SCRIPT, XSS_OBSERVER_DRAIN_SCRIPT } from '../security/xss-observer.js';
 import type { XssContext } from '../types.js';
-import { classifyConsoleErrors } from '../classify/console.js';
+import { classifyReactErrors } from '../classify/react.js';
+import { classifyUnboundedList } from '../classify/unbounded-list.js';
+import { classifyDomErrorText, CHECK_DOM_ERROR_SCRIPT } from '../classify/dom-error-text.js';
 import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
 import { harEntriesToNetworkRequests } from '../adapters/har-writer.js';
 import { classifyVitals } from '../classify/vitals.js';
@@ -50,7 +52,7 @@ import { log } from '../log.js';
 import { createId } from '@paralleldrive/cuid2';
 import { MAX_CONSECUTIVE_INFRA_FAILURES } from '../config.js';
 import type { PerfCollector } from '../perf/perf-collector.js';
-import { AXE_RUN_SCRIPT } from '../classify/accessibility.js';
+import { AXE_RUN_SCRIPT, classifyA11yDelta } from '../classify/accessibility.js';
 import type { A11yViolation } from '../classify/accessibility.js';
 import { classifyA11yBaseline } from '../classify/a11y-baseline.js';
 import { PlaywrightKeyboardTrapProbe } from '../adapters/keyboard-trap-probe.js';
@@ -271,7 +273,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
-        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs)
+        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined })
         : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds, appBaseUrl);
 
       // Perf drain: collect vitals/HAR after the action completes
@@ -471,6 +473,8 @@ async function executeUiTestInner(
   discoveredIds?: DiscoveredIds,
   onPageBaseline?: (scope: TabScope, pageRoute: string) => Promise<FocusAfterActionResult | undefined>,
   asyncMaxWaitMs?: number,
+  /** V24: extra flags for deferred detector wiring. */
+  extras?: { enableA11y?: boolean; enablePerf?: boolean },
 ): Promise<TestResult> {
   const bugs: BugDetection[] = [];
   const preConsoleErrors: ConsoleError[] = [];
@@ -539,6 +543,26 @@ async function executeUiTestInner(
       log.warn('a11y-baseline: per-page hook failed', { err: String(err), page: tc.page });
       return undefined;
     });
+  }
+
+  // V24: pre-action DOM error-text probe. Always-on (cheap ~5ms). Compare with post to avoid
+  // blaming the action for pre-existing error text (EC-4 in spec).
+  const preErrEval = await scope.evaluate(CHECK_DOM_ERROR_SCRIPT).catch(err => {
+    log.debug('v24: pre dom-error-text eval failed', { err: String(err), occurrenceId });
+    return null;
+  });
+  const preDomErrFound = (preErrEval?.value as { found?: boolean } | null | undefined)?.found === true;
+
+  // V24: pre-action axe delta capture. Gated on enableA11y (--a11y flag).
+  // Runs AFTER onPageBaseline so axe is loaded on the page (EC-2 in spec).
+  let preA11yViolations: A11yViolation[] = [];
+  if (extras?.enableA11y === true) {
+    const preAxeRes = await scope.evaluate(AXE_RUN_SCRIPT).catch(err => {
+      log.debug('v24: pre axe-run failed', { err: String(err), occurrenceId });
+      return null;
+    });
+    const v = (preAxeRes?.value as { violations?: unknown } | null | undefined)?.violations;
+    preA11yViolations = Array.isArray(v) ? (v as A11yViolation[]) : [];
   }
 
   try {
@@ -717,6 +741,39 @@ async function executeUiTestInner(
 
   const postSnapshot = await scope.snapshot().catch(() => null);
 
+  // V24: post-action DOM error-text probe.
+  const postErrEval = await scope.evaluate(CHECK_DOM_ERROR_SCRIPT).catch(err => {
+    log.debug('v24: post dom-error-text eval failed', { err: String(err), occurrenceId });
+    return null;
+  });
+  const postErrPayload = postErrEval?.value as { found?: boolean; text?: string } | null | undefined;
+  const postDomErrFound = postErrPayload?.found === true;
+  const postDomErrText = postErrPayload?.text ?? '';
+
+  // V24: post-action outerHTML capture for unbounded_list_render. Gated on enablePerf.
+  // Capped at 2 MiB; truncation under-counts rows (false-negative, not false-positive).
+  let outerHtml = '';
+  if (extras?.enablePerf === true) {
+    const outerHtmlEval = await scope.evaluate(
+      '(function(){var s=document.documentElement.outerHTML||"";return s.length>2097152?s.slice(0,2097152):s;})()'
+    ).catch(err => {
+      log.debug('v24: outerHTML capture failed', { err: String(err), occurrenceId });
+      return null;
+    });
+    outerHtml = typeof outerHtmlEval?.value === 'string' ? outerHtmlEval.value : '';
+  }
+
+  // V24: post-action axe delta capture. Gated on enableA11y.
+  let postA11yViolations: A11yViolation[] = [];
+  if (extras?.enableA11y === true) {
+    const postAxeRes = await scope.evaluate(AXE_RUN_SCRIPT).catch(err => {
+      log.debug('v24: post axe-run failed', { err: String(err), occurrenceId });
+      return null;
+    });
+    const v = (postAxeRes?.value as { violations?: unknown } | null | undefined)?.violations;
+    postA11yViolations = Array.isArray(v) ? (v as A11yViolation[]) : [];
+  }
+
   // DOM-side ID harvest for cross-user IDOR phase.
   if (postSnapshot?.snapshot !== undefined && discoveredIds !== undefined) {
     const uiIds = harvestIdsFromDom(postSnapshot.snapshot, []);
@@ -774,12 +831,33 @@ async function executeUiTestInner(
     title: '',
     consoleErrors: postConsoleErrors,
     networkRequests: [],
-    domErrorTextDetected: false,
+    // V24: set the real value instead of hardcoded false, so classifyMissingStateChange sees it.
+    domErrorTextDetected: postDomErrFound,
     mutationObserverWindowMs: mutWindowMs,
   };
 
-  bugs.push(...classifyConsoleErrors(postConsoleErrors, tc.page));
+  // V24: classifyReactErrors replaces classifyConsoleErrors — it emits hydration_mismatch,
+  // react_error, and console_error (fallthrough), so no classifications are lost.
+  // classifyConsoleErrors remains in console.ts but is no longer called from here.
+  bugs.push(...classifyReactErrors(postConsoleErrors, tc.page));
   bugs.push(...classifyNetworkRequests([], tc.expectedOutcome, true));
+
+  // V24: dom_error_text — emit only if error appeared post-action and was NOT already present
+  // pre-action (EC-4 in spec: pre-existing error text is not the action's fault).
+  if (postDomErrFound && !preDomErrFound) {
+    const domErrDetection = classifyDomErrorText(postDomErrText, tc.page, '');
+    if (domErrDetection !== null) bugs.push(domErrDetection);
+  }
+
+  // V24: unbounded_list_render — gated on enablePerf (outerHTML captured only when perf is on).
+  if (extras?.enablePerf === true) {
+    bugs.push(...classifyUnboundedList(outerHtml, tc.page));
+  }
+
+  // V24: accessibility_critical delta — gated on enableA11y (--a11y flag).
+  if (extras?.enableA11y === true) {
+    bugs.push(...classifyA11yDelta(preA11yViolations, postA11yViolations, tc.page));
+  }
 
   const missingChange = classifyMissingStateChange(preState, postState, tc.action, tc.page);
   if (missingChange !== null) bugs.push(missingChange);
@@ -946,6 +1024,8 @@ async function executeUiTest(
   discoveredIds?: DiscoveredIds,
   onPageBaseline?: (scope: TabScope, pageRoute: string) => Promise<FocusAfterActionResult | undefined>,
   asyncMaxWaitMs?: number,
+  /** V24: extra flags for deferred detector wiring. */
+  extras?: { enableA11y?: boolean; enablePerf?: boolean },
 ): Promise<TestResult> {
   const start = Date.now();
   const occurrenceId = createId();
@@ -979,7 +1059,7 @@ async function executeUiTest(
   let result: TestResult;
   try {
     result = await browser.withTab(pageUrl, headers, (scope) =>
-      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs)
+      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, extras)
     );
   } catch (err) {
     // withTab itself failed (openTab or closeTab threw, or fn re-threw after unexpected error)
