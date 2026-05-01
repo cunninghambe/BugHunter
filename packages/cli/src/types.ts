@@ -215,6 +215,8 @@ export type BugCluster = {
   replayKind?: ReplayKind;
   /** Stable cluster-signature key stored at mint time; used by static-rerun path to match fresh detections. */
   signatureKey?: string;
+  /** v0.27: stable 16-char hex identity derived from sha256(projectName + ' ' + signatureKey). Absent on pre-V27 clusters. */
+  bugIdentity?: string;
 };
 
 export type ClusterVerdict =
@@ -1177,6 +1179,17 @@ export type RunSummary = {
   };
   /** v0.16: pen-testing subsystem telemetry — present when penTesting.enabled = true. */
   penTesting?: PenTestingTelemetry;
+  /** v0.27: cross-run delta vs. the previous run for the same projectName. Absent when history.db has no prior run. */
+  crossRun?: CrossRunSummary;
+};
+
+export type CrossRunSummary = {
+  /** Previous run id used for comparison; null when this is the first run for the project. */
+  previousRunId: string | null;
+  newBugs: number;
+  persistent: number;
+  goneSinceLast: number;
+  regressed: number;
 };
 
 // --- v0.14 seed-hook execution record (defined here so emit.ts can reference it) ---
