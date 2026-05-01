@@ -1,5 +1,8 @@
 // Core domain types for BugHunter v0.1 — extended for v0.5 security & hygiene.
 
+import type { NavigationEvent } from './adapters/cdp-session.js';
+export type { NavigationEvent };
+
 export type InputType =
   | 'text'
   | 'email'
@@ -749,6 +752,9 @@ export type PerfArtifacts = {
   longTasks: LongTaskSample[];
   heapSamples: HeapSample[];
   renderEvents: RenderEvent[];
+  /** V24: navigation events captured by CDP framenavigated listener. Required by classifyCancelMissing.
+   *  Optional for back-compat with pre-V24 PerfArtifact fixtures; treat as [] when absent. */
+  navigationEvents?: NavigationEvent[];
   /** Console errors collected via CDP Console.messageAdded (hydration-mismatch redundancy path). */
   cdpConsoleErrors?: ConsoleError[];
 };

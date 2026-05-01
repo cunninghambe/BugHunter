@@ -278,7 +278,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
       if (perfCollector !== undefined && tc.action.via === 'ui') {
         const { perf, har } = await perfCollector.drain(result.occurrenceId).catch(err => {
           log.warn('perf-collector: drain failed', { err: String(err), occurrenceId: result.occurrenceId });
-          return { perf: { occurrenceId: result.occurrenceId, webVitals: [], longTasks: [], heapSamples: [], renderEvents: [] }, har: { log: { version: '1.2' as const, creator: { name: 'bughunter', version: '0.6' }, entries: [] } } };
+          return { perf: { occurrenceId: result.occurrenceId, webVitals: [], longTasks: [], heapSamples: [], renderEvents: [], navigationEvents: [] }, har: { log: { version: '1.2' as const, creator: { name: 'bughunter', version: '0.6' }, entries: [] } } };
         });
         perfArtifacts.set(result.occurrenceId, perf);
 
