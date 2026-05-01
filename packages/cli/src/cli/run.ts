@@ -39,7 +39,7 @@ import { createPerfCollector, type PerfCollector } from '../perf/perf-collector.
 import { runBundleProbe } from '../phases/bundle-probe.js';
 import { runAnalyze } from '../phases/analyze.js';
 import { runSeedHooksAt } from '../seed/runner.js';
-import type { RunSummary, SeedHookExecution, BugCluster } from '../types.js';
+import type { RunSummary, SeedHookExecution, BugCluster, FuzzConfig, FuzzTelemetry } from '../types.js';
 import { applySuppressions } from '../suppress/apply.js';
 
 function aggregateDiscoverySkips(skipList: SkippedItem[]): Array<{ reason: string; count: number }> {
@@ -120,6 +120,17 @@ export type RunOptions = {
   recordNetwork?: string;
   /** --allow-network-miss: when --frozen-network, fall through to live network on a miss. */
   allowNetworkMiss?: boolean;
+  // v0.39 generative fuzz flags
+  /** --fuzz <strategy>: enable fuzz with 'none'|'unicode'|'shape'|'boundary'|'all' */
+  fuzz?: string;
+  /** --fuzz-strategies <list>: comma-separated subset; takes precedence over --fuzz */
+  fuzzStrategies?: string;
+  /** --fuzz-runs <N>: draws per field per surface per strategy (default 16) */
+  fuzzRuns?: number;
+  /** --fuzz-shrink on|off: enable/disable failure-shrinking */
+  fuzzShrink?: boolean;
+  /** --no-fuzz: hard disable, overrides config.fuzz.enabled = true */
+  noFuzz?: boolean;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -130,6 +141,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   // EC-13: --seed + --resume is incompatible.
   if (opts.seed !== undefined && opts.resume !== undefined) {
     throw new Error('--seed cannot be combined with --resume');
+  }
+
+  // EC-6: --fuzz requires --seed.
+  if (opts.fuzz !== undefined && opts.fuzz !== 'none' && opts.seed === undefined) {
+    throw new Error('--fuzz requires --seed (or runConfig.seed) for deterministic generation');
   }
 
   // Install seeded id factory when --seed is set; clean up after the run.
@@ -205,6 +221,9 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   // v0.19: resolve race-condition config from flags + config file
   const raceConditionsConfig = buildRaceConditionsConfig(opts, config.raceConditions);
 
+  // v0.39: resolve fuzz config from flags + config file
+  const fuzzConfig = buildFuzzConfig(opts, config.fuzz);
+
   // v0.22 nav-state flag resolution (§6.1): CLI flags override config; implication rules apply.
   // --nav-state-refresh-race and --enable-history-corruption imply --enable-nav-state.
   const navStateRefreshRace = opts.navStateRefreshRace === true || (config.enableNavStateRefreshRace ?? false);
@@ -238,6 +257,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(perfConfig !== undefined ? { perf: perfConfig } : {}),
     ...(bundleProbeConfig !== undefined ? { bundleProbe: bundleProbeConfig } : {}),
     ...(raceConditionsConfig !== undefined ? { raceConditions: raceConditionsConfig } : {}),
+    ...(fuzzConfig !== undefined ? { fuzz: fuzzConfig } : {}),
     // v0.22 nav-state
     enableNavState,
     enableNavStateRefreshRace: navStateRefreshRace,
@@ -741,6 +761,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ? buildRaceConditionsTelemetry(testCases, results, raceConditionsConfig)
       : undefined;
 
+    const fuzzTelemetry = fuzzConfig?.enabled === true
+      ? buildFuzzTelemetry(testCases, fuzzConfig)
+      : undefined;
+
     // Build determinism telemetry block (§6.8).
     const replayTelemetry = harReplayer?.telemetry();
     const deterministicBlock = (hasSeed || hasClock || hasNetwork) ? {
@@ -762,6 +786,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(heapAttributionSummary !== undefined ? { heapAttributionSummary } : {}),
       ...(penTestingTelemetry !== undefined ? { penTesting: penTestingTelemetry } : {}),
       ...(raceConditionsTelemetry !== undefined ? { raceConditions: raceConditionsTelemetry } : {}),
+      ...(fuzzTelemetry !== undefined ? { fuzz: fuzzTelemetry } : {}),
       ...(crossUserResult.idorTelemetry !== undefined ? { idor: crossUserResult.idorTelemetry } : {}),
       suppressedClusters: suppressedCount,
       ...(suppressedSamples.length > 0 ? { suppressedSamples } : {}),
@@ -987,6 +1012,81 @@ function buildRaceConditionsConfig(
     enabled: true,
     ...(variants !== undefined ? { variants } : {}),
     ...(opts.raceStrict === true ? { strict: true } : {}),
+  };
+}
+
+const ALLOWED_FUZZ_STRATEGIES = ['unicode', 'shape', 'boundary'] as const;
+
+function buildFuzzConfig(opts: RunOptions, configFileFuzz: FuzzConfig | undefined): FuzzConfig | undefined {
+  // --no-fuzz is the kill switch; disables everything
+  if (opts.noFuzz === true) {
+    return { ...(configFileFuzz ?? {}), enabled: false };
+  }
+
+  // Validate --fuzz-strategies if provided
+  if (opts.fuzzStrategies !== undefined) {
+    const parsed = opts.fuzzStrategies.split(',').map(s => s.trim()).filter(s => s !== '');
+    if (parsed.length === 0) {
+      throw new Error('--fuzz-strategies must specify at least one strategy (unicode, shape, boundary)');
+    }
+    const invalid = parsed.filter(s => !ALLOWED_FUZZ_STRATEGIES.includes(s as typeof ALLOWED_FUZZ_STRATEGIES[number]));
+    if (invalid.length > 0) {
+      throw new Error(
+        `Invalid --fuzz-strategies value(s): ${invalid.join(', ')}. Allowed: ${ALLOWED_FUZZ_STRATEGIES.join(', ')}.`
+      );
+    }
+  }
+
+  // Validate --fuzz strategy value
+  const ALLOWED_FUZZ = ['none', 'unicode', 'shape', 'boundary', 'all'] as const;
+  if (opts.fuzz !== undefined) {
+    if (!ALLOWED_FUZZ.includes(opts.fuzz as typeof ALLOWED_FUZZ[number])) {
+      throw new Error(`Invalid --fuzz value: '${opts.fuzz}'. Allowed: ${ALLOWED_FUZZ.join(', ')}.`);
+    }
+  }
+
+  const flagEnabled = opts.fuzz !== undefined && opts.fuzz !== 'none';
+  const baseEnabled = flagEnabled || (configFileFuzz?.enabled ?? false);
+  if (!baseEnabled) return configFileFuzz;
+
+  const runs = opts.fuzzRuns !== undefined ? clampFuzzRuns(opts.fuzzRuns) : undefined;
+
+  return {
+    ...(configFileFuzz ?? {}),
+    enabled: true,
+    ...(opts.fuzz !== undefined ? { strategy: opts.fuzz as FuzzConfig['strategy'] } : {}),
+    ...(opts.fuzzStrategies !== undefined
+      ? { strategies: opts.fuzzStrategies.split(',').map(s => s.trim()).filter(s => s !== '') as FuzzConfig['strategies'] }
+      : {}),
+    ...(runs !== undefined ? { runs } : {}),
+    ...(opts.fuzzShrink !== undefined ? { shrink: opts.fuzzShrink } : {}),
+  };
+}
+
+function clampFuzzRuns(runs: number): number {
+  return Math.min(256, Math.max(1, runs));
+}
+
+function buildFuzzTelemetry(testCases: TestCase[], fuzzCfg: FuzzConfig): FuzzTelemetry {
+  const fuzzCases = testCases.filter(tc => tc.palette === 'fuzz');
+  const activeStrategies = fuzzCfg.strategies ?? (
+    fuzzCfg.strategy === 'all' || fuzzCfg.strategy === undefined
+      ? ['unicode', 'shape', 'boundary']
+      : fuzzCfg.strategy === 'none'
+        ? []
+        : [fuzzCfg.strategy]
+  );
+
+  return {
+    enabled: true,
+    strategy: fuzzCfg.strategy ?? 'all',
+    strategies: activeStrategies,
+    runs: fuzzCfg.runs ?? 16,
+    draws: fuzzCases.length,
+    truncated: false,
+    shrunkCount: fuzzCases.filter(tc => tc.fuzzMeta?.shrunkValue !== undefined).length,
+    skippedSurfaces: 0,
+    errors: [],
   };
 }
 

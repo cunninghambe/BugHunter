@@ -53,6 +53,7 @@ import { createId } from '../lib/ids.js';
 import { nowIso } from '../lib/clock.js';
 import type { Clock } from '../lib/clock.js';
 import { MAX_CONSECUTIVE_INFRA_FAILURES } from '../config.js';
+import { shrinkFuzzCase } from '../mutation/fuzz.js';
 import type { PerfCollector } from '../perf/perf-collector.js';
 import { AXE_RUN_SCRIPT, classifyA11yDelta } from '../classify/accessibility.js';
 import type { A11yViolation } from '../classify/accessibility.js';
@@ -1272,8 +1273,48 @@ async function executeApiTest(
       log.warn('writeActionLog failed', { occurrenceId, err: String(writeErr) });
     }
   }
+  // v0.39: attempt shrinking when a fuzz case produced bugs (bounded budget).
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- try+catch above always assigns result
+  if (tc.fuzzMeta !== undefined && result!.bugs.length > 0) {
+    const fuzzMeta = tc.fuzzMeta;
+    const shrinkBudgetMs = 30_000;
+    const shrinkMaxSteps = 50;
+    try {
+      const shrunkValue = await shrinkFuzzCase(
+        { strategy: fuzzMeta.strategy, subSeed: fuzzMeta.subSeed, drawIndex: fuzzMeta.drawIndex, originalValue: tc.action.input },
+        async (value) => {
+          const shrunkInput = buildShrunkInput(tc, value);
+          try {
+            const callResult = await surface.surface_call({
+              toolId: tc.action.toolId ?? '',
+              role: tc.role,
+              input: shrunkInput,
+              noAutoRelogin: true,
+            });
+            return callResult.ok !== true || (callResult.status !== undefined && callResult.status >= 400);
+          } catch {
+            return false;
+          }
+        },
+        { shrinkMaxSteps, shrinkBudgetMs },
+      );
+      if (shrunkValue !== undefined) {
+        tc.fuzzMeta = { ...fuzzMeta, shrunkValue };
+      }
+    } catch (shrinkErr) {
+      log.debug('fuzz shrink error (suppressed)', { err: String(shrinkErr) });
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- try+catch above always assigns result before finally
   return result!;
+}
+
+function buildShrunkInput(tc: TestCase, shrunkValue: unknown): unknown {
+  if (typeof tc.action.input === 'object' && tc.action.input !== null && typeof shrunkValue === 'object' && shrunkValue !== null) {
+    return { ...(tc.action.input as Record<string, unknown>), ...(shrunkValue as Record<string, unknown>) };
+  }
+  return shrunkValue;
 }
 
 /**

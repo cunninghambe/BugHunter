@@ -396,3 +396,70 @@ describe('clusterSignature — v0.22 nav-state kinds', () => {
     }
   });
 });
+
+// v0.39 — Cluster-stability invariant: two fuzz draws with different input values
+// but identical downstream effect MUST cluster identically.
+describe('clusterSignature — v0.39 fuzz stability', () => {
+  it('network_5xx with different triggeringAction.input values collapse to same cluster', () => {
+    const sharedFields = {
+      endpoint: 'POST /api/users',
+      status: 500,
+      responseBodyShape: '{"error":"Internal Server Error"}',
+    };
+    const a = make('network_5xx', {
+      ...sharedFields,
+      triggeringAction: {
+        kind: 'api_call' as const,
+        via: 'api' as const,
+        expectedOutcome: 'expected_failure' as const,
+        palette: 'fuzz' as const,
+        toolId: 'createUser',
+        input: { name: '‮Admin ' },
+      },
+    });
+    const b = make('network_5xx', {
+      ...sharedFields,
+      triggeringAction: {
+        kind: 'api_call' as const,
+        via: 'api' as const,
+        expectedOutcome: 'expected_failure' as const,
+        palette: 'fuzz' as const,
+        toolId: 'createUser',
+        input: { name: '​​x' },
+      },
+    });
+    // clusterSignature ignores triggeringAction.input — must produce identical keys
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+  });
+
+  it('network_5xx with different endpoints produce different clusters', () => {
+    const a = make('network_5xx', { endpoint: 'POST /api/users', status: 500, responseBodyShape: 'err' });
+    const b = make('network_5xx', { endpoint: 'POST /api/orders', status: 500, responseBodyShape: 'err' });
+    expect(clusterSignature(a)).not.toBe(clusterSignature(b));
+  });
+
+  it('console_error with different fuzz inputs collapse when message matches', () => {
+    const sharedCause = "Cannot read properties of undefined (reading 'id')";
+    const a = make('console_error', {
+      rootCause: sharedCause,
+      triggeringAction: {
+        kind: 'api_call' as const,
+        via: 'api' as const,
+        expectedOutcome: 'expected_failure' as const,
+        palette: 'fuzz' as const,
+        input: { x: '\x00' },
+      },
+    });
+    const b = make('console_error', {
+      rootCause: sharedCause,
+      triggeringAction: {
+        kind: 'api_call' as const,
+        via: 'api' as const,
+        expectedOutcome: 'expected_failure' as const,
+        palette: 'fuzz' as const,
+        input: { x: '中文' },
+      },
+    });
+    expect(clusterSignature(a)).toBe(clusterSignature(b));
+  });
+});

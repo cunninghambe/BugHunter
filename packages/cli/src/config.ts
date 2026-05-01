@@ -197,6 +197,15 @@ export const ConfigSchema = z.object({
       candidateUrls: z.array(z.string()).optional(),
     }).optional(),
   }).optional(),
+  // v0.39 generative fuzz config
+  fuzz: z.object({
+    enabled: z.boolean().optional(),
+    strategy: z.enum(['none', 'unicode', 'shape', 'boundary', 'all']).optional(),
+    strategies: z.array(z.enum(['unicode', 'shape', 'boundary'])).optional(),
+    runs: z.number().int().min(1).max(256).optional(),
+    shrink: z.boolean().optional(),
+    maxTotalDrawsPerRun: z.number().int().positive().optional(),
+  }).optional(),
   // v0.22 nav-state config (§6.2)
   enableNavState: z.boolean().optional(),
   enableNavStateRefreshRace: z.boolean().optional(),

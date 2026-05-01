@@ -5,6 +5,8 @@ import { generatePaletteCases } from './palette.js';
 import { createId } from '../lib/ids.js';
 import { generateCanaries } from '../security/injection-palette.js';
 import type { CanaryPayload } from '../security/injection-palette.js';
+import { deriveSubSeed, fuzzUnicode, fuzzBoundaryForForm, fuzzShape, fuzzBoundaryForTool } from './fuzz.js';
+import type { FuzzOptions } from './fuzz.js';
 
 type StateContext = NonNullable<TestCase['stateContext']>;
 
@@ -26,10 +28,11 @@ export function formTestCases(
   runIdForEmail: string,
   domainHints?: Record<string, string[]>,
   stateContext?: StateContext,
+  fuzzOpts?: FuzzOptions,
 ): TestCase[] {
   const formSig = formSignature(form);
   const palettes: PaletteVariant[] = ['null', 'happy', 'edge', 'out_of_bounds'];
-  return palettes.map(palette => ({
+  const fixed: TestCase[] = palettes.map(palette => ({
     id: createId(),
     runId,
     role,
@@ -47,6 +50,9 @@ export function formTestCases(
     palette,
     stateContext,
   }));
+
+  if (fuzzOpts === undefined) return fixed;
+  return [...fixed, ...mintFormFuzzCases(runId, role, page, form, formSig, fuzzOpts, stateContext)];
 }
 
 // Generate direct API test cases for a tool.
@@ -57,7 +63,8 @@ export function apiTestCases(
   tool: ToolMeta,
   samples: unknown[],
   domainHints?: Record<string, string[]>,
-  bodyFixture?: Record<string, unknown>
+  bodyFixture?: Record<string, unknown>,
+  fuzzOpts?: FuzzOptions,
 ): TestCase[] {
   if (tool.inputSchemaConfidence === 'unknown' || tool.inputSchemaConfidence === 'partial') {
     const base = samples[0] ?? {};
@@ -84,7 +91,7 @@ export function apiTestCases(
   const palettes = isSafeMethod(tool.method)
     ? allPalettes.filter(p => !MUTATING_PALETTES.has(p))
     : allPalettes;
-  return palettes.map(palette => ({
+  const fixed: TestCase[] = palettes.map(palette => ({
     id: createId(),
     runId,
     role,
@@ -100,6 +107,10 @@ export function apiTestCases(
     expectedOutcome: palette === 'happy' ? 'success' : 'expected_failure',
     palette,
   }));
+
+  // Fuzz cases only for non-safe mutating tools
+  if (fuzzOpts === undefined || isSafeMethod(tool.method)) return fixed;
+  return [...fixed, ...mintApiFuzzCases(runId, role, tool, samples[0], fuzzOpts)];
 }
 
 function buildFormInput(
@@ -170,6 +181,129 @@ function schemaToInputType(schema: { type?: string; format?: string }): InputTyp
 
 export function formSignature(form: DiscoveredForm): string {
   return form.fields.map(f => `${f.name}:${f.type}`).join(',');
+}
+
+function mintFormFuzzCases(
+  runId: string,
+  role: string,
+  page: string,
+  form: DiscoveredForm,
+  formSig: string,
+  fuzzOpts: FuzzOptions,
+  stateContext?: StateContext,
+): TestCase[] {
+  const results: TestCase[] = [];
+
+  for (const strategy of fuzzOpts.strategies) {
+    for (const field of form.fields) {
+      const subSeed = deriveSubSeed(fuzzOpts.subSeedBase, `fuzz-${strategy}`, formSig, field.name);
+      let cases;
+      if (strategy === 'unicode') {
+        cases = fuzzUnicode(field.type, field, subSeed, fuzzOpts.runs);
+      } else if (strategy === 'boundary') {
+        cases = fuzzBoundaryForForm(field, subSeed, fuzzOpts.runs);
+      } else {
+        continue; // 'shape' does not apply to forms
+      }
+
+      const baseInput = buildFormInput(form.fields, 'happy', runId, undefined);
+      for (const c of cases) {
+        const input = { ...baseInput, [field.name]: c.value };
+        results.push({
+          id: createId(),
+          runId,
+          role,
+          page,
+          formSignature: formSig,
+          action: {
+            kind: 'submit',
+            via: 'ui',
+            expectedOutcome: 'expected_failure',
+            palette: 'fuzz',
+            selector: form.formSelector,
+            input,
+          },
+          expectedOutcome: 'expected_failure',
+          palette: 'fuzz',
+          stateContext,
+          fuzzMeta: { strategy, subSeed: c.subSeed, drawIndex: c.drawIndex },
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+function mintApiFuzzCases(
+  runId: string,
+  role: string,
+  tool: ToolMeta,
+  sampleInput: unknown,
+  fuzzOpts: FuzzOptions,
+): TestCase[] {
+  const results: TestCase[] = [];
+
+  for (const strategy of fuzzOpts.strategies) {
+    const subSeed = deriveSubSeed(fuzzOpts.subSeedBase, `fuzz-${strategy}`, tool.toolId);
+    let cases;
+    if (strategy === 'unicode') {
+      // Unicode: one batch per string field
+      if (tool.inputSchema.properties !== undefined) {
+        for (const [key, schema] of Object.entries(tool.inputSchema.properties)) {
+          if (schema.type === 'string' || schema.type === undefined) {
+            const fieldSeed = deriveSubSeed(fuzzOpts.subSeedBase, 'fuzz-unicode', tool.toolId, key);
+            const fieldCases = fuzzUnicode('text', { name: key, type: 'text', required: false, maxLength: typeof schema.maxLength === 'number' ? schema.maxLength : undefined }, fieldSeed, fuzzOpts.runs);
+            for (const c of fieldCases) {
+              results.push(makeFuzzApiCase(runId, role, tool, { [key]: c.value }, strategy, c.subSeed, c.drawIndex));
+            }
+          }
+        }
+      }
+      continue;
+    } else if (strategy === 'shape') {
+      cases = fuzzShape(tool, sampleInput, subSeed, fuzzOpts.runs);
+    } else {
+      cases = fuzzBoundaryForTool(tool, subSeed, fuzzOpts.runs);
+    }
+
+    for (const c of cases) {
+      const input = typeof c.value === 'object' && c.value !== null && !Array.isArray(c.value)
+        ? (c.value as Record<string, unknown>)
+        : c.value;
+      results.push(makeFuzzApiCase(runId, role, tool, input, strategy, c.subSeed, c.drawIndex));
+    }
+  }
+
+  return results;
+}
+
+function makeFuzzApiCase(
+  runId: string,
+  role: string,
+  tool: ToolMeta,
+  input: unknown,
+  strategy: FuzzOptions['strategies'][number],
+  subSeed: number,
+  drawIndex: number,
+): TestCase {
+  return {
+    id: createId(),
+    runId,
+    role,
+    page: tool.path,
+    action: {
+      kind: 'api_call',
+      via: 'api',
+      expectedOutcome: 'expected_failure',
+      palette: 'fuzz',
+      toolId: tool.toolId,
+      input,
+    },
+    expectedOutcome: 'expected_failure',
+    palette: 'fuzz',
+    fuzzMeta: { strategy, subSeed, drawIndex },
+  };
 }
 
 /**
