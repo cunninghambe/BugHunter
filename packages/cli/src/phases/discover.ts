@@ -124,6 +124,7 @@ export async function runDiscover(
 
   // Expand dynamic routes using discoveryFixtures
   const expandedRoutes: Array<{ route: string; sourceFile?: string }> = [];
+  const fixtureUnresolvableRoutes: string[] = [];
   for (const p of fsPages) {
     if (isDynamicRoute(p.route)) {
       const fixtures = config.discoveryFixtures ?? {};
@@ -131,6 +132,7 @@ export async function runDiscover(
       if (expanded.length === 0) {
         skipList.push({ route: p.route, reason: 'discovery_skipped: missing_fixture' });
         log.warn(`Dynamic route ${p.route} skipped — no discoveryFixtures configured`);
+        fixtureUnresolvableRoutes.push(p.route);
       } else {
         expandedRoutes.push(...expanded.map(r => ({ route: r, sourceFile: p.sourceFile })));
       }
@@ -244,6 +246,7 @@ export async function runDiscover(
     visionBaselineTelemetry: visionResult.telemetry,
     visionConsistencyTelemetry: visionResult.consistencyTelemetry,
     visionByViewport: visionResult.byViewport,
+    fixtureUnresolvableRoutes: fixtureUnresolvableRoutes.length > 0 ? fixtureUnresolvableRoutes : undefined,
   };
 }
 
