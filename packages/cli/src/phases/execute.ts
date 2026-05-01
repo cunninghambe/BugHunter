@@ -19,6 +19,10 @@ import type { XssContext } from '../types.js';
 import { classifyConsoleErrors } from '../classify/console.js';
 import { classifyNetworkRequests, normalizePath } from '../classify/network.js';
 import { harEntriesToNetworkRequests } from '../adapters/har-writer.js';
+import { classifyVitals } from '../classify/vitals.js';
+import { classifyLongTasks } from '../classify/long-tasks.js';
+import { classifyExcessiveRerenders } from '../classify/rerenders.js';
+import { classifyNPlusOne, classifyDedupMissing } from '../classify/request-hygiene.js';
 import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
 import { classifyVisualAnomaliesConsistent } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
@@ -262,6 +266,30 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
           const networkBugs = classifyNetworkRequests(networkRequests, tc.expectedOutcome, true);
           result.bugs.push(...networkBugs);
           if (networkBugs.length > 0) result.passed = false;
+        }
+
+        // Audit-fix: wire dead perf classifiers (slow_lcp/inp/high_cls, main_thread_blocked,
+        // excessive_re_renders, n_plus_one_api_calls, request_dedup_missing). These existed
+        // as exported functions with passing unit tests but were never called from any
+        // production runner — perfCollector captured PerfArtifacts and HAR but the
+        // classification half of v0.6 was never wired. Threshold lookup respects config.
+        const perfCfg = runState.config.perf;
+        const vitalsBugs = classifyVitals(perf, tc.page, tc.action.kind, {
+          lcpMs: perfCfg?.vitalsThresholds?.lcpMs,
+          inpMs: perfCfg?.vitalsThresholds?.inpMs,
+          cls: perfCfg?.vitalsThresholds?.cls,
+        });
+        const longTaskBugs = classifyLongTasks(perf, tc.page, perfCfg?.longTaskMs);
+        const rerenderBugs = classifyExcessiveRerenders(perf, {
+          rerenderCountThreshold: perfCfg?.rerenderCountThreshold,
+          rerenderWindowMs: perfCfg?.rerenderWindowMs,
+        });
+        const nplusOneBugs = classifyNPlusOne(har, perfCfg?.requestHygiene?.nPlusOneThreshold);
+        const dedupBugs = classifyDedupMissing(har);
+        const allPerfBugs = [...vitalsBugs, ...longTaskBugs, ...rerenderBugs, ...nplusOneBugs, ...dedupBugs];
+        if (allPerfBugs.length > 0) {
+          result.bugs.push(...allPerfBugs);
+          result.passed = false;
         }
       }
 
