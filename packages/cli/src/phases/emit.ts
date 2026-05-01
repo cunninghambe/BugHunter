@@ -3,6 +3,7 @@
 import * as fs from 'node:fs';
 import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, Severity } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
+import { buildCoverage } from './coverage.js';
 import { canonicalStringify } from '../lib/canonical.js';
 import { openHistoryDb, previousRunForProject, clustersForRun, writeRunToHistory } from '../store/history.js';
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
@@ -172,6 +173,13 @@ export function runEmit(
   }
 
   writeJsonFile(paths.summaryFile, { ...summary, ...(crossRun !== undefined ? { crossRun } : {}) });
+
+  try {
+    const coverage = buildCoverage(runState.runId, new Date().toISOString(), runState, clusters, counters);
+    writeJsonFile(paths.coverageFile, coverage);
+  } catch (err) {
+    log.warn('coverage.json write failed (non-fatal)', { error: err instanceof Error ? err.message : String(err) });
+  }
 
   const skipLines = skipReasons.map(r => `Skipped: ${r.reason} (${r.count})`);
 

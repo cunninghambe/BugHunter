@@ -132,6 +132,31 @@ export function registerTools(server: McpServer): void {
   );
 
   server.tool(
+    'bughunt_coverage',
+    'Get the per-detector coverage report for a BugHunter run. Returns the contents of coverage.json verbatim.',
+    {
+      project: z.string().min(1).describe('Path to the project directory'),
+      runId: z.string().min(1).optional().describe('Specific runId; omit for the most recent run.'),
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await -- MCP tool handler interface contract; uses synchronous file I/O
+    async (args) => {
+      try {
+        const runIds = listRunIds(args.project).sort().reverse();
+        if (args.runId === undefined && runIds.length === 0) return toolErr('no_runs', 'No BugHunter runs found for project');
+        const runId = args.runId ?? runIds[0];
+        const filePath = `${args.project}/.bughunter/runs/${runId}/coverage.json`;
+        if (!fs.existsSync(filePath)) {
+          return toolErr('coverage_unavailable', `coverage.json missing for run ${runId} (run predates V34)`);
+        }
+        const coverage = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as unknown;
+        return toolOk(coverage);
+      } catch (e) {
+        return toolErr('error', String(e));
+      }
+    }
+  );
+
+  server.tool(
     'bughunt_replay',
     'Replay a captured occurrence against the current dev server.',
     {
