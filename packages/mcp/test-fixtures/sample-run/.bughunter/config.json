@@ -1,0 +1,5 @@
+{
+  "projectName": "sample-project",
+  "surfaceMcpUrl": "http://localhost:3001",
+  "roles": ["admin", "user"]
+}

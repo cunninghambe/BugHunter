@@ -4,16 +4,41 @@ import express, { type Request, type Response } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerTools } from './tools.js';
+import {
+  registerClustersTool, registerClusterDetailTool, registerOccurrenceTool,
+  registerArtifactTool, registerRunsListTool, registerRunSummaryTool,
+  registerDetectorsTool, registerDiffTool, registerHistoryTool,
+  registerExplainTool, registerProjectDescribeTool, registerConfigGetTool,
+  registerTailTool, registerProgressTool,
+} from './tools.js';
+import { requireApiKey } from './auth.js';
 
 const PORT = parseInt(process.env.BUGHUNTER_MCP_PORT ?? '3103', 10);
+const AUTH_DISABLED = process.env.BUGHUNTER_MCP_REQUIRE_AUTH === '0';
 
 export function createApp(): express.Express {
   const app = express();
   app.use(express.json({ limit: '4mb' }));
 
-  app.post('/mcp', async (req: Request, res: Response) => {
-    const server = new McpServer({ name: 'bughunter-mcp', version: '0.1.0' });
+  const mcpHandler = async (req: Request, res: Response): Promise<void> => {
+    const server = new McpServer({ name: 'bughunter-mcp', version: '0.30.0' });
     registerTools(server);
+
+    // Register all V30 read-side tools
+    registerClustersTool(server);
+    registerClusterDetailTool(server);
+    registerOccurrenceTool(server);
+    registerArtifactTool(server);
+    registerRunsListTool(server);
+    registerRunSummaryTool(server);
+    registerDetectorsTool(server);
+    registerDiffTool(server);
+    registerHistoryTool(server);
+    registerExplainTool(server);
+    registerProjectDescribeTool(server);
+    registerConfigGetTool(server);
+    registerTailTool(server);
+    registerProgressTool(server);
 
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => { transport.close().catch(() => {}); });
@@ -26,7 +51,13 @@ export function createApp(): express.Express {
     } finally {
       await server.close().catch(() => {});
     }
-  });
+  };
+
+  if (AUTH_DISABLED) {
+    app.post('/mcp', mcpHandler);
+  } else {
+    app.post('/mcp', requireApiKey, mcpHandler);
+  }
 
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ ok: true, service: 'bughunter-mcp' });

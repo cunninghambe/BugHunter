@@ -1,0 +1,15 @@
+{
+  "runId": "run_sample_001",
+  "projectDir": "/tmp/sample-project",
+  "startedAt": "2026-04-30T10:00:00.000Z",
+  "phase": "done",
+  "clusterCount": 3,
+  "infraFailureCount": 0,
+  "consecutiveInfraFailures": 0,
+  "emitted": true,
+  "partialEmit": false,
+  "config": {
+    "projectName": "sample-project",
+    "surfaceMcpUrl": "http://localhost:3001"
+  }
+}
