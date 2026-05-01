@@ -641,3 +641,30 @@ type _ExhaustivenessCheck = Exclude<BugKind, (typeof DETECTOR_REGISTRY)[number][
 export function lookupDetector(kind: BugKind): DetectorRegistryEntry | undefined {
   return DETECTOR_REGISTRY.find(e => e.kind === kind);
 }
+
+// v0.29: severity / CWE / exploitability metadata for export emitters.
+import type { Severity, ExploitabilityModel } from '../types.js';
+
+export type DetectorMetadata = {
+  kind: BugKind;
+  severity: Severity;
+  cwe?: string[];
+  exploitabilityModel?: ExploitabilityModel;
+  helpUri?: string;
+  displayName: string;
+  description: string;
+};
+
+/**
+ * v0.29: Record-keyed view of DETECTOR_REGISTRY for O(1) lookups by kind.
+ * Provides DetectorMetadata shape; severity defaults to 'info' until per-kind
+ * calibration is complete.
+ */
+export const DETECTOR_REGISTRY_MAP: Record<string, DetectorMetadata | undefined> = Object.fromEntries(
+  DETECTOR_REGISTRY.map(e => [e.kind, {
+    kind: e.kind,
+    severity: 'info' as Severity,
+    displayName: e.kind,
+    description: e.note ?? '',
+  } satisfies DetectorMetadata]),
+);
