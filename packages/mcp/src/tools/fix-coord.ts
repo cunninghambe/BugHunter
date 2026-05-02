@@ -4,14 +4,14 @@
 import { z } from 'zod';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createId } from '@paralleldrive/cuid2';
 import { toolOk, toolErr } from '../envelope.js';
 import { resolveProjectDir, runPaths } from '../io/runs.js';
 import { NotFoundError, InvalidArgumentError } from '../io/runs.js';
-import { forbiddenPathGate } from 'bughunter/src/ops/forbidden-paths.js';
+import { forbiddenPathGate, validateGitRef } from 'bughunter/src/ops/forbidden-paths.js';
 import { retestOp } from 'bughunter/src/ops/retest.js';
 import { computeFixSummary } from 'bughunter/src/ops/fix-summary.js';
 import type { BugCluster } from 'bughunter/src/types.js';
@@ -147,38 +147,43 @@ export function reconcileFixJobs(projectDir: string): void {
 // Zod input schemas
 // ---------------------------------------------------------------------------
 
+// cuid2: lowercase letter + 23 lowercase-alphanumeric chars (BugHunter-minted only)
+const CUID2 = z.string().regex(/^[a-z][a-z0-9]{23}$/, 'must be a cuid2 identifier');
+// git ref: strict charset matching git's allowed characters
+const GIT_REF = z.string().regex(/^[a-zA-Z0-9._/-]+$/, 'must be a valid git ref name');
+
 const FixDispatchInput = z.object({
   project: z.string().min(1),
-  runId: z.string().min(1),
-  clusterId: z.string().min(1),
+  runId: CUID2,
+  clusterId: CUID2,
   agent: z.enum(['architect', 'coder']),
   model: z.string().min(1),
   prompt: z.string().min(1),
   binary: z.string().optional(),
-  branch: z.string().optional(),
+  branch: GIT_REF.optional(),
   maxRuntimeMs: z.number().int().positive().max(3_600_000).optional(),
 });
 
 const FixStatusInput = z.object({
   project: z.string().min(1),
-  runId: z.string().min(1),
+  runId: CUID2,
 });
 
 const FixGateInput = z.object({
   project: z.string().min(1),
-  runId: z.string().min(1),
-  clusterId: z.string().min(1),
-  branch: z.string().min(1),
-  baseBranch: z.string().min(1).optional(),
+  runId: CUID2,
+  clusterId: CUID2,
+  branch: GIT_REF,
+  baseBranch: GIT_REF.optional(),
   reset: z.boolean().optional(),
 });
 
 const FixRetestInput = z.object({
   project: z.string().min(1),
-  runId: z.string().min(1),
-  clusterId: z.string().min(1),
-  branch: z.string().min(1).optional(),
-  baseBranch: z.string().min(1).optional(),
+  runId: CUID2,
+  clusterId: CUID2,
+  branch: GIT_REF.optional(),
+  baseBranch: GIT_REF.optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -208,20 +213,29 @@ export function registerFixCoordTools(server: McpServer): void {
         }
 
         const branchName = args.branch ?? `fix/${args.runId}/${args.clusterId}`;
+        validateGitRef(branchName);
 
         // Branch creation / reuse logic
         try {
-          const headOutput = execSync(`git rev-parse ${branchName} 2>/dev/null || echo ABSENT`, {
-            cwd: projectDir, encoding: 'utf-8',
-          }).trim();
+          let headOutput: string;
+          try {
+            headOutput = execFileSync('git', ['rev-parse', branchName], {
+              cwd: projectDir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+          } catch {
+            headOutput = 'ABSENT';
+          }
+
           if (headOutput !== 'ABSENT') {
-            const baseOutput = execSync(`git rev-parse HEAD`, { cwd: projectDir, encoding: 'utf-8' }).trim();
+            const baseOutput = execFileSync('git', ['rev-parse', 'HEAD'], {
+              cwd: projectDir, encoding: 'utf-8',
+            }).trim();
             if (headOutput !== baseOutput) {
               return toolErr('conflict', `branch '${branchName}' exists with diverged commits; use bughunt_fix_gate reset=true then retry`);
             }
             // Branch exists at same HEAD as base — reuse (EC-F2)
           } else {
-            execSync(`git checkout -b ${branchName}`, { cwd: projectDir, stdio: 'pipe' });
+            execFileSync('git', ['checkout', '-b', branchName], { cwd: projectDir, stdio: 'pipe' });
           }
         } catch (e) {
           return toolErr('error', `git error: ${String(e)}`);
