@@ -22,7 +22,7 @@ export function isSensitiveMultiContextTarget(toolId: string, aggressiveTargets:
 
 /** True when the tool's commutativityHint says it's commutative — skip state_divergence. */
 export function isCommutativeHint(tool: ToolMeta): boolean {
-  return (tool as unknown as { commutativityHint?: string }).commutativityHint === 'commutative';
+  return tool.commutativityHint === 'commutative';
 }
 
 /** Resolve N from config, applying bounds (2 ≤ N ≤ 8). */

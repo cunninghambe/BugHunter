@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { execSync } from 'node:child_process';
 import { replayActionLog } from '../../repro/replay.js';
 import { makeBrowserAdapter } from '../../adapters/browser-mcp.js';
+import { makeNullBrowser } from './bisect-null-browser.js';
 import { HttpSurfaceMcpAdapter } from '../../adapters/surface-mcp.js';
 import { loadConfig } from '../../config.js';
 import { bisectRunPaths } from '../../store/filesystem.js';
@@ -205,6 +206,3 @@ function checkSurfaceRevision(worktreeDir: string, actionLog: ActionLog): null |
   return null;
 }
 
-function makeNullBrowser(): Parameters<typeof replayActionLog>[1] {
-  return { navigate: async () => ({ url: '' }), click: async () => ({ clicked: false }), type: async () => ({ typed: false }), scroll: async () => ({ scrolled: false }), snapshot: async () => ({ snapshot: '' }), screenshot: async () => ({ path: '' }), evaluate: async () => ({ value: null }), listTabs: async () => ({ tabs: [] }), closeTab: async () => ({ closed: false }), openTab: async () => ({ tabId: '', finalUrl: '' }), closeTabExplicit: async () => undefined, withTab: async (_u: string, _h: Record<string, string> | undefined, fn: (s: never) => Promise<never>) => fn({} as never), cookies: async () => ({ tabId: '', cookies: [] }), clickByHint: async () => ({ clicked: false as const, reason: 'no_hint_fields' as const }) }; // eslint-disable-line @typescript-eslint/require-await -- interface contract
-}

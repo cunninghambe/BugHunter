@@ -29,6 +29,8 @@ describe.skipIf(!HAS_BROWSER)('V24 integration — v24-deferred-bugs fixture', (
     //     "hydration_mismatch","accessibility_critical"
     //   )))' .bughunter/runs/$RUN/summary.json
     //   # Expect each of the 5 keys with count >= 1.
-    expect(true).toBe(true); // placeholder; real assertion done in manual smoke
+    // TODO(V24): write a real assertion against V24 detector output once the
+    // fixture app and HAS_BROWSER environment are reliably available in CI.
+    // See SPEC_V24_DEFERRED_PERF_DETECTORS.md §14 for the manual smoke runbook.
   }, 300000);
 });
