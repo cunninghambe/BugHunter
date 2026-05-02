@@ -156,7 +156,7 @@ export const ConfigSchema = z.object({
   }).optional(),
   penTesting: z.object({
     enabled: z.boolean().optional(),
-    variants: z.array(z.enum(['sql', 'cmd', 'path', 'jwt'])).optional(),
+    variants: z.array(z.enum(['sql', 'cmd', 'path', 'jwt', 'prompt'])).optional(),
     jwtTargets: z.array(z.string()).optional(),
     jwtPublicKeyPemPath: z.string().optional(),
     booleanDeltaThreshold: z.number().min(0).max(1).optional(),
@@ -260,6 +260,26 @@ export const ConfigSchema = z.object({
     enableShadowA11y: z.boolean().optional(),
     enableForcedPermissionDeny: z.boolean().optional(),
   }).strict().optional(),
+  // v0.43 agentic-app detection
+  agent: z.object({
+    enabled: z.boolean().optional(),
+    verifierModel: z.string().min(1).optional(),
+    maxLlmOfOutputCalls: z.number().int().positive().optional(),
+    maxTurnLatencyMs: z.number().int().positive().optional(),
+    maxCostUsdPerTurn: z.number().nonnegative().optional(),
+    streamStaleChunkMs: z.number().int().positive().optional(),
+    toolFailureSettleMs: z.number().int().positive().optional(),
+    synthesiseToolFailures: z.boolean().optional(),
+    promptInjectionVariants: z.array(z.enum([
+      'system_override_simple',
+      'system_override_role_play',
+      'tool_invocation_smuggle',
+      'data_exfiltration_via_echo',
+      'instruction_in_data_field',
+    ])).optional(),
+    errorIndicatorSelector: z.string().optional(),
+    streamTerminalMarkers: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

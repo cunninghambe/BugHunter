@@ -16,8 +16,16 @@ export type VisionResponse = {
   usage?: { inputTokens: number; outputTokens: number };
 };
 
+export type TextRequest = {
+  promptText: string;
+  model: string;
+  timeoutMs: number;
+};
+
 export type VisionClientInterface = {
   classify(req: VisionRequest): Promise<VisionResponse>;
+  /** v0.43: text-only classification (no image). Optional to allow existing stubs to compile. */
+  classifyText?: (req: TextRequest) => Promise<VisionResponse>;
 };
 
 export class VisionApiError extends Error {
@@ -41,6 +49,37 @@ export class AnthropicVisionClient implements VisionClientInterface {
     private readonly model: string,
     private readonly timeoutMs: number
   ) {}
+
+  async classifyText(req: TextRequest): Promise<VisionResponse> {
+    if (this.auth.kind !== 'apiKey') {
+      throw new VisionApiError('auth', 'AnthropicVisionClient requires apiKey auth');
+    }
+    const client = new Anthropic({ apiKey: this.auth.apiKey });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), req.timeoutMs);
+    try {
+      const msg = await client.messages.create(
+        {
+          model: req.model,
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: req.promptText }],
+        },
+        { signal: ctrl.signal },
+      );
+      const text = msg.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map(b => b.text)
+        .join('\n');
+      return {
+        rawText: text,
+        usage: { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens },
+      };
+    } catch (err) {
+      throw mapVisionError(err);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   async classify(req: VisionRequest): Promise<VisionResponse> {
     if (this.auth.kind !== 'apiKey') {

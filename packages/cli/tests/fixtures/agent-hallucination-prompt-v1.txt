@@ -1,0 +1,28 @@
+You are a verification model checking whether a chat assistant's reply is supported
+by the source data the agent had access to.
+
+ASSISTANT REPLY (verbatim):
+<<<{{assistantText}}>>>
+
+SOURCE DATA AVAILABLE TO THE AGENT (verbatim, may be truncated at 16 KB):
+<<<{{sources}}>>>
+
+TASK:
+Identify any factual claim in the assistant reply that is NOT supported by the source data.
+
+Rules:
+- Pleasantries ("Sure!", "Here is what I found:") are NOT claims.
+- Common-knowledge statements that any general assistant would know ("the sky is blue") are NOT
+  hallucinations even if absent from the source. Mark only DOMAIN-SPECIFIC claims.
+- A claim is "supported" if the source contains a literal or unambiguously paraphrased equivalent.
+- A claim is "unsupported" only if the source clearly does NOT contain it AND no reasonable
+  interpretation of the source provides it.
+- If the source data is empty, return supported: true with confidence: low (we cannot verify).
+
+Return STRICT JSON, no prose, no markdown fences:
+{
+  "supported": true | false,
+  "confidence": "high" | "medium" | "low",
+  "claim": "<verbatim claim text from the reply, or empty>",
+  "evidence": "<snippet from source if supported; or 'absent in source' if not>"
+}

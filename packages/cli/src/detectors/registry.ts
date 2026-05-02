@@ -670,6 +670,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V22_NAV_STATE.md',
   },
 
+
   // v0.36 browser-platform surface kinds
   {
     kind: 'service_worker_stale',
@@ -777,6 +778,56 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V20_NETWORK_FAULTS.md',
+  },
+
+  // — § v0.43 agentic-app detection kinds —
+  {
+    kind: 'agent_response_hallucinated',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/classify/agent-response.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'production',
+    specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
+  },
+  {
+    kind: 'agent_action_timeout',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/agent/cost-observer.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'production',
+    specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
+  },
+  {
+    kind: 'prompt_injection_executed',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/security/pen-detectors.ts',
+    runnerSite: 'packages/cli/src/security/pen-test-runner.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
+  },
+  {
+    kind: 'streaming_response_truncated',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/agent/streaming-observer.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'production',
+    specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
+  },
+  {
+    kind: 'tool_call_failure_unhandled',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/phases/execute.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
+  },
+  {
+    kind: 'agent_cost_per_turn_high',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/agent/cost-observer.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'production',
+    specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
   },
 ];
 
