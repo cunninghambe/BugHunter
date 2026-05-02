@@ -66,8 +66,10 @@ import type { SeoPageInput } from '../classify/seo.js';
 import { harEntriesToCsrfObservations } from '../adapters/har-writer.js';
 import { detectMissingCsrf } from '../security/csrf-detector.js';
 import { detectHallucinatedRoutes } from '../classify/hallucinated-route.js';
-import type { DiscoveredPage } from '../types.js';
+import type { DiscoveredPage, BrowserPlatformTelemetry } from '../types.js';
 import { isReadOnlyAction, MutatingActionRejectedError } from '../util/read-only.js';
+import { runBrowserPlatformProbe } from '../discovery/browser-platform-probe.js';
+import type { BrowserPlatformProbeOpts } from '../discovery/browser-platform-probe.js';
 
 export type ExecuteOptions = {
   testCases: TestCase[];
@@ -120,6 +122,8 @@ export type ExecuteOptions = {
   fixtureUnresolvableRoutes?: Set<string>;
   /** v0.32: frozen clock — all emitted timestamps use this value when set. */
   clock?: Clock;
+  /** v0.36 browser-platform probe options — when set, probe runs once per unique pageRoute. */
+  browserPlatformOpts?: BrowserPlatformProbeOpts;
 };
 
 export type ExecuteResult = {
@@ -134,6 +138,10 @@ export type ExecuteResult = {
   a11yBaselineDetections?: BugDetection[];
   /** v0.6 SEO corpus detections. */
   seoDetections?: BugDetection[];
+  /** v0.36 browser-platform probe detections — present when browserPlatformOpts is set. */
+  browserPlatformDetections?: BugDetection[];
+  /** v0.36 browser-platform probe telemetry. */
+  browserPlatformTelemetry?: BrowserPlatformTelemetry;
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
@@ -150,6 +158,16 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   const baselinedRoutes = new Set<string>();
   const a11yBaselineDetections: BugDetection[] = [];
   const seoPageInputs: SeoPageInput[] = [];
+  const browserPlatformDetections: BugDetection[] = [];
+  const browserPlatformTelemetryAccum: BrowserPlatformTelemetry = {
+    pagesProbed: 0,
+    detectionsByKind: {},
+    shadowHostsDiscovered: 0,
+    workersInstrumented: 0,
+    rtcConnectionsObserved: 0,
+    permissionsForceDenied: 0,
+    bootstrapInstallFailures: 0,
+  };
 
   const keyboardProbe = new PlaywrightKeyboardTrapProbe();
   const focusTracker = new FocusTracker();
@@ -219,6 +237,40 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
             h1Count: d.h1Count,
             metaRobots: d.metaRobots,
           });
+        }
+      }
+
+      // v0.36 browser-platform probe — after axe+SEO, gated on opts.browserPlatformOpts
+      if (opts.browserPlatformOpts !== undefined) {
+        const probeOpts = { ...opts.browserPlatformOpts, pageRoute };
+        const probeResult = await runBrowserPlatformProbe(scope, probeOpts).catch(err => {
+          log.warn('browser-platform-probe: failed', { err: String(err), page: pageRoute });
+          return null;
+        });
+        if (probeResult !== null) {
+          browserPlatformTelemetryAccum.pagesProbed++;
+          if (probeResult.ok) {
+            browserPlatformDetections.push(...probeResult.detections);
+            for (const d of probeResult.detections) {
+              browserPlatformTelemetryAccum.detectionsByKind[d.kind] =
+                (browserPlatformTelemetryAccum.detectionsByKind[d.kind] ?? 0) + 1;
+            }
+            if (probeResult.telemetry.shadowHostsDiscovered !== undefined) {
+              browserPlatformTelemetryAccum.shadowHostsDiscovered += probeResult.telemetry.shadowHostsDiscovered;
+            }
+            if (probeResult.telemetry.workersInstrumented !== undefined) {
+              browserPlatformTelemetryAccum.workersInstrumented += probeResult.telemetry.workersInstrumented;
+            }
+            if (probeResult.telemetry.rtcConnectionsObserved !== undefined) {
+              browserPlatformTelemetryAccum.rtcConnectionsObserved += probeResult.telemetry.rtcConnectionsObserved;
+            }
+            if (probeResult.telemetry.bootstrapInstallFailures !== undefined) {
+              browserPlatformTelemetryAccum.bootstrapInstallFailures += probeResult.telemetry.bootstrapInstallFailures;
+            }
+          } else {
+            log.warn('browser-platform-probe: probe returned not-ok', { reason: probeResult.reason, page: pageRoute });
+            browserPlatformTelemetryAccum.bootstrapInstallFailures++;
+          }
         }
       }
     }
@@ -458,6 +510,8 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     perfArtifacts: perfArtifacts.size > 0 ? perfArtifacts : undefined,
     a11yBaselineDetections: a11yBaselineDetections.length > 0 ? a11yBaselineDetections : undefined,
     seoDetections: seoDetections !== undefined && seoDetections.length > 0 ? seoDetections : undefined,
+    browserPlatformDetections: browserPlatformDetections.length > 0 ? browserPlatformDetections : undefined,
+    browserPlatformTelemetry: opts.browserPlatformOpts !== undefined ? browserPlatformTelemetryAccum : undefined,
   };
 }
 

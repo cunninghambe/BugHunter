@@ -1,0 +1,9 @@
+{
+  "name": "browser-platform-bad",
+  "version": "0.0.1",
+  "description": "Deliberately broken browser-platform fixture for v0.36 smoke tests",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  }
+}

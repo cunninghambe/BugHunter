@@ -44,7 +44,8 @@ type InputFamily =
   | 'security-static'
   | 'security-dynamic'
   | 'vision'
-  | 'race';
+  | 'race'
+  | 'browser-platform';
 
 /** Canonical kind → input family mapping (spec §4.2). */
 const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
@@ -126,6 +127,16 @@ const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
   clock_skew_token_invalid: 'security-dynamic',
   clock_timezone_display: 'security-dynamic',
   clock_overflow: 'security-dynamic',
+  // v0.36 browser-platform kinds
+  service_worker_stale: 'browser-platform',
+  web_worker_error: 'browser-platform',
+  iframe_postmessage_unguarded: 'browser-platform',
+  shadow_dom_a11y_violation: 'browser-platform',
+  permission_denied_unhandled: 'browser-platform',
+  webrtc_ice_failure: 'browser-platform',
+  subresource_integrity_violation: 'browser-platform',
+  coop_coep_violation: 'browser-platform',
+  trusted_types_violation: 'browser-platform',
 };
 
 type CounterSnapshot = {
@@ -166,6 +177,10 @@ function isRaceObserved(counters: CounterSnapshot | undefined): boolean {
   return counters?.raceConditions !== undefined;
 }
 
+function isBrowserPlatformObserved(runState: RunState): boolean {
+  return runState.config.browserPlatform?.enabled !== false;
+}
+
 /** Compute inputObserved for a given kind, given run state and counters. */
 function inputObservedForFamily(
   family: InputFamily,
@@ -181,6 +196,7 @@ function inputObservedForFamily(
     case 'security-dynamic': return isSecurityDynamicObserved(runState);
     case 'vision': return isVisionObserved(counters);
     case 'race': return isRaceObserved(counters);
+    case 'browser-platform': return isBrowserPlatformObserved(runState);
   }
 }
 

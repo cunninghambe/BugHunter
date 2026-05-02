@@ -42,6 +42,18 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
     );
   }
 
+  // v0.36 EC-3: forced-permission-deny with per-run reset may contaminate other tests
+  if (
+    opts.config.browserPlatform?.enableForcedPermissionDeny === true &&
+    opts.config.resetPolicy === 'per-run'
+  ) {
+    log.warn(
+      'browserPlatform.enableForcedPermissionDeny is true with resetPolicy "per-run". ' +
+      'Forced permission denials may contaminate other tests. ' +
+      'Consider resetPolicy "per-test" or "per-page" to isolate permission state.'
+    );
+  }
+
   // 1. SurfaceMCP reachable
   const catalog = await opts.surfaceMcp.surface_list_tools().catch((err: unknown) => {
     throw new Error(`SurfaceMCP unreachable at ${opts.config.surfaceMcpUrl}: ${String(err)}`);

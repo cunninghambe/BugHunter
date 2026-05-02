@@ -319,7 +319,53 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
       const staleField = detection.navStateContext?.staleField ?? '';
       return `nav_form_state_stale|${detection.pageRoute ?? ''}|${formSig}|${staleField}`;
     }
+
+    // v0.36 browser-platform kinds
+
+    case 'service_worker_stale':
+      return `service_worker_stale|${detection.pageRoute ?? ''}`;
+    case 'web_worker_error': {
+      const scriptUrl = detection.browserPlatformContext?.kind === 'worker'
+        ? detection.browserPlatformContext.scriptUrl
+        : '';
+      return `web_worker_error|${detection.pageRoute ?? ''}|${scriptUrl}`;
+    }
+    case 'iframe_postmessage_unguarded':
+      return `iframe_postmessage_unguarded|${detection.pageRoute ?? ''}`;
+    case 'shadow_dom_a11y_violation': {
+      const ctx = detection.browserPlatformContext;
+      const host = ctx?.kind === 'shadow_a11y' ? hostTagNameOf(ctx.hostSelector) : '';
+      const rule = ctx?.kind === 'shadow_a11y' ? ctx.axeRuleId : '';
+      return `shadow_dom_a11y_violation|${detection.pageRoute ?? ''}|${host}|${rule}`;
+    }
+    case 'permission_denied_unhandled': {
+      const perm = detection.browserPlatformContext?.kind === 'permission'
+        ? detection.browserPlatformContext.permission
+        : '';
+      return `permission_denied_unhandled|${detection.pageRoute ?? ''}|${perm}`;
+    }
+    case 'webrtc_ice_failure':
+      return `webrtc_ice_failure|${detection.pageRoute ?? ''}`;
+    case 'subresource_integrity_violation': {
+      const blockedUrl = detection.browserPlatformContext?.kind === 'sri'
+        ? detection.browserPlatformContext.blockedUrl
+        : '';
+      return `subresource_integrity_violation|${detection.pageRoute ?? ''}|${blockedUrl}`;
+    }
+    case 'coop_coep_violation':
+      return `coop_coep_violation|${detection.pageRoute ?? ''}`;
+    case 'trusted_types_violation': {
+      const blockedURI = detection.browserPlatformContext?.kind === 'trusted_types'
+        ? detection.browserPlatformContext.blockedURI
+        : '';
+      return `trusted_types_violation|${detection.pageRoute ?? ''}|${blockedURI}`;
+    }
   }
+}
+
+function hostTagNameOf(selector: string): string {
+  const match = /^([a-z][a-z0-9-]*)/i.exec(selector);
+  return match !== null ? match[1].toLowerCase() : selector;
 }
 
 export function extractNormalizedFields(detection: BugDetection): {
