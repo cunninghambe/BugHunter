@@ -2,7 +2,7 @@
 // Drives the in-browser login form via camofox MCP tools and verifies success
 // using the cookie jar (including HttpOnly) or URL-change detection.
 
-import type { BrowserMcpAdapter, CookieEntry } from '../adapters/browser-mcp.js';
+import type { BrowserMcpAdapter, CookieEntry, TabScope } from '../adapters/browser-mcp.js';
 import type { DescribeAuthResult, SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { StructuredSelector } from '../adapters/browser-mcp-snapshot.js';
 import { parsePlaywrightHasText } from '../adapters/browser-mcp-snapshot.js';
@@ -33,6 +33,13 @@ export type LoginConfig = {
 };
 
 type BrowseableAuthPlan = Extract<DescribeAuthResult, { authKind: 'form' | 'nextauth' }>;
+
+/**
+ * v0.40: exported alias for BrowseableAuthPlan. Used by multi-context-runner which
+ * resolves the plan once per test (via surface_describe_auth) then passes it to
+ * loginInTabScope for each parallel tab.
+ */
+export type BrowserLoginPlan = BrowseableAuthPlan;
 
 // Selector candidates for a field, tried in priority order.
 // True when domName already looks like a CSS selector (#id, .class, [attr=...],
@@ -726,4 +733,115 @@ export async function loginInBrowser(
 
   // Step 9: Wait for success
   return verifySuccess(browser, browseablePlan, baseUrl, loginUrl, verifyTimeoutMs, verifyPollMs);
+}
+
+/**
+ * v0.40: Login in a specific browser TabScope using a pre-resolved BrowserLoginPlan.
+ * Unlike loginInBrowser, the caller has already fetched the plan via surface_describe_auth.
+ * This allows N tabs to log in concurrently with a single plan fetch.
+ *
+ * TabScope is structurally compatible with BrowserMcpAdapter for all operations
+ * loginInBrowser performs (navigate, click, type, evaluate). Cookies are not returned
+ * because TabScope does not expose a cookies() method; callers that need cookie
+ * verification should use loginInBrowser instead.
+ */
+export async function loginInTabScope(
+  scope: TabScope,
+  _role: string,
+  plan: BrowserLoginPlan,
+  opts?: { verifyTimeoutMs?: number; verifyPollMs?: number },
+): Promise<LoginResult> {
+  const verifyTimeoutMs = opts?.verifyTimeoutMs ?? 10_000;
+  const verifyPollMs = opts?.verifyPollMs ?? 500;
+
+  // TabScope is structurally compatible with the BrowserMcpAdapter subset used here
+  // (navigate, click, type, evaluate). Cast is safe; getCookies is not called.
+  const scopeAsBrowser = scope as unknown as BrowserMcpAdapter;
+  const loginUrl = plan.uiLoginPath;
+
+  try {
+    await scope.navigate(loginUrl);
+  } catch (err) {
+    return { ok: false, reason: 'login_page_load_failed', detail: String(err) };
+  }
+
+  await waitForLoginFormReady(scopeAsBrowser, plan);
+
+  try {
+    const captchaResult = await scope.evaluate(
+      `(function(){` +
+      `const c=!!document.querySelector('iframe[src*="captcha"],[class*="captcha"],[id*="captcha"],[aria-label*="captcha" i]');` +
+      `const f=!!document.querySelector('input[name*="otp" i],input[name*="totp" i],input[autocomplete="one-time-code"]');` +
+      `return{captcha:c,twoFa:f};` +
+      `})()`
+    );
+    const val = captchaResult.value as { captcha?: boolean; twoFa?: boolean } | null;
+    if (val?.captcha === true) return { ok: false, reason: 'captcha_detected', detail: 'captcha element detected' };
+    if (val?.twoFa === true) return { ok: false, reason: 'two_factor_detected', detail: '2FA input detected' };
+  } catch { /* ignore detect errors */ }
+
+  if (isHasTextSelector(plan.uiTriggerSelector)) {
+    return loginViaModalEvaluate(
+      scopeAsBrowser, plan, plan.uiTriggerSelector ?? '',
+      loginUrl, loginUrl, verifyTimeoutMs, verifyPollMs,
+    );
+  }
+
+  if (plan.uiTriggerSelector !== undefined) {
+    const clicked = await tryClick(scopeAsBrowser, plan.uiTriggerSelector);
+    if (!clicked) {
+      return { ok: false, reason: 'trigger_not_found', detail: plan.uiTriggerSelector };
+    }
+    await sleep(250);
+  }
+
+  for (const [credKey, domName] of Object.entries(plan.fields)) {
+    const value = plan.values[domName] ?? '';
+    const candidates = fieldCandidates(credKey, domName);
+    let typed = false;
+    for (const selector of candidates) {
+      if (await tryTypeByCssSelector(scopeAsBrowser, selector, value)) { typed = true; break; }
+      if (await tryType(scopeAsBrowser, selector, value)) { typed = true; break; }
+    }
+    if (!typed) {
+      for (const labelText of labelTextCandidates(credKey, domName)) {
+        if (await tryTypeByLabelText(scopeAsBrowser, labelText, value)) { typed = true; break; }
+      }
+    }
+    if (!typed) {
+      return { ok: false, reason: 'field_not_found', detail: `credential key "${credKey}" (domName "${domName}")` };
+    }
+  }
+
+  const submitSelector = await findSubmitSelector(scopeAsBrowser, plan.uiSubmitSelector);
+  if (submitSelector === null) {
+    return { ok: false, reason: 'submit_not_found', detail: 'submit button not found in tab scope' };
+  }
+
+  try {
+    await scope.click(submitSelector);
+  } catch (err) {
+    const errMsg = String(err);
+    return {
+      ok: false,
+      reason: errMsg.includes('not found') ? 'submit_not_found' : 'submit_failed',
+      detail: errMsg,
+    };
+  }
+
+  // Verify: poll for URL change (cookie check not available in TabScope)
+  const deadline = Date.now() + verifyTimeoutMs;
+  const initialUrl = await scope.evaluate('window.location.href').then(r => String(r.value ?? '')).catch(() => '');
+  while (Date.now() < deadline) {
+    const currentUrl = await scope.evaluate('window.location.href').then(r => String(r.value ?? '')).catch(() => '');
+    if (currentUrl !== '' && currentUrl !== loginUrl && currentUrl !== initialUrl) {
+      return { ok: true, cookies: [], finalUrl: currentUrl };
+    }
+    await sleep(verifyPollMs);
+  }
+  return {
+    ok: false,
+    reason: 'verification_failed',
+    detail: `URL did not change from ${loginUrl} within ${verifyTimeoutMs}ms`,
+  };
 }

@@ -72,6 +72,10 @@ export type BugKind =
   | 'race_condition_optimistic_revert'
   | 'race_condition_interleaved_mutations'
   | 'race_condition_cross_tab'
+  // v0.40 multi-context coordination kinds (opt-in; expensive; below race kinds)
+  | 'multi_user_inconsistent_snapshot'
+  | 'multi_context_state_divergence'
+  | 'visibility_change_state_loss'
   | 'hallucinated_route'
   // v0.21 IDOR / horizontal-authz kinds (replace the v0.5 'idor_horizontal' umbrella)
   | 'idor_horizontal_read'
@@ -714,6 +718,12 @@ export type TestCase = {
    * and the classifier applies fault-suppression rules (§ 5.4).
    */
   faultInjected?: NetworkFaultSpec;
+  /**
+   * v0.40 multi-context: present when this test case is a multi-context coordination test.
+   * Executor branches on this field → executeMultiContextTest, runs after race tests.
+   * Mutually exclusive with race.
+   */
+  multiContext?: { variant: MultiContextVariant };
 };
 
 export type TestResult = {
@@ -1153,6 +1163,8 @@ export type BugDetection = {
   networkFaultContext?: NetworkFaultContext;
   /** v0.43: populated for agentic-app detection findings. */
   agentContext?: AgentDetectionContext;
+  /** v0.40: populated for multi-context findings (multi_context_state_divergence, visibility_change_state_loss, multi_user_inconsistent_snapshot). */
+  multiContextContext?: MultiContextDetectionContext;
 };
 
 /** v0.23: clock-injection proof context attached to clock-related BugDetections. */
@@ -1504,6 +1516,8 @@ export type BugHunterConfig = {
   idor?: IdorConfig;
   /** v0.39 generative fuzz. Default: disabled (opt-in via --fuzz). */
   fuzz?: FuzzConfig;
+  /** v0.40 multi-context coordination tests. Default: disabled (opt-in via --multi-context). */
+  multiContext?: MultiContextConfig;
   /** v0.6 performance subsystem. Disabled by default until users opt in. */
   perf?: {
     enabled: boolean;
@@ -1806,6 +1820,8 @@ export type RunSummary = {
   idor?: IdorTelemetry;
   /** v0.39: generative fuzz telemetry — present when fuzz is enabled for the run. */
   fuzz?: FuzzTelemetry;
+  /** v0.40: multi-context coordination telemetry — present when multiContext.enabled = true. */
+  multiContext?: MultiContextTelemetry;
   /** v0.27: cross-run delta vs. the previous run for the same projectName. Absent when history.db has no prior run. */
   crossRun?: CrossRunSummary;
   /** v0.29: severity rollup. Always present in v0.29+ summary.json files; absent on older runs. */
@@ -1948,6 +1964,99 @@ export type CrossRunSummary = {
   persistent: number;
   goneSinceLast: number;
   regressed: number;
+};
+
+// --- v0.40 multi-context coordination types ---
+
+/** Lifecycle event kinds supported by the multi-context lifecycle_state_loss variant. */
+export type LifecycleEventKind = 'visibilitychange' | 'pageshow' | 'pagehide' | 'freeze' | 'resume';
+
+/**
+ * v0.40 discriminated union describing which multi-context pattern a test case exercises.
+ * state_divergence: N same-role contexts mutate the same resource.
+ * lifecycle_state_loss: single context fires action then receives a lifecycle event mid-flight.
+ * inconsistent_snapshot: writer (roleA) mutates; reader (roleB) polls pre/mid/post.
+ */
+export type MultiContextVariant =
+  | { kind: 'state_divergence'; n: number; gapMs: number; settleMs: number; nonCommutativeFields?: string[] }
+  | { kind: 'lifecycle_state_loss'; lifecycleEvent: LifecycleEventKind; midActionDelayMs: number; settleMs: number }
+  | { kind: 'inconsistent_snapshot'; writerSettleMs: number; readerEndpoint: string; resourceId: string };
+
+/** A single HTTP snapshot captured by the reader in the inconsistent_snapshot variant. */
+export type SnapshotCapture = {
+  offsetMs: number;
+  responseStatus: number;
+  responseBody: unknown;
+  headers: {
+    etag?: string;
+    lastModified?: string;
+    xSnapshotVersion?: string;
+    ifMatch?: string;
+  };
+};
+
+/** v0.40: populated on BugDetection for multi-context findings. */
+export type MultiContextDetectionContext = {
+  variantKind: MultiContextVariant['kind'];
+  n?: number;
+  lifecycleEvent?: LifecycleEventKind;
+  readerEndpoint?: string;
+  proof:
+    | 'n_way_no_reconcile'
+    | 'state_lost_post_lifecycle'
+    | 'silent_failure_post_lifecycle'
+    | 'rollback_post_lifecycle'
+    | 'torn_read'
+    | 'inconsistent_field_overlay';
+  evidence: string;
+  perPatternConfig?: Record<string, unknown>;
+  /** True when consensus voting did not reach the required threshold. */
+  flaky?: boolean;
+};
+
+/** v0.40: per-run telemetry block in summary.json when multi-context is enabled. */
+export type MultiContextTelemetry = {
+  enabled: boolean;
+  n: number;
+  variantsRun: Array<MultiContextVariant['kind']>;
+  testsPlanned: number;
+  testsSucceeded: number;
+  testsTimedOut: number;
+  testsSkipped: Array<{ reason: string; count: number }>;
+  detectionsByKind: Record<string, number>;
+  flakyDetections: number;
+  aborted?: 'budget_exhausted' | 'pool_capacity' | 'fatal_error';
+  durationMs: number;
+};
+
+/** v0.40: multi-context config block in BugHunterConfig. */
+export type MultiContextConfig = {
+  /** Master switch. Default: false. */
+  enabled?: boolean;
+  /** Number of coordinated contexts for state_divergence. Default: 3, min: 2, max: 8. */
+  n?: number;
+  /** Which variants to run. Default: all three when enabled. */
+  variants?: Array<MultiContextVariant['kind']>;
+  /** Lifecycle events to test. Default: all five. */
+  lifecycleEvents?: LifecycleEventKind[];
+  /** Total budget cap for multi-context phase (ms). Default: 1800000. */
+  maxTotalDurationMs?: number;
+  /** Per-variant test cap. */
+  maxTestsPerVariant?: Partial<Record<MultiContextVariant['kind'], number>>;
+  /** Per-test timeout (ms). Default: 120000. */
+  perTestTimeoutMs?: number;
+  /** Consensus runs per variant. Default: state_divergence=5, others=3. */
+  consensusRunsByVariant?: Partial<Record<MultiContextVariant['kind'], number>>;
+  /** Consensus votes required per variant. Default: state_divergence=3, others=2. */
+  consensusVotesRequiredByVariant?: Partial<Record<MultiContextVariant['kind'], number>>;
+  /** ToolId patterns considered too sensitive without explicit opt-in. */
+  aggressiveMultiContextTargets?: string[];
+  /** Field-level commutativity overrides per toolId. */
+  nonCommutativeFieldsByTool?: Record<string, string[]>;
+  /** Concurrency cap for multi-context tests. Default: 1. */
+  multiContextConcurrency?: number;
+  /** Explicit snapshot pairs: { writer: toolId, reader: endpoint }. */
+  snapshotPairs?: Array<{ writer: string; reader: string }>;
 };
 
 // --- v0.14 seed-hook execution record (defined here so emit.ts can reference it) ---

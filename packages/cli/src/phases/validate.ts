@@ -54,6 +54,15 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
     );
   }
 
+  // v0.40 EC-1: multi-context N must be in [2, 8]
+  const multiContextN = opts.config.multiContext?.n;
+  if (multiContextN !== undefined && (multiContextN < 2 || multiContextN > 8)) {
+    throw new Error(
+      `multiContext.n must be between 2 and 8 (got ${multiContextN}). ` +
+      `Set multiContext.n to a value in [2, 8] or omit to use the default of 3.`
+    );
+  }
+
   // 1. SurfaceMCP reachable
   const catalog = await opts.surfaceMcp.surface_list_tools().catch((err: unknown) => {
     throw new Error(`SurfaceMCP unreachable at ${opts.config.surfaceMcpUrl}: ${String(err)}`);

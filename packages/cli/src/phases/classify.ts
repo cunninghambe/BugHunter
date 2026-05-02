@@ -28,6 +28,10 @@ const KIND_PRIORITY: BugKind[] = [
   'web_worker_error',
   'iframe_postmessage_unguarded',
   'service_worker_stale',
+  // v0.40 multi-context kinds: data-integrity bugs, above network errors
+  'multi_user_inconsistent_snapshot',
+  'multi_context_state_divergence',
+  'visibility_change_state_loss',
   'network_5xx',
   'react_error',
   'hydration_mismatch',

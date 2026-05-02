@@ -159,6 +159,24 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
       return `race_condition_cross_tab|${tool}`;
     }
 
+    // v0.40 multi-context kinds
+    case 'multi_context_state_divergence': {
+      const tool = detection.endpoint ?? '';
+      const n = detection.multiContextContext?.n ?? '';
+      return `multi_context_state_divergence|${tool}|n=${n}`;
+    }
+    case 'visibility_change_state_loss': {
+      const tool = detection.endpoint ?? '';
+      const lifecycleEvent = detection.multiContextContext?.lifecycleEvent ?? '';
+      const proof = detection.multiContextContext?.proof ?? '';
+      return `visibility_change_state_loss|${tool}|${lifecycleEvent}|${proof}`;
+    }
+    case 'multi_user_inconsistent_snapshot': {
+      const writer = detection.endpoint ?? '';
+      const reader = detection.multiContextContext?.readerEndpoint ?? '';
+      return `multi_user_inconsistent_snapshot|${writer}|${reader}`;
+    }
+
     // Hallucinated route
     case 'hallucinated_route':
       return `hallucinated_route|${detection.targetPath ?? ''}`;

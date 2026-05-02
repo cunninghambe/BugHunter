@@ -1,7 +1,7 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
 import * as fs from 'node:fs';
-import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, BrowserPlatformTelemetry, Severity, ClockTestingTelemetry, NetworkFaultsTelemetry } from '../types.js';
+import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, BrowserPlatformTelemetry, Severity, ClockTestingTelemetry, NetworkFaultsTelemetry, MultiContextTelemetry } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { buildCoverage } from './coverage.js';
 import { canonicalStringify } from '../lib/canonical.js';
@@ -45,6 +45,8 @@ export type TestCounters = {
   penTesting?: PenTestingTelemetry;
   /** v0.19 race-condition telemetry — present when raceConditions.enabled = true. */
   raceConditions?: RaceConditionsTelemetry;
+  /** v0.40 multi-context telemetry — present when multiContext.enabled = true. */
+  multiContext?: MultiContextTelemetry;
   /** v0.21 IDOR telemetry — present when idor.enabled = true. */
   idor?: IdorTelemetry;
   /** v0.36: browser-platform probe telemetry — present when browserPlatform.enabled = true. */
@@ -139,6 +141,7 @@ export function runEmit(
     ...(counters?.heapAttributionSummary !== undefined ? { heapAttributionSummary: counters.heapAttributionSummary } : {}),
     ...(counters?.penTesting !== undefined ? { penTesting: counters.penTesting } : {}),
     ...(counters?.raceConditions !== undefined ? { raceConditions: counters.raceConditions } : {}),
+    ...(counters?.multiContext !== undefined ? { multiContext: counters.multiContext } : {}),
     ...(counters?.idor !== undefined ? { idor: counters.idor } : {}),
     ...(counters?.clockTesting !== undefined ? { clockTesting: counters.clockTesting } : {}),
     ...(counters?.browserPlatform !== undefined ? { browserPlatform: counters.browserPlatform } : {}),
