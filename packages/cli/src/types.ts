@@ -21,7 +21,7 @@ export type InputType =
   | 'slug'
   | 'foreign_id';
 
-export type PaletteVariant = 'null' | 'happy' | 'edge' | 'out_of_bounds' | 'xss_inject';
+export type PaletteVariant = 'null' | 'happy' | 'edge' | 'out_of_bounds' | 'xss_inject' | 'fuzz';
 
 export type BugKind =
   | 'console_error'
@@ -594,6 +594,16 @@ export type TestCase = {
   formSignature?: string;
   elementSignature?: string;
   /**
+   * v0.39: present on every fuzz-minted TestCase. Absent on fixed-palette cases.
+   * Never included in cluster signature derivation.
+   */
+  fuzzMeta?: {
+    strategy: 'unicode' | 'shape' | 'boundary';
+    subSeed: number;
+    drawIndex: number;
+    shrunkValue?: unknown;
+  };
+  /**
    * Set when the test case was discovered on a state-page (kind: 'state').
    * Execute uses this to navigate to baseRoute and re-issue the trigger click
    * before running the action — the synthetic `page` route ("/?setTab=trades")
@@ -1138,6 +1148,38 @@ export type IdorConfig = {
   allowRemoteHost?: boolean;
 };
 
+// --- v0.39 generative fuzz types ---
+
+export type FuzzStrategy = 'unicode' | 'shape' | 'boundary' | 'all';
+
+export type FuzzConfig = {
+  /** Master switch. Default: false (opt-in via --fuzz). */
+  enabled?: boolean;
+  /** Single-strategy shorthand: none|unicode|shape|boundary|all. */
+  strategy?: 'none' | FuzzStrategy;
+  /** Explicit subset; takes precedence over strategy. */
+  strategies?: Array<'unicode' | 'shape' | 'boundary'>;
+  /** Draws per field per surface per strategy. Default 16, range [1, 256]. */
+  runs?: number;
+  /** Failure-shrinking. Default on; auto-off when runs > 64. */
+  shrink?: boolean;
+  /** Global ceiling on total fuzz draws. Default 25_000. */
+  maxTotalDrawsPerRun?: number;
+};
+
+export type FuzzTelemetry = {
+  enabled: boolean;
+  strategy: string;
+  strategies: string[];
+  runs: number;
+  draws: number;
+  truncated: boolean;
+  truncatedAtSurface?: string;
+  shrunkCount: number;
+  skippedSurfaces: number;
+  errors: Array<{ strategy: string; surface: string; message: string }>;
+};
+
 export type BugHunterConfig = {
   projectName: string;
   surfaceMcpUrl: string;
@@ -1203,6 +1245,8 @@ export type BugHunterConfig = {
   raceConditions?: RaceConditionsConfig;
   /** v0.21 IDOR / horizontal-authz testing. Default: disabled (opt-in via --idor or --security). */
   idor?: IdorConfig;
+  /** v0.39 generative fuzz. Default: disabled (opt-in via --fuzz). */
+  fuzz?: FuzzConfig;
   /** v0.6 performance subsystem. Disabled by default until users opt in. */
   perf?: {
     enabled: boolean;
@@ -1433,6 +1477,8 @@ export type RunSummary = {
   raceConditions?: RaceConditionsTelemetry;
   /** v0.21: IDOR / horizontal-authz telemetry — present when idor.enabled = true. */
   idor?: IdorTelemetry;
+  /** v0.39: generative fuzz telemetry — present when fuzz is enabled for the run. */
+  fuzz?: FuzzTelemetry;
   /** v0.27: cross-run delta vs. the previous run for the same projectName. Absent when history.db has no prior run. */
   crossRun?: CrossRunSummary;
   /** v0.29: severity rollup. Always present in v0.29+ summary.json files; absent on older runs. */

@@ -4,8 +4,9 @@ import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   BugHunterConfig, DiscoveredForm, DiscoveredPage, DiscoveryOutput, TestCase, ToolMeta,
   RaceConditionsConfig, InterleavingVariant,
-  Action,
+  Action, FuzzConfig,
 } from '../types.js';
+import type { FuzzOptions, FuzzStrategy } from '../mutation/fuzz.js';
 import {
   DEFAULT_VARIANTS,
   extractMutatingActionTuples,
@@ -57,6 +58,8 @@ export async function runPlan(
   const xssMutateJsonBodies = config.xss?.mutateJsonBodies ?? true;
   let xssCount = 0;
 
+  const fuzzOpts = resolveFuzzOptions(config.fuzz, runId);
+
   for (const role of roles) {
     seenFormSigs.clear();
     seenElementSigs.set(role, new Set());
@@ -104,7 +107,7 @@ export async function runPlan(
             log.debug('plan: skipping submit tests', { role, page: page.route, form: form.formSelector, skipReason: reason });
             continue;
           }
-          const cases = formTestCases(runId, role, page.route, form, runId, config.domainHints, pageStateCtx);
+          const cases = formTestCases(runId, role, page.route, form, runId, config.domainHints, pageStateCtx, fuzzOpts);
           testCases.push(...cases);
 
           // XSS canary injection for this form
@@ -218,7 +221,7 @@ export async function runPlan(
         toolFixtures?.[role] ??
         toolFixtures?.['*'];
 
-      const cases = apiTestCases(runId, role, tool, samples, config.domainHints, bodyFixture);
+      const cases = apiTestCases(runId, role, tool, samples, config.domainHints, bodyFixture, fuzzOpts);
       testCases.push(...cases);
 
       // XSS canary injection for this API tool
@@ -607,4 +610,35 @@ function makeRaceTestCase(runId: string, source: TestCase, variant: Interleaving
     stateContext: source.stateContext,
     race: { variant },
   };
+}
+
+/**
+ * Resolve FuzzOptions from config (which has already been merged with CLI flags in run.ts).
+ * Returns undefined when fuzz is disabled (the default).
+ * EC-6: undefined seed rejects early — callers must ensure seed is set when fuzz is enabled.
+ */
+export function resolveFuzzOptions(fuzzCfg: FuzzConfig | undefined, runSeed: string | number): FuzzOptions | undefined {
+  if (fuzzCfg?.enabled !== true) return undefined;
+
+  const seedNum = typeof runSeed === 'number' ? runSeed : parseInt(String(runSeed), 10);
+  if (!Number.isFinite(seedNum)) {
+    throw new Error('--fuzz requires --seed (or runConfig.seed) for deterministic generation');
+  }
+
+  const strategies = resolveStrategies(fuzzCfg);
+  const runs = Math.min(256, Math.max(1, fuzzCfg.runs ?? 16));
+  const shrink = fuzzCfg.shrink ?? (runs <= 64);
+  const maxTotalDraws = fuzzCfg.maxTotalDrawsPerRun ?? 25_000;
+
+  return { strategies, runs, subSeedBase: seedNum, shrink, maxTotalDraws };
+}
+
+function resolveStrategies(fuzzCfg: FuzzConfig): FuzzStrategy[] {
+  if (fuzzCfg.strategies !== undefined && fuzzCfg.strategies.length > 0) {
+    return fuzzCfg.strategies;
+  }
+  const strategy = fuzzCfg.strategy ?? 'all';
+  if (strategy === 'none') return [];
+  if (strategy === 'all') return ['unicode', 'shape', 'boundary'];
+  return [strategy];
 }

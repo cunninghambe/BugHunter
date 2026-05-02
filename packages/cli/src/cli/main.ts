@@ -307,6 +307,12 @@ async function main(): Promise<void> {
           noIdor: flags['no-idor'] === true,
           // v0.32 deterministic mode flags
           seed: typeof flags['seed'] === 'string' ? parseSeed(flags['seed']) : undefined,
+          // v0.39 fuzz flags
+          fuzz: typeof flags['fuzz'] === 'string' ? flags['fuzz'] : undefined,
+          fuzzStrategies: typeof flags['fuzz-strategies'] === 'string' ? flags['fuzz-strategies'] : undefined,
+          fuzzRuns: typeof flags['fuzz-runs'] === 'string' ? parseInt(flags['fuzz-runs'], 10) : undefined,
+          fuzzShrink: flags['fuzz-shrink'] === 'on' ? true : flags['fuzz-shrink'] === 'off' ? false : undefined,
+          noFuzz: flags['no-fuzz'] === true,
           frozenClock: typeof flags['frozen-clock'] === 'string' ? flags['frozen-clock'] : undefined,
           frozenNetwork: typeof flags['frozen-network'] === 'string' ? flags['frozen-network'] : undefined,
           recordNetwork: typeof flags['record-network'] === 'string' ? flags['record-network'] : undefined,

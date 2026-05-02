@@ -1,8 +1,9 @@
-// Tests for mutation helpers — xssFormTestCases, xssApiTestCases, formTestCases (v0.7 + v0.9).
+// Tests for mutation helpers — xssFormTestCases, xssApiTestCases, formTestCases (v0.7 + v0.9 + v0.39).
 
 import { describe, it, expect } from 'vitest';
-import { xssFormTestCases, xssApiTestCases, formTestCases } from './apply.js';
+import { xssFormTestCases, xssApiTestCases, formTestCases, apiTestCases } from './apply.js';
 import type { DiscoveredForm, ToolMeta, TestCase } from '../types.js';
+import type { FuzzOptions } from './fuzz.js';
 
 function makeForm(fields: Array<{ name: string; type: DiscoveredForm['fields'][number]['type'] }>): DiscoveredForm {
   return {
@@ -221,6 +222,94 @@ describe('xssFormTestCases (v0.9)', () => {
     const cases = xssFormTestCases('run1', 'user', '/page', form);
     for (const tc of cases) {
       expect(tc.stateContext).toBeUndefined();
+    }
+  });
+});
+
+// v0.39 — fuzz threading tests
+const fuzzOpts: FuzzOptions = {
+  strategies: ['unicode'],
+  runs: 4,
+  subSeedBase: 7777,
+  shrink: false,
+  maxTotalDraws: 25_000,
+};
+
+describe('formTestCases — fuzz threading', () => {
+  const form: DiscoveredForm = {
+    formSelector: '#form',
+    method: 'POST',
+    fields: [{ name: 'username', type: 'text', required: true }],
+  };
+
+  it('without fuzzOpts returns only 4 fixed palette cases', () => {
+    const cases = formTestCases('run1', 'user', '/page', form, 'run1');
+    expect(cases).toHaveLength(4);
+    expect(cases.every(tc => tc.palette !== 'fuzz')).toBe(true);
+  });
+
+  it('with fuzzOpts appends fuzz cases after fixed palette', () => {
+    const cases = formTestCases('run1', 'user', '/page', form, 'run1', undefined, undefined, fuzzOpts);
+    const fixedCases = cases.filter(tc => tc.palette !== 'fuzz');
+    const fuzzCases = cases.filter(tc => tc.palette === 'fuzz');
+    expect(fixedCases).toHaveLength(4);
+    expect(fuzzCases.length).toBeGreaterThan(0);
+  });
+
+  it('fuzz cases have fuzzMeta set', () => {
+    const cases = formTestCases('run1', 'user', '/page', form, 'run1', undefined, undefined, fuzzOpts);
+    const fuzzCases = cases.filter(tc => tc.palette === 'fuzz');
+    for (const tc of fuzzCases) {
+      expect(tc.fuzzMeta).toBeDefined();
+      expect(tc.fuzzMeta?.strategy).toBe('unicode');
+    }
+  });
+
+  it('fixed palette is unchanged when fuzzOpts is passed', () => {
+    const withoutFuzz = formTestCases('run1', 'user', '/page', form, 'run1');
+    const withFuzz = formTestCases('run1', 'user', '/page', form, 'run1', undefined, undefined, fuzzOpts);
+    const fixedPalettes = withFuzz.filter(tc => tc.palette !== 'fuzz').map(tc => tc.palette);
+    const expected = withoutFuzz.map(tc => tc.palette);
+    expect(fixedPalettes).toEqual(expected);
+  });
+});
+
+describe('apiTestCases — fuzz threading', () => {
+  const tool: ToolMeta = {
+    name: 'create-user',
+    toolId: 'createUser',
+    method: 'POST',
+    path: '/api/users',
+    inputSchema: { properties: { name: { type: 'string' } }, required: ['name'] },
+    inputSchemaConfidence: 'introspected',
+    sideEffectClass: 'mutating',
+    sourceFile: 'test.ts',
+    sourceLine: 1,
+    isServerAction: false,
+  };
+
+  it('without fuzzOpts returns only fixed palette cases', () => {
+    const cases = apiTestCases('run1', 'user', tool, []);
+    expect(cases.every(tc => tc.palette !== 'fuzz')).toBe(true);
+  });
+
+  it('with fuzzOpts appends fuzz cases', () => {
+    const cases = apiTestCases('run1', 'user', tool, [], undefined, undefined, fuzzOpts);
+    const fuzzCases = cases.filter(tc => tc.palette === 'fuzz');
+    expect(fuzzCases.length).toBeGreaterThan(0);
+  });
+
+  it('skips fuzz on GET (safe method) tools', () => {
+    const getTool: ToolMeta = { ...tool, method: 'GET' };
+    const cases = apiTestCases('run1', 'user', getTool, [], undefined, undefined, fuzzOpts);
+    expect(cases.every(tc => tc.palette !== 'fuzz')).toBe(true);
+  });
+
+  it('fuzz cases on API tools have fuzzMeta', () => {
+    const cases = apiTestCases('run1', 'user', tool, [], undefined, undefined, fuzzOpts);
+    const fuzzCases = cases.filter(tc => tc.palette === 'fuzz');
+    for (const tc of fuzzCases) {
+      expect(tc.fuzzMeta).toBeDefined();
     }
   });
 });

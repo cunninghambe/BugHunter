@@ -1,4 +1,10 @@
 // Cluster signature derivation per § 3.6 (extended for v0.5 security kinds).
+//
+// v0.39 fuzz-stability invariant: triggeringAction.input (and TestCase.fuzzMeta) are
+// NEVER included in cluster signatures. Two fuzz draws that produce different input values
+// but hit the same endpoint / error / status MUST produce identical cluster keys.
+// This ensures stochastic discoveries collapse to one cluster across re-runs.
+// Verified by the test suite in signature.test.ts ("v0.39 fuzz stability" describe block).
 
 import type { BugDetection, BugKind } from '../types.js';
 import { normalizeErrorMessage, fingerprintStackTrace, shapeResponseBody } from './normalize.js';
