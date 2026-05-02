@@ -26,7 +26,7 @@ import { runCrossUser } from '../phases/cross-user.js';
 import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { BugDetection, ClockTestingConfig, ClockTestingTelemetry, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant } from '../types.js';
+import type { BugDetection, ClockTestingConfig, ClockTestingTelemetry, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant, BugHunterConfig } from '../types.js';
 import type { ClockConditionName } from '../security/clock-conditions.js';
 import { DEFAULT_VARIANTS } from '../security/interleaving-palette.js';
 import { runEmit } from '../phases/emit.js';
@@ -139,6 +139,8 @@ export type RunOptions = {
   noClockTests?: boolean;
   /** --clock-conditions <csv>: comma-separated subset of condition names. */
   clockConditions?: string;
+  /** v0.45: --read-only mode. Disables all mutating subsystems and actions. */
+  readOnly?: boolean;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -154,6 +156,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   // EC-6: --fuzz requires --seed.
   if (opts.fuzz !== undefined && opts.fuzz !== 'none' && opts.seed === undefined) {
     throw new Error('--fuzz requires --seed (or runConfig.seed) for deterministic generation');
+  }
+
+  // v0.45: --read-only + --reset are mutually exclusive.
+  if (opts.readOnly === true && opts.reset === true) {
+    throw new Error('--read-only and --reset are mutually exclusive: reset mutates the database');
   }
 
   // Install seeded id factory when --seed is set; clean up after the run.
@@ -250,6 +257,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   ];
   const navStateDeepLinkMaxDepth = opts.navStateDeepLinkMaxDepth ?? config.navStateDeepLinkMaxDepth ?? 3;
 
+  // v0.45: readOnly precedence — CLI > env > config.
+  const readOnlyFromEnv = process.env['BUGHUNTER_READ_ONLY'] === '1';
+  const readOnly = opts.readOnly === true || readOnlyFromEnv || (config.readOnly ?? false);
+
   const resolved = resolvedConfig({
     ...config,
     ...(opts.maxBugs !== undefined ? { maxBugs: opts.maxBugs } : {}),
@@ -276,7 +287,15 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     navStateDeepLinkMaxDepth,
     // v0.23 clock-testing
     ...(clockTestingConfig !== undefined ? { clockTesting: clockTestingConfig } : {}),
+    // v0.45 read-only
+    ...(readOnly ? { readOnly } : {}),
   });
+
+  // v0.45 Tier 1: force-disable mutating subsystems when readOnly === true.
+  const droppedSubsystems: string[] = [];
+  if (resolved.readOnly === true) {
+    droppedSubsystems.push(...applyReadOnlySubsystemGates(resolved));
+  }
 
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
   const browser = makeBrowserAdapter(resolved);
@@ -343,6 +362,12 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     }
   }
 
+  // v0.45: print read-only banner at run start so it's visible in logs.
+  const readOnlyBanner = resolved.readOnly === true ? buildReadOnlyBanner() : undefined;
+  if (readOnlyBanner !== undefined) {
+    process.stdout.write(`\n${readOnlyBanner}\n\n`);
+  }
+
   // Phase 0: validate
   const { revision, roles: discoveredRoles } = await runValidate({
     surfaceMcp: surface,
@@ -376,7 +401,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   saveRunState(runState);
 
   const seedHookTelemetry: SeedHookExecution[] = [];
-  const seedCtxBase = { projectDir: opts.projectDir, appBaseUrl: resolved.appBaseUrl };
+  const seedCtxBase = {
+    projectDir: opts.projectDir,
+    appBaseUrl: resolved.appBaseUrl,
+    ...(resolved.readOnly === true ? { readOnly: true as const } : {}),
+  };
 
   // Seed beforeRun — fires before discovery so hooks can spin up the app or seed the DB.
   const beforeRunResults = await runSeedHooksAt(resolved.seedHooks?.beforeRun, {
@@ -754,7 +783,13 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
     // Merge discovery-phase + plan-phase + execute-phase skip reasons.
     const discoverySkipReasons = aggregateDiscoverySkips(discovery.skipList);
-    const allSkipReasons = [...discoverySkipReasons, ...planSkipReasons, ...skipReasons];
+    const seedHookSkipCount = resolved.readOnly === true
+      ? seedHookTelemetry.filter(e => e.reason === 'read_only_skipped').length
+      : 0;
+    const seedHookSkipReasons = seedHookSkipCount > 0
+      ? [{ reason: 'read_only_skipped_seed_hook', count: seedHookSkipCount }]
+      : [];
+    const allSkipReasons = [...discoverySkipReasons, ...planSkipReasons, ...skipReasons, ...seedHookSkipReasons];
 
     const visionSummary = visionEnabled ? {
       enabled: true,
@@ -818,6 +853,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(replayTelemetry !== undefined ? { networkReplay: replayTelemetry } : {}),
     } : undefined;
 
+    // v0.45: build read-only telemetry block.
+    const readOnlyTelemetry = resolved.readOnly === true
+      ? buildReadOnlyTelemetry(planSkipReasons, droppedSubsystems, readOnlyBanner ?? buildReadOnlyBanner())
+      : undefined;
+
     runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
       testsPlanned: testCases.length,
       testsRan: results.length,
@@ -836,6 +876,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       suppressedClusters: suppressedCount,
       ...(suppressedSamples.length > 0 ? { suppressedSamples } : {}),
       ...(deterministicBlock !== undefined ? { deterministic: deterministicBlock } : {}),
+      ...(readOnlyTelemetry !== undefined ? { readOnly: readOnlyTelemetry } : {}),
     });
     runState.emitted = true;
     runState.phase = 'done';
@@ -1182,4 +1223,70 @@ async function closeAllExistingTabs(browser: BrowserMcpAdapter): Promise<void> {
   } catch {
     // If listTabs fails, proceed — camofox may be starting up
   }
+}
+
+// --- v0.45 read-only helpers ---
+
+const READ_ONLY_BANNER = `[read-only mode]
+  Disabled subsystems: raceConditions, penTesting, synthetic, authFlow, authProbe, V20 mutating-endpoint faults, V42 data-integrity
+  Narrowed subsystems: crossUser (IDOR read-only only), xss (skipped), seedHooks (GET/OPTIONS/HEAD only)
+  Browser-login POST is the only sanctioned mutation. Use --no-browser-login to suppress.
+  Always-fire passive detectors: SEO, a11y, vision, perf vitals, static analysis, naturally-observed 5xx/4xx`;
+
+function buildReadOnlyBanner(): string {
+  return READ_ONLY_BANNER;
+}
+
+/**
+ * Force-disable mutating subsystems on the resolved config object in-place.
+ * Returns the list of subsystem names that were disabled.
+ */
+function applyReadOnlySubsystemGates(resolved: BugHunterConfig): string[] {
+  const dropped: string[] = [];
+
+  if (resolved.raceConditions?.enabled === true) {
+    log.warn('read-only: race-conditions force-disabled');
+    resolved.raceConditions = { ...resolved.raceConditions, enabled: false };
+    dropped.push('raceConditions');
+  }
+  if (resolved.penTesting?.enabled === true) {
+    log.warn('read-only: pen-testing force-disabled');
+    resolved.penTesting = { ...resolved.penTesting, enabled: false };
+    dropped.push('penTesting');
+  }
+  if (resolved.synthetic?.enabled === true) {
+    log.warn('read-only: synthetic scenarios force-disabled');
+    resolved.synthetic = { ...resolved.synthetic, enabled: false };
+    dropped.push('synthetic');
+  }
+  if (resolved.authFlow?.enabled === true) {
+    log.warn('read-only: auth-flow probes force-disabled (password-reset/session-fix mutate)');
+    resolved.authFlow = { ...resolved.authFlow, enabled: false };
+    dropped.push('authFlow');
+  }
+  if (resolved.authProbe?.enabled === true) {
+    log.warn('read-only: auth-probe (rate-limit) force-disabled');
+    resolved.authProbe = { ...resolved.authProbe, enabled: false };
+    dropped.push('authProbe');
+  }
+
+  return dropped;
+}
+
+function buildReadOnlyTelemetry(
+  planSkipReasons: Array<{ reason: string; count: number }>,
+  droppedSubsystems: string[],
+  banner: string,
+): NonNullable<RunSummary['readOnly']> {
+  const droppedTestCases = planSkipReasons
+    .filter(r => r.reason.startsWith('read_only_'))
+    .reduce((sum, r) => sum + r.count, 0);
+
+  return {
+    enabled: true,
+    droppedTestCases,
+    droppedSubsystems,
+    blockedAtRuntime: 0,
+    banner,
+  };
 }

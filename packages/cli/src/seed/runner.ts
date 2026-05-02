@@ -17,7 +17,11 @@ export type SeedHookContext = {
   appBaseUrl?: string;
   role?: string;
   lifecyclePoint: SeedHookExecution['lifecyclePoint'];
+  /** v0.45: when true, non-read-only hooks are skipped instead of executed. */
+  readOnly?: boolean;
 };
+
+const READ_ONLY_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
  * Run a single seed hook and return its execution record.
@@ -25,6 +29,27 @@ export type SeedHookContext = {
  */
 export async function runSeedHook(hook: SeedHook, ctx: SeedHookContext): Promise<SeedHookExecution> {
   const description = hook.description ?? (hook.kind === 'shell' ? hook.command : `${hook.method} ${hook.url}`);
+
+  // v0.45 Tier 5: gate seed hooks in read-only mode.
+  if (ctx.readOnly === true) {
+    const allowed =
+      hook.kind === 'http'
+        ? READ_ONLY_HTTP_METHODS.has(hook.method)
+        : hook.readOnlyAllowed === true;
+    if (!allowed) {
+      log.info('seed: hook skipped (read-only mode)', { lifecyclePoint: ctx.lifecyclePoint, kind: hook.kind, description });
+      return {
+        hookKind: hook.kind,
+        description,
+        lifecyclePoint: ctx.lifecyclePoint,
+        ...(ctx.role !== undefined ? { role: ctx.role } : {}),
+        ok: false,
+        durationMs: 0,
+        reason: 'read_only_skipped',
+      };
+    }
+  }
+
   log.info('seed: hook starting', { lifecyclePoint: ctx.lifecyclePoint, kind: hook.kind, description });
 
   const invokeStart = Date.now();
@@ -78,7 +103,8 @@ export async function runSeedHooksAt(
   for (const hook of hooks) {
     const exec = await runSeedHook(hook, ctx);
     executions.push(exec);
-    if (!exec.ok && hook.continueOnError !== true) {
+    // read_only_skipped is a pass-through, not a failure.
+    if (!exec.ok && exec.reason !== 'read_only_skipped' && hook.continueOnError !== true) {
       throw new Error(`seed: ${ctx.lifecyclePoint} hook failed: ${exec.reason ?? 'unknown error'}`);
     }
   }

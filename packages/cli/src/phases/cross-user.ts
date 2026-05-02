@@ -17,6 +17,7 @@ import { decodeDiscoveredIdKey, isToolPathDenied, isOpaqueSignedToken } from '..
 import { deriveResourceType } from '../security/resource-type.js';
 import { classifyIdorOutcome } from '../security/idor-classifier.js';
 import { log } from '../log.js';
+import { isReadOnlyTool } from '../util/read-only.js';
 
 export type CrossUserOptions = {
   runState: RunState;
@@ -208,6 +209,8 @@ async function runV21IdorPass(opts: V21PassOpts): Promise<CrossUserResult> {
           for (const [toolId, toolInfo] of matchingTools) {
             if (toolInfo.sideEffectClass === 'external') continue;
             if (!actualProbeMutating && toolInfo.sideEffectClass === 'mutating') continue;
+            // v0.45 Tier 4: in read-only mode, IDOR replays only for read-only tools.
+            if (runState.config.readOnly === true && !isReadOnlyTool({ method: toolInfo.method, sideEffectClass: toolInfo.sideEffectClass ?? 'safe' })) continue;
 
             if (replayCount >= maxReplays) {
               abortReason = 'budget';
@@ -637,6 +640,8 @@ async function runAnonymousCatalogSweep(opts: AnonymousSweepOpts): Promise<void>
     if (count >= cap) break;
     if (toolInfo.requiresAdmin === true) continue;
     if (toolInfo.sideEffectClass !== 'safe') continue;
+    // v0.45 Tier 4: in read-only mode, anonymous sweep additionally requires GET/HEAD/OPTIONS.
+    if (runState.config.readOnly === true && !isReadOnlyTool({ method: toolInfo.method, sideEffectClass: toolInfo.sideEffectClass ?? 'safe' })) continue;
 
     count++;
     const testId = createId();

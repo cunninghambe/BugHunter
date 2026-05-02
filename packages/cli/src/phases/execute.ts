@@ -67,6 +67,7 @@ import { harEntriesToCsrfObservations } from '../adapters/har-writer.js';
 import { detectMissingCsrf } from '../security/csrf-detector.js';
 import { detectHallucinatedRoutes } from '../classify/hallucinated-route.js';
 import type { DiscoveredPage } from '../types.js';
+import { isReadOnlyAction, MutatingActionRejectedError } from '../util/read-only.js';
 
 export type ExecuteOptions = {
   testCases: TestCase[];
@@ -272,6 +273,14 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     }
 
     try {
+      // v0.45 Tier 3: runtime guard — fatal if a mutating action reaches executors in read-only mode.
+      // Tier 2 (plan) should prevent this; if it fires, we have a gating bug.
+      if (runState.config.readOnly === true && !isReadOnlyAction(tc.action, toolMap ?? new Map())) {
+        throw new MutatingActionRejectedError(
+          `read-only mode: refusing to execute action kind=${tc.action.kind} toolId=${'toolId' in tc.action ? (tc.action.toolId ?? 'unknown') : 'none'}`
+        );
+      }
+
       // v0.19: race test cases take a separate path
       if (tc.race !== undefined && browser !== undefined) {
         const raceConfig = runState.config.raceConditions ?? {};

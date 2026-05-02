@@ -1394,6 +1394,14 @@ export type BugHunterConfig = {
   notifications?: import('./notify/types.js').NotificationsConfig;
   /** v0.23: clock-injection palette config. Default: disabled. */
   clockTesting?: ClockTestingConfig;
+  /**
+   * v0.45: read-only / staging-safe mode. When true, all mutating actions are
+   * filtered at plan time (Tier 2) and blocked at runtime (Tier 3).
+   * Subsystems that require mutation (raceConditions, penTesting, synthetic,
+   * authFlow, authProbe) are force-disabled. CLI: --read-only.
+   * Env: BUGHUNTER_READ_ONLY=1. Precedence: CLI > env > config.
+   */
+  readOnly?: boolean;
 };
 
 /** v0.23: configuration for the clock-injection palette. */
@@ -1458,6 +1466,13 @@ export type SeedHookShell = {
   /** When true, a non-zero exit does not abort the run. Default: false. */
   continueOnError?: boolean;
   description?: string;
+  /**
+   * v0.45: When true, this shell hook is allowed to run in --read-only mode.
+   * Default false. Only set this for hooks whose command is provably non-mutating
+   * (e.g. SELECT queries, read-only health checks). BugHunter cannot introspect
+   * shell commands, so opt-in is required.
+   */
+  readOnlyAllowed?: boolean;
 };
 
 export type SeedHookHttp = {
@@ -1590,6 +1605,14 @@ export type RunSummary = {
   crossRun?: CrossRunSummary;
   /** v0.29: severity rollup. Always present in v0.29+ summary.json files; absent on older runs. */
   bySeverity?: Record<Severity, number>;
+  /** v0.45: read-only mode telemetry — present when --read-only is active. */
+  readOnly?: {
+    enabled: boolean;
+    droppedTestCases: number;
+    droppedSubsystems: string[];
+    blockedAtRuntime: number;
+    banner: string;
+  };
 };
 
 // --- v0.19 race-condition types ---
