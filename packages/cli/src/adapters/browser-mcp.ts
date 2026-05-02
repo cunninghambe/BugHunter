@@ -914,9 +914,10 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
         const self = this;
         return (async () => {
           try {
+            const args = translateNetworkFault(tabId, fault);
             const result = await self.tool<{ ok: boolean; applied: boolean; reason?: string }>(
               'network_fault',
-              { tabId, fault },
+              args,
             );
             if (result.applied === false) {
               return { applied: false as const, reason: result.reason ?? 'fault_unsupported' };
@@ -958,6 +959,37 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
       (hint.ariaLabel !== undefined && hint.ariaLabel !== '') ||
       (hint.text !== undefined && hint.text !== '');
     return { clicked: false, reason: hasPopulatedField ? 'not_found' : 'no_hint_fields' };
+  }
+}
+
+// ---- NetworkFaultSpec → camofox-mcp flat args translation ----
+
+/**
+ * Translates BugHunter's `NetworkFaultSpec` (kind-discriminated) into the flat
+ * argument object expected by the camofox-mcp `network_fault` tool (mode-based).
+ *
+ * Mapping:
+ *   { kind: 'malformed_response', mode: 'truncated_json' } → { mode: 'malformed_truncated_json' }
+ *   { kind: 'malformed_response', mode: 'wrong_content_type' } → { mode: 'malformed_wrong_content_type' }
+ *   { kind: 'intermittent', dropEveryN: N } → { mode: 'intermittent', dropEveryN: N }
+ *   { kind: 'server_5xx', status: S } → { mode: 'server_5xx', statusCode: S }
+ *   All other kinds: kind → mode pass-through with kind-specific extra fields.
+ */
+function translateNetworkFault(tabId: string, fault: NetworkFaultSpec): Record<string, unknown> {
+  switch (fault.kind) {
+    case 'malformed_response':
+      return {
+        tabId,
+        mode: fault.mode === 'truncated_json' ? 'malformed_truncated_json' : 'malformed_wrong_content_type',
+      };
+    case 'intermittent':
+      return { tabId, mode: 'intermittent', dropEveryN: fault.dropEveryN };
+    case 'server_5xx':
+      return { tabId, mode: 'server_5xx', statusCode: fault.status };
+    case 'high_latency':
+      return { tabId, mode: 'high_latency', latencyMs: fault.latencyMs };
+    default:
+      return { tabId, mode: fault.kind };
   }
 }
 

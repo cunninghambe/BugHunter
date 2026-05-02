@@ -87,9 +87,11 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
       );
     }
     if (opts.browserMcp.applyNetworkFault === undefined) {
+      const url = opts.config.browserMcpUrl ?? opts.config.browserMcpStdio?.command ?? '<unknown>';
       throw new Error(
-        'networkFaults.enabled = true but camofox-mcp v0.1 does not support network-fault injection. ' +
-        'Required: camofox-mcp ≥ v0.2 with the network_fault tool. See SPEC_V20_NETWORK_FAULTS.md § 6.'
+        `networkFaults.enabled = true but the browser adapter at ${url} does not expose an applyNetworkFault method. ` +
+        'Install or upgrade camofox-mcp to ≥0.3.0 (requires the network_fault tool). ' +
+        'See SPEC_V20_NETWORK_FAULTS.md § 6.'
       );
     }
     // Probe by calling with offline fault and checking the result
@@ -102,9 +104,10 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
         throw new Error(`networkFaults probe: applyNetworkFault threw: ${String(err)}`);
       });
       if (probeResult.applied === false && probeResult.reason === 'tool_not_available') {
+        const url = opts.config.browserMcpUrl ?? opts.config.browserMcpStdio?.command ?? '<unknown>';
         throw new Error(
-          'networkFaults.enabled = true but camofox-mcp v0.1 does not support network-fault injection. ' +
-          'Required: camofox-mcp ≥ v0.2 with the network_fault tool. See SPEC_V20_NETWORK_FAULTS.md § 6.'
+          `networkFaults.enabled = true but camofox-mcp at ${url} does not advertise the \`network_fault\` tool — ` +
+          'install or upgrade to ≥0.3.0. See SPEC_V20_NETWORK_FAULTS.md § 6.'
         );
       }
       await opts.browserMcp.clearNetworkFault?.();
