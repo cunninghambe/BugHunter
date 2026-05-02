@@ -20,5 +20,8 @@
   "idor": { "enabled": true },
   "penTesting": {
     "enabled": true
+  },
+  "multiContext": {
+    "enabled": true
   }
 }
