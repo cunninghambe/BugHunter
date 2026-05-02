@@ -26,12 +26,13 @@ import { runCrossUser } from '../phases/cross-user.js';
 import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { BugDetection, ClockTestingConfig, ClockTestingTelemetry, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant, BugHunterConfig } from '../types.js';
+import type { BugDetection, ClockTestingConfig, ClockTestingTelemetry, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant, BugHunterConfig, MultiContextConfig } from '../types.js';
 import type { ClockConditionName } from '../security/clock-conditions.js';
 import { DEFAULT_VARIANTS } from '../security/interleaving-palette.js';
 import { runEmit } from '../phases/emit.js';
 import { classifyMemoryLeak } from '../classify/memory-leak.js';
 import { buildRaceConditionsTelemetry } from '../phases/race-runner.js';
+import { buildMultiContextTelemetry } from '../phases/multi-context-runner.js';
 import { runFormReachabilityProbes } from '../phases/form-reachability-probe.js';
 import type { ProbeKey, ProbeResult } from '../phases/form-reachability-probe.js';
 import { log } from '../log.js';
@@ -112,6 +113,11 @@ export type RunOptions = {
   /** Disable IDOR even when implied by --security. */
   noIdor?: boolean;
   // v0.32 deterministic mode flags
+  // v0.40 multi-context flags
+  /** --multi-context <N>: opt-in to multi-context tests; N parallel contexts (2–8). */
+  multiContext?: number;
+  /** --no-multi-context: disable multi-context even if config has it enabled. */
+  noMultiContext?: boolean;
   /** --seed <n>: 32-bit non-negative integer seeding the PRNG for all id generation. */
   seed?: number;
   /** --frozen-clock <iso8601>: all emitted timestamps are pinned to this value. */
@@ -272,6 +278,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const fuzzConfig = buildFuzzConfig(opts, config.fuzz);
   // v0.23: resolve clock-testing config from flags + config file
   const clockTestingConfig = buildClockTestingConfig(opts, config.clockTesting);
+  // v0.40: resolve multi-context config from flags + config file
+  const multiContextConfig = buildMultiContextConfig(opts, config.multiContext);
 
   // v0.22 nav-state flag resolution (§6.1): CLI flags override config; implication rules apply.
   // --nav-state-refresh-race and --enable-history-corruption imply --enable-nav-state.
@@ -324,6 +332,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(fuzzConfig !== undefined ? { fuzz: fuzzConfig } : {}),
     // v0.20 network-faults
     ...(networkFaultsConfig !== undefined ? { networkFaults: networkFaultsConfig } : {}),
+    ...(multiContextConfig !== undefined ? { multiContext: multiContextConfig } : {}),
     // v0.22 nav-state
     enableNavState,
     enableNavStateRefreshRace: navStateRefreshRace,
@@ -893,6 +902,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ? buildFuzzTelemetry(testCases, fuzzConfig)
       : undefined;
 
+    const multiContextTelemetry = multiContextConfig !== undefined
+      ? buildMultiContextTelemetry(testCases, results, multiContextConfig)
+      : undefined;
+
     // Build determinism telemetry block (§6.8).
     const replayTelemetry = harReplayer?.telemetry();
     const deterministicBlock = (hasSeed || hasClock || hasNetwork) ? {
@@ -921,6 +934,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(clockTestingTelemetry !== undefined ? { clockTesting: clockTestingTelemetry } : {}),
       ...(raceConditionsTelemetry !== undefined ? { raceConditions: raceConditionsTelemetry } : {}),
       ...(fuzzTelemetry !== undefined ? { fuzz: fuzzTelemetry } : {}),
+      ...(multiContextTelemetry !== undefined ? { multiContext: multiContextTelemetry } : {}),
       ...(crossUserResult.idorTelemetry !== undefined ? { idor: crossUserResult.idorTelemetry } : {}),
       ...(browserPlatformTelemetry !== undefined ? { browserPlatform: browserPlatformTelemetry } : {}),
       suppressedClusters: suppressedCount,
@@ -1259,6 +1273,27 @@ function buildClockTestingConfig(
     enabled: true,
     ...(activeConditions !== undefined ? { activeConditions } : {}),
   };
+}
+
+/**
+ * v0.40: Build the effective MultiContextConfig from CLI flags + config file.
+ * --no-multi-context disables even if config has enabled = true.
+ * --multi-context <N> sets N and enables.
+ */
+function buildMultiContextConfig(
+  opts: RunOptions,
+  configFileMultiContext: MultiContextConfig | undefined,
+): MultiContextConfig | undefined {
+  if (opts.noMultiContext === true) {
+    return configFileMultiContext !== undefined ? { ...configFileMultiContext, enabled: false } : undefined;
+  }
+
+  if (opts.multiContext !== undefined) {
+    const n = Math.max(2, Math.min(8, opts.multiContext));
+    return { ...(configFileMultiContext ?? {}), enabled: true, n };
+  }
+
+  return configFileMultiContext;
 }
 
 async function closeAllExistingTabs(browser: BrowserMcpAdapter): Promise<void> {

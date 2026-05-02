@@ -5,6 +5,7 @@ import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import type { BrowserMcpAdapter, TabScope } from '../adapters/browser-mcp.js';
 import { executeRaceTest } from './race-runner.js';
+import { executeMultiContextTest } from './multi-context-runner.js';
 import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
@@ -346,6 +347,19 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
           appBaseUrl: appBaseUrl ?? '',
           config: raceConfig,
           reRunForFlakes: runState.config.reRunForFlakes,
+        });
+        return result;
+      }
+
+      // v0.40: multi-context test cases take a separate path (runs last, after race)
+      if (tc.multiContext !== undefined && browser !== undefined) {
+        const result = await executeMultiContextTest(tc, {
+          browser,
+          surface,
+          runId: runState.runId,
+          appBaseUrl: appBaseUrl ?? '',
+          config: runState.config.multiContext ?? {},
+          clock,
         });
         return result;
       }

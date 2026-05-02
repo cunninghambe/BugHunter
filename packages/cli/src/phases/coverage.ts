@@ -47,7 +47,8 @@ type InputFamily =
   | 'race'
   | 'browser-platform'
   | 'agent'
-  | 'i18n';
+  | 'i18n'
+  | 'multi-context';
 
 /** Canonical kind → input family mapping (spec §4.2). */
 const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
@@ -157,12 +158,17 @@ const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
   i18n_pluralization_broken: 'i18n',
   i18n_currency_format_broken: 'i18n',
   i18n_timezone_display_wrong: 'i18n',
+  // v0.40 multi-context kinds
+  multi_context_state_divergence: 'multi-context',
+  visibility_change_state_loss: 'multi-context',
+  multi_user_inconsistent_snapshot: 'multi-context',
 };
 
 type CounterSnapshot = {
   perfSummary?: unknown;
   vision?: { called: number };
   raceConditions?: unknown;
+  multiContext?: unknown;
 };
 
 function isConsoleAndRuntimeObserved(runState: RunState): boolean {
@@ -209,6 +215,10 @@ function isI18nObserved(runState: RunState): boolean {
   return runState.config.localeStress === true;
 }
 
+function isMultiContextObserved(counters: CounterSnapshot | undefined): boolean {
+  return counters?.multiContext !== undefined;
+}
+
 /** Compute inputObserved for a given kind, given run state and counters. */
 function inputObservedForFamily(
   family: InputFamily,
@@ -227,6 +237,7 @@ function inputObservedForFamily(
     case 'browser-platform': return isBrowserPlatformObserved(runState);
     case 'agent': return isAgentObserved(runState);
     case 'i18n': return isI18nObserved(runState);
+    case 'multi-context': return isMultiContextObserved(counters);
   }
 }
 

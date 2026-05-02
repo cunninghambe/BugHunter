@@ -628,6 +628,31 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
   },
+  // — § v0.40 multi-context kinds (wired) —
+  {
+    kind: 'multi_context_state_divergence',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/security/multi-context-detectors.ts:49',
+    runnerSite: 'packages/cli/src/phases/multi-context-runner.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V40_MULTI_CONTEXT.md',
+  },
+  {
+    kind: 'visibility_change_state_loss',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/security/multi-context-detectors.ts:97',
+    runnerSite: 'packages/cli/src/phases/multi-context-runner.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V40_MULTI_CONTEXT.md',
+  },
+  {
+    kind: 'multi_user_inconsistent_snapshot',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/security/multi-context-detectors.ts:188',
+    runnerSite: 'packages/cli/src/phases/multi-context-runner.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V40_MULTI_CONTEXT.md',
+  },
   // — § v0.22 nav-state kinds (wired) —
   {
     kind: 'nav_state_corruption',
