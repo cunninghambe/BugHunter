@@ -1,6 +1,7 @@
 // v0.29: GitHub-flavoured SARIF emitter — wraps sarif.ts with 5000-truncate + path-relativity warn.
 
 import type { BugCluster } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import type { SarifRunState, SarifLog } from './sarif.js';
 import { renderSarif } from './sarif.js';
 
@@ -23,11 +24,15 @@ export function renderGithubSarif(
   }
 
   for (const c of clusters) {
-    if (c.suspectedFiles.length > 0 && c.suspectedFiles[0].startsWith('/')) {
-      process.stderr.write(
-        `[bughunter] warn: cluster ${c.id} suspectedFiles[0] is absolute path '${c.suspectedFiles[0]}'; ` +
-        'GitHub code-scanning expects SRCROOT-relative paths\n',
-      );
+    const firstFile = c.suspectedFiles[0];
+    if (firstFile !== undefined) {
+      const p = suspectedFilePath(firstFile);
+      if (p.startsWith('/')) {
+        process.stderr.write(
+          `[bughunter] warn: cluster ${c.id} suspectedFiles[0] is absolute path '${p}'; ` +
+          'GitHub code-scanning expects SRCROOT-relative paths\n',
+        );
+      }
     }
   }
 

@@ -2,6 +2,7 @@
 // Emits JSON array; caller POSTs each draft (out of scope for v0.29).
 
 import type { BugCluster, BugKind, Severity } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import type { DetectorMetadata } from '../detectors/registry.js';
 import { DETECTOR_REGISTRY_MAP } from '../detectors/registry.js';
 import { severityForCluster, severityToLinearPriority } from './severity.js';
@@ -29,7 +30,7 @@ export type LinearIssueDraft = {
 
 function buildDescription(cluster: BugCluster, replayCmd: string | undefined): string {
   const files = cluster.suspectedFiles.length > 0
-    ? cluster.suspectedFiles.map(f => `- ${f}`).join('\n')
+    ? cluster.suspectedFiles.map(f => `- ${suspectedFilePath(f)}`).join('\n')
     : '- (none)';
   const hints = cluster.fixHints.length > 0
     ? cluster.fixHints.map(h => `- ${h}`).join('\n')
@@ -69,7 +70,7 @@ export function renderLinear(clusters: BugCluster[]): LinearIssueDraft[] {
         kind: cluster.kind,
         severity,
         cwe: meta?.cwe ?? [],
-        suspectedFiles: cluster.suspectedFiles,
+        suspectedFiles: cluster.suspectedFiles.map(suspectedFilePath),
         replayCommand: replayCmd,
       },
     };

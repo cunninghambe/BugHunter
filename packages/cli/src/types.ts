@@ -274,6 +274,28 @@ export type Occurrence = OccurrenceFull | OccurrenceSummary;
 
 export type ReplayKind = 'action_log' | 'static_rerun' | 'unrunable';
 
+/**
+ * v0.46: promoted from bare string to structured type so the VSCode extension
+ * can annotate specific lines.
+ */
+export type SuspectedFile = {
+  path: string;
+  line?: number;
+  reason?: string;
+};
+
+/**
+ * v0.46: union allows reading JSONL written before v0.46 (bare strings) alongside
+ * the new structured format. Normalise with `suspectedFilePath(f)`.
+ * Write path always emits `SuspectedFile` objects.
+ */
+export type SuspectedFileLike = string | SuspectedFile;
+
+/** Extract the path string from either a legacy string entry or a v0.46 SuspectedFile. */
+export function suspectedFilePath(f: SuspectedFileLike): string {
+  return typeof f === 'string' ? f : f.path;
+}
+
 export type BugCluster = {
   id: string;
   runId: string;
@@ -285,7 +307,8 @@ export type BugCluster = {
   lastSeenAt: string;
   clusterSize: number;
   occurrences: Occurrence[];
-  suspectedFiles: string[];
+  /** v0.46: may be string[] (legacy) or SuspectedFile[] (v0.46+). Always normalise with suspectedFilePath(). */
+  suspectedFiles: SuspectedFileLike[];
   fixHints: string[];
   thirdPartyOrGenerated: boolean;
   verdict?: ClusterVerdict;

@@ -2,6 +2,7 @@
 
 import { listRunIds, runPaths } from '../store/filesystem.js';
 import type { BugCluster, Occurrence, OccurrenceFull } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import * as fs from 'node:fs';
 import { log } from '../log.js';
 
@@ -51,7 +52,7 @@ function printCluster(cluster: BugCluster, focusOcc: Occurrence | null): void {
     `Cluster Size: ${cluster.clusterSize}`,
     `First Seen: ${cluster.firstSeenAt}`,
     `Last Seen: ${cluster.lastSeenAt}`,
-    `Suspected Files: ${cluster.suspectedFiles.length === 0 ? '(none)' : cluster.suspectedFiles.join(', ')}`,
+    `Suspected Files: ${cluster.suspectedFiles.length === 0 ? '(none)' : cluster.suspectedFiles.map(suspectedFilePath).join(', ')}`,
     `Third Party: ${cluster.thirdPartyOrGenerated}`,
     ...relatedLine,
     '',

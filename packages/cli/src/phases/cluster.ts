@@ -1,6 +1,7 @@
 // Phase 5: cluster — group by stable signature; cap full-artifact occurrences (§ 3.6, 3.7).
 
 import type { BugDetection, BugCluster, BugKind, Occurrence, OccurrenceFull, OccurrenceSummary, ReplayKind, TestCase, PreState, PostState } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import { clusterSignature, extractNormalizedFields } from '../cluster/signature.js';
 import { computeFullArtifactSet } from '../store/artifact-budget.js';
 import { normalizePath } from '../classify/network.js';
@@ -144,7 +145,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
 
     // Flag third-party clusters
     cluster.thirdPartyOrGenerated = cluster.suspectedFiles.some(
-      f => /node_modules\/|\.next\/|dist\/|build\//.test(f)
+      f => /node_modules\/|\.next\/|dist\/|build\//.test(suspectedFilePath(f))
     );
   }
 

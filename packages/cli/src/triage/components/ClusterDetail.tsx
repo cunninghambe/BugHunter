@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { BugCluster } from '../../types.js';
+import { suspectedFilePath } from '../../types.js';
 
 type Props = {
   cluster: BugCluster | undefined;
@@ -36,7 +37,7 @@ export function ClusterDetail({ cluster, explanation }: Props): React.ReactEleme
       <Text bold>Suspected files:</Text>
       {cluster.suspectedFiles.length === 0
         ? <Text dimColor>  (none)</Text>
-        : cluster.suspectedFiles.map(f => <Text key={f}>{`  ${f}`}</Text>)
+        : cluster.suspectedFiles.map(f => <Text key={suspectedFilePath(f)}>{`  ${suspectedFilePath(f)}`}</Text>)
       }
       <Text bold>Root cause:</Text>
       <Text>{`  ${cluster.rootCause}`}</Text>

@@ -2,6 +2,7 @@
 // Spec §4.5: always wrap fields in double-quotes; embed quotes are doubled; newlines replaced.
 
 import type { BugCluster } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import type { DetectorMetadata } from '../detectors/registry.js';
 import { DETECTOR_REGISTRY_MAP } from '../detectors/registry.js';
 import { severityForCluster } from './severity.js';
@@ -21,7 +22,7 @@ function buildRow(cluster: BugCluster): string {
   const meta = registry[cluster.kind];
   const cwe = (meta?.cwe ?? []).join(';');
   const rootCause = cluster.rootCause.replace(/\n/g, ' ').slice(0, 500);
-  const suspectedFiles = cluster.suspectedFiles.join(';');
+  const suspectedFiles = cluster.suspectedFiles.map(suspectedFilePath).join(';');
   const replayCmd = cluster.occurrences[0]?.fullArtifacts ? cluster.occurrences[0].replayCommand : '';
   const verdict = cluster.verdict ?? '';
 

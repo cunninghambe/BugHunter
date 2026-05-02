@@ -1,5 +1,6 @@
 import micromatch from 'micromatch';
 import type { BugCluster } from '../types.js';
+import { suspectedFilePath } from '../types.js';
 import type { SuppressionEntry } from './types.js';
 import { log } from '../log.js';
 
@@ -44,7 +45,7 @@ function matchesEndpoint(cluster: BugCluster, glob: string): boolean {
 }
 
 function matchesSuspectedFile(cluster: BugCluster, glob: string): boolean {
-  return cluster.suspectedFiles.some(f => micromatch.isMatch(f, glob, MICROMATCH_OPTS));
+  return cluster.suspectedFiles.some(f => micromatch.isMatch(suspectedFilePath(f), glob, MICROMATCH_OPTS));
 }
 
 function matchesSeverity(cluster: BugCluster, value: string): boolean {
