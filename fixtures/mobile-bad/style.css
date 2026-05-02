@@ -1,0 +1,22 @@
+/* mobile-bad fixture: one positive of each v0.41 BugKind */
+
+/* hover_only_affordance: .btn:hover has background-color but no :focus pair */
+.btn:hover {
+  background-color: #2563eb;
+  color: white;
+}
+
+/* touch_target_too_small: axe target-size rule fires at runtime for small button */
+.icon-btn {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+}
+
+/* viewport_100vh_break: fixed footer sized 100vh without dvh fallback */
+.sticky-footer {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  height: 100vh;
+}

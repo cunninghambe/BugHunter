@@ -8,8 +8,8 @@ describe('DETECTOR_REGISTRY', () => {
     expect(unique.size).toBe(kinds.length);
   });
 
-  it('has 122 entries covering all BugKinds (v0.38: +9 interaction-palette wired)', () => {
-    expect(DETECTOR_REGISTRY.length).toBe(122);
+  it('has 128 entries covering all BugKinds (v0.41: +6 mobile wired)', () => {
+    expect(DETECTOR_REGISTRY.length).toBe(128);
   });
 
   it('has exactly 1 deferred entry (xss_stored)', () => {
@@ -18,12 +18,13 @@ describe('DETECTOR_REGISTRY', () => {
     const deferredKinds = deferred.map(e => e.kind).sort();
     expect(deferredKinds).toEqual([
       'xss_stored',
+      'zoom_layout_break',
     ]);
   });
 
-  it('has 121 wired entries (v0.38: +9 interaction-palette)', () => {
+  it('has 127 wired entries (v0.41: +6 mobile)', () => {
     const wired = DETECTOR_REGISTRY.filter(e => e.status === 'wired');
-    expect(wired).toHaveLength(121);
+    expect(wired).toHaveLength(127);
   });
 
   it('has 0 dead entries', () => {

@@ -361,6 +361,21 @@ export const ConfigSchema = z.object({
     errorIndicatorSelector: z.string().optional(),
     streamTerminalMarkers: z.array(z.string()).optional(),
   }).optional(),
+  // v0.41 mobile / responsive config
+  mobile: z.object({
+    enabled: z.boolean(),
+    viewports: z.array(z.object({
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+      label: z.string().min(1),
+      platform: z.enum(['ios', 'android']),
+    })).optional(),
+    softKeyboard: z.enum(['cdp', 'none']).optional(),
+    keyboardHeightPx: z.number().int().positive().optional(),
+    orientationChange: z.boolean().optional(),
+    hoverOnlyScan: z.boolean().optional(),
+    userAgent: z.string().min(1).optional(),
+  }).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

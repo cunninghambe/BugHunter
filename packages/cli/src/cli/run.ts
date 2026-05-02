@@ -173,6 +173,13 @@ export type RunOptions = {
   interactionPaletteMax?: number;
   /** --interaction-vision-threshold <f>: vision diff threshold for env-variant detectors. */
   interactionVisionThreshold?: number;
+  // v0.41 mobile / responsive flags
+  /** --mobile: enable mobile mode (UA + mobile viewports). */
+  mobile?: boolean;
+  /** --mobile-ua <ua>: override User-Agent string for mobile mode. */
+  mobileUa?: string;
+  /** --mobile-viewport <WxH[@platform]>: add a mobile viewport (can repeat). */
+  mobileViewport?: string[];
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -322,6 +329,17 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     : config.networkFaults?.enabled === true
       ? { ...config.networkFaults, enabled: false }
       : config.networkFaults;
+  // v0.41 mobile / responsive config resolution
+  const mobileEnabled = opts.mobile === true || (config.mobile?.enabled ?? false);
+  const mobileConfig = mobileEnabled ? {
+    enabled: true as const,
+    ...(opts.mobileUa !== undefined ? { userAgent: opts.mobileUa } : {}),
+    ...(config.mobile?.viewports !== undefined ? { viewports: config.mobile.viewports } : {}),
+    ...(config.mobile?.softKeyboard !== undefined ? { softKeyboard: config.mobile.softKeyboard } : {}),
+    ...(config.mobile?.keyboardHeightPx !== undefined ? { keyboardHeightPx: config.mobile.keyboardHeightPx } : {}),
+    ...(config.mobile?.orientationChange !== undefined ? { orientationChange: config.mobile.orientationChange } : {}),
+    ...(config.mobile?.hoverOnlyScan !== undefined ? { hoverOnlyScan: config.mobile.hoverOnlyScan } : {}),
+  } : config.mobile;
 
   const resolved = resolvedConfig({
     ...config,
@@ -357,6 +375,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(readOnly ? { readOnly } : {}),
     // v0.37 locale-stress
     ...(opts.localeStress === true ? { localeStress: true } : {}),
+    ...(mobileConfig !== undefined ? { mobile: mobileConfig } : {}),
   });
 
   // v0.45 Tier 1: force-disable mutating subsystems when readOnly === true.

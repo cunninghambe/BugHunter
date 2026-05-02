@@ -1,7 +1,7 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
 import * as fs from 'node:fs';
-import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, BrowserPlatformTelemetry, Severity, ClockTestingTelemetry, NetworkFaultsTelemetry, MultiContextTelemetry, DataIntegritySummary, InvariantEvaluation } from '../types.js';
+import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, BrowserPlatformTelemetry, Severity, ClockTestingTelemetry, NetworkFaultsTelemetry, MultiContextTelemetry, DataIntegritySummary, InvariantEvaluation, MobileSummary } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { buildCoverage } from './coverage.js';
 import { canonicalStringify } from '../lib/canonical.js';
@@ -72,6 +72,8 @@ export type TestCounters = {
   dataIntegrityEnabled?: boolean;
   /** v0.42: number of configured invariants. */
   dataIntegrityInvariantsConfigured?: number;
+  /** v0.41: mobile / responsive test telemetry — present when --mobile flag is set. */
+  mobile?: MobileSummary;
 };
 
 export function runEmit(
@@ -155,6 +157,7 @@ export function runEmit(
     ...(counters?.networkFaults !== undefined ? { networkFaults: counters.networkFaults } : {}),
     ...(counters?.deterministic !== undefined ? { deterministic: counters.deterministic } : {}),
     ...(counters?.dataIntegrityEvaluations !== undefined ? { dataIntegrity: buildDataIntegritySummary(counters) } : {}),
+    ...(counters?.mobile !== undefined ? { mobile: counters.mobile } : {}),
   };
 
   let crossRun: CrossRunSummary | undefined;

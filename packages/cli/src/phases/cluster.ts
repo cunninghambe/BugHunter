@@ -26,6 +26,7 @@ const STATIC_RERUN_KINDS = new Set<BugKind>([
   'vulnerable_dependency_high', 'hardcoded_credentials_in_source', 'swallowed_error_empty_catch',
   'missing_csp_header', 'permissive_cors', 'cookie_security_flags', 'open_redirect',
   'sensitive_data_in_url', 'stack_trace_leak_in_response', 'hallucinated_route',
+  'hover_only_affordance',
 ]);
 
 export function replayKindForBugKind(kind: BugKind): ReplayKind {

@@ -170,7 +170,23 @@ export type BugKind =
   | 'reduced_motion_violation'
   | 'forced_colors_failure'
   | 'dark_mode_layout_break'
-  | 'zoom_layout_break';
+  | 'zoom_layout_break'
+  // v0.41 mobile / responsive kinds
+  | 'touch_target_too_small'
+  | 'hover_only_affordance'
+  | 'viewport_100vh_break'
+  | 'soft_keyboard_occlusion'
+  | 'orientation_change_layout_break'
+  | 'pull_to_refresh_conflict';
+
+/** v0.41 mobile BugKind subset. */
+export type MobileBugKind =
+  | 'touch_target_too_small'
+  | 'hover_only_affordance'
+  | 'viewport_100vh_break'
+  | 'soft_keyboard_occlusion'
+  | 'orientation_change_layout_break'
+  | 'pull_to_refresh_conflict';
 
 /**
  * v0.37: Lightweight bounding-rect value type — avoids importing DOM globals in Node.
@@ -195,6 +211,32 @@ export type LocaleVariant =
  * The store migration layer rewrites them on read. Do not use for new detections.
  */
 export type OldRaceKinds = 'race_double_submit' | 'optimistic_update_divergence';
+
+
+export type LocaleStressConfig = {
+  /** Master switch for the locale-stress phase. Off by default. */
+  enabled?: boolean;
+  /** Translation call-site names for the hardcoded-string scanner. */
+  translationCallsites?: string[];
+  /** Extra glob patterns to exclude from the hardcoded-string scanner. */
+  extraExcludes?: string[];
+  /** Minimum string length. Default 3. */
+  minStringLength?: number;
+  /** Require whitespace for non-JSX string literals. Default true. */
+  requireWhitespace?: boolean;
+};
+
+/** v0.37: telemetry block emitted to summary.json when --locale-stress is active. */
+export type LocaleStressTelemetry = {
+  enabled: boolean;
+  variantsConfigured: number;
+  variantsRunPerUrl: Record<string, LocaleVariant[]>;
+  skippedReasons: Array<{ url: string; variant: LocaleVariant; reason: string }>;
+  hardcodedStringsScanned: number;
+  hardcodedStringsFlagged: number;
+  hardcodedStringsScannerSlow: boolean;
+  totalDurationMs: number;
+};
 
 /** v0.29: four-level severity assigned per BugKind in DETECTOR_REGISTRY. */
 export type Severity = 'critical' | 'major' | 'minor' | 'info';
@@ -1705,6 +1747,8 @@ export type BugHunterConfig = {
   interactionPalette?: InteractionPaletteConfig;
   /** v0.42: data-integrity invariants evaluated after each mutating action. */
   dataIntegrity?: DataIntegrityConfig;
+  /** v0.41: mobile / responsive test configuration. */
+  mobile?: MobileConfig;
 };
 
 /** v0.23: configuration for the clock-injection palette. */
@@ -1908,6 +1952,8 @@ export type RunSummary = {
   fuzz?: FuzzTelemetry;
   /** v0.40: multi-context coordination telemetry — present when multiContext.enabled = true. */
   multiContext?: MultiContextTelemetry;
+  /** v0.41: mobile / responsive test telemetry — present when --mobile flag is set. */
+  mobile?: MobileSummary;
   /** v0.27: cross-run delta vs. the previous run for the same projectName. Absent when history.db has no prior run. */
   crossRun?: CrossRunSummary;
   /** v0.29: severity rollup. Always present in v0.29+ summary.json files; absent on older runs. */
@@ -2274,6 +2320,41 @@ export type BrowserPlatformTelemetry = {
   rtcConnectionsObserved: number;
   permissionsForceDenied: number;
   bootstrapInstallFailures: number;
+};
+
+
+// --- v0.41 mobile types ---
+
+export type MobileViewport = {
+  width: number;
+  height: number;
+  label: string;
+  platform: 'ios' | 'android';
+};
+
+export type MobileConfig = {
+  enabled: boolean;
+  viewports?: MobileViewport[];
+  /** 'cdp' = virtual keyboard insets via CDP; 'none' = skip soft-keyboard tests. Default: 'cdp'. */
+  softKeyboard?: 'cdp' | 'none';
+  /** Keyboard height in pixels for inset simulation. Default: 271. */
+  keyboardHeightPx?: number;
+  /** Run orientation-change detector. Default: true. */
+  orientationChange?: boolean;
+  /** Run CSS hover-only affordance static scanner. Default: true. */
+  hoverOnlyScan?: boolean;
+  /** Override UA string (bypasses platform auto-selection). */
+  userAgent?: string;
+};
+
+export type MobileSummary = {
+  viewportsExercised: string[];
+  touchTargetViolations: number;
+  hoverOnlyAffordances: number;
+  viewport100vhBreaks: number;
+  softKeyboardOcclusions: number;
+  orientationBreaks: number;
+  pullToRefreshConflicts: number;
 };
 
 // --- v0.42 data-integrity invariant types ---

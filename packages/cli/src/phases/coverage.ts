@@ -50,7 +50,8 @@ type InputFamily =
   | 'i18n'
   | 'multi-context'
   | 'interaction'
-  | 'data-integrity';
+  | 'data-integrity'
+  | 'mobile';
 
 /** Canonical kind → input family mapping (spec §4.2). */
 const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
@@ -181,6 +182,13 @@ const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
   idempotency_key_violation: 'data-integrity',
   audit_log_missing_for_mutation: 'data-integrity',
   soft_delete_consistency: 'data-integrity',
+  // v0.41 mobile / responsive kinds
+  touch_target_too_small: 'mobile',
+  hover_only_affordance: 'mobile',
+  viewport_100vh_break: 'mobile',
+  soft_keyboard_occlusion: 'mobile',
+  orientation_change_layout_break: 'mobile',
+  pull_to_refresh_conflict: 'mobile',
 };
 
 type CounterSnapshot = {
@@ -238,6 +246,10 @@ function isMultiContextObserved(counters: CounterSnapshot | undefined): boolean 
   return counters?.multiContext !== undefined;
 }
 
+function isMobileObserved(runState: RunState): boolean {
+  return runState.config.mobile?.enabled === true;
+}
+
 /** Compute inputObserved for a given kind, given run state and counters. */
 function inputObservedForFamily(
   family: InputFamily,
@@ -259,6 +271,7 @@ function inputObservedForFamily(
     case 'multi-context': return isMultiContextObserved(counters);
     case 'interaction': return runState.config.interactionPalette?.enabled === true;
     case 'data-integrity': return runState.config.dataIntegrity?.enabled !== false && (runState.config.dataIntegrity?.invariants.length ?? 0) > 0;
+    case 'mobile': return isMobileObserved(runState);
   }
 }
 
