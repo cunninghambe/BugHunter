@@ -2,6 +2,8 @@ import { z } from 'zod';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BugHunterConfig } from './types.js';
+import { NotificationsConfigSchema } from './notify/types.js';
+import { interpolateChannel } from './notify/send.js';
 
 export const DEFAULT_FORBIDDEN_PATHS = [
   'prisma/migrations/**',
@@ -222,6 +224,8 @@ export const ConfigSchema = z.object({
     command: z.string().min(1),
     args: z.array(z.string()).optional(),
   }).optional(),
+  // v0.48 notifications
+  notifications: NotificationsConfigSchema.optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {
@@ -234,7 +238,18 @@ export function loadConfig(projectDir: string): BugHunterConfig {
   if (!result.success) {
     throw new Error(`Invalid .bughunter/config.json: ${result.error.message}`);
   }
-  return result.data;
+  const config = result.data;
+  // v0.48: Interpolate env vars in non-secret-bearing notification channels at
+  // config-load time with loud Zod-style failure. Secret-bearing channels
+  // (slack-channel, email) defer env check to send time.
+  if (config.notifications !== undefined) {
+    for (const channel of config.notifications.channels) {
+      if (channel.kind !== 'slack-channel' && channel.kind !== 'email') {
+        interpolateChannel(channel); // throws if a referenced env var is missing
+      }
+    }
+  }
+  return config;
 }
 
 export function saveConfig(projectDir: string, config: BugHunterConfig): void {

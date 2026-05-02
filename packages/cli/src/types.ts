@@ -1286,6 +1286,8 @@ export type BugHunterConfig = {
   };
   /** v0.35: git bisect configuration. */
   bisect?: BisectConfig;
+  /** v0.48: outbound notification channels. Disabled by default. */
+  notifications?: import('./notify/types.js').NotificationsConfig;
 };
 
 // --- v0.14 seed-data hook types ---
