@@ -199,6 +199,34 @@ export interface BrowserMcpAdapter {
   applyNetworkFault?(fault: NetworkFaultSpec): Promise<ApplyNetworkFaultResult>;
   /** v0.20: remove any network fault. Idempotent. Always succeeds (or throws transport). */
   clearNetworkFault?(): Promise<void>;
+
+  /**
+   * v0.38: emulate CSS media features (e.g. prefers-color-scheme, prefers-reduced-motion,
+   * forced-colors, print). Optional — absent on adapters that predate v0.38.
+   * When absent, interaction-palette env variants skip with skipReason 'adapter_unsupported'.
+   */
+  emulateMedia?(options: {
+    media?: 'print' | 'screen' | null;
+    features?: Array<{ name: string; value: string }>;
+  }): Promise<void>;
+
+  /**
+   * v0.38: set browser zoom level. factor=2.0 = 200% zoom.
+   * Optional — absent on adapters that predate v0.38.
+   * When absent, zoom_200 interaction-palette variants skip with skipReason 'adapter_unsupported'.
+   */
+  setZoom?(factor: number): Promise<void>;
+
+  /**
+   * v0.38: dispatch a synthetic DOM event on the given selector.
+   * Optional — absent on adapters that predate v0.38.
+   * When absent, drag/paste/autofill interaction-palette variants skip with skipReason 'adapter_unsupported'.
+   */
+  dispatchSyntheticEvent?(
+    selector: string,
+    eventType: string,
+    eventInit?: Record<string, unknown>,
+  ): Promise<{ dispatched: boolean; defaultPrevented: boolean }>;
 }
 
 /** Scope narrows which requests are intercepted. All fields are ANDed. */

@@ -87,6 +87,10 @@ export type BugKind =
   | 'path_traversal'
   | 'jwt_weak_alg'
   // v0.7 XSS kinds
+  // v0.40 multi-context coordination kinds
+  | 'multi_context_state_divergence'
+  | 'visibility_change_state_loss'
+  | 'multi_user_inconsistent_snapshot'
   | 'xss_reflected'
   | 'xss_dom'
   | 'xss_stored'   // placeholder; v0.8
@@ -1096,6 +1100,57 @@ export type XssContext = {
   sink: 'reflected_html' | 'reflected_attr' | 'reflected_script' | 'dom_inserted' | 'window_assign';
   /** 16-char nonce for traceability. */
   nonce: string;
+};
+
+// ---------------------------------------------------------------------------
+// v0.38 interaction-palette types
+// ---------------------------------------------------------------------------
+
+/** Environment/event-shape variant applied during an interaction-palette test. */
+export type InteractionPaletteVariant =
+  | { kind: 'drag_drop'; sourceMime: 'text/plain' | 'text/html' | 'application/json'; payload: string; targetSelector: string }
+  | { kind: 'paste'; source: 'word_html' | 'excel_html' | 'plain_text' | 'styled_html_with_script'; payload: string }
+  | { kind: 'autofill'; field: 'email' | 'password' | 'cc' | 'address'; value: string }
+  | { kind: 'animation_mid_transition'; transitionTriggerSelector: string; intercedingActionDelayMs: number }
+  | { kind: 'print' }
+  | { kind: 'reduced_motion' }
+  | { kind: 'forced_colors' }
+  | { kind: 'dark_mode' }
+  | { kind: 'zoom_200'; zoomFactor: 2.0 };
+
+export type InteractionPaletteVariantKind = InteractionPaletteVariant['kind'];
+
+/** Evidence carried on a BugDetection from an interaction-palette test. */
+export type InteractionContext =
+  | { kind: 'drag_drop'; sourceSelector: string; targetSelector: string; sourceMime: string; proof: string }
+  | { kind: 'paste'; fieldSelector: string; pasteSource: 'word_html' | 'excel_html' | 'plain_text' | 'styled_html_with_script'; proof: string }
+  | { kind: 'autofill'; formSelector: string; autofillField: string; proof: string }
+  | { kind: 'animation'; transitionTriggerSelector: string; proof: string }
+  | { kind: 'env'; mediaQuery: string; violatingSelector?: string; proof: string };
+
+/** Per-action skip telemetry for interaction-palette variant expansion. */
+export type InteractionPaletteSkip = {
+  reason:
+    | 'gate_predicate_false'
+    | 'adapter_unsupported'
+    | 'route_already_baselined'
+    | 'vision_budget_exhausted'
+    | 'action_shape_incompatible'
+    | 'interaction_palette_cap'
+    | 'transition_did_not_start';
+  variantKind: InteractionPaletteVariantKind;
+  pageRoute?: string;
+};
+
+/** Config block for interaction-palette planner step. */
+export type InteractionPaletteConfig = {
+  enabled: boolean;
+  /** Max total interaction-palette test cases added. Default 300. */
+  maxTests?: number;
+  /** Vision-diff threshold for env-variant detectors. Default 0.18. */
+  visionThreshold?: number;
+  /** Opt-in flag: only flag pages missing a print stylesheet when true. */
+  printStylesheetRequired?: boolean;
 };
 
 export type BugDetection = {
@@ -2219,35 +2274,6 @@ export type BrowserPlatformTelemetry = {
   rtcConnectionsObserved: number;
   permissionsForceDenied: number;
   bootstrapInstallFailures: number;
-};
-
-// --- v0.38 interaction-palette types ---
-
-export type InteractionPaletteVariant =
-  | { kind: 'drag_drop'; sourceMime: 'text/plain' | 'text/html' | 'application/json'; payload: string; targetSelector: string }
-  | { kind: 'paste'; source: 'word_html' | 'excel_html' | 'plain_text' | 'styled_html_with_script'; payload: string }
-  | { kind: 'autofill'; field: 'email' | 'password' | 'cc' | 'address'; value: string }
-  | { kind: 'animation_mid_transition'; transitionTriggerSelector: string; intercedingActionDelayMs: number }
-  | { kind: 'print' }
-  | { kind: 'reduced_motion' }
-  | { kind: 'forced_colors' }
-  | { kind: 'dark_mode' }
-  | { kind: 'zoom_200'; zoomFactor: 2.0 };
-
-export type InteractionPaletteVariantKind = InteractionPaletteVariant['kind'];
-
-export type InteractionContext =
-  | { kind: 'drag_drop'; sourceSelector: string; targetSelector: string; sourceMime: string; proof: string }
-  | { kind: 'paste'; fieldSelector: string; pasteSource: 'word_html' | 'excel_html' | 'plain_text' | 'styled_html_with_script'; proof: string }
-  | { kind: 'autofill'; formSelector: string; autofillField: string; proof: string }
-  | { kind: 'animation'; transitionTriggerSelector: string; proof: string }
-  | { kind: 'env'; mediaQuery: string; violatingSelector?: string; proof: string };
-
-export type InteractionPaletteConfig = {
-  enabled: boolean;
-  maxTests?: number;
-  visionThreshold?: number;
-  printStylesheetRequired?: boolean;
 };
 
 // --- v0.42 data-integrity invariant types ---
