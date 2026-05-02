@@ -142,6 +142,51 @@ describe('bughunt_fix_status', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// RCE regression tests — security review PR #63 comment 4363668665
+// ---------------------------------------------------------------------------
+
+describe('shell-injection regression (V31 RCE fix)', () => {
+  const sentinel = '/tmp/v31-rce';
+
+  it('GIT_REF Zod regex rejects semicolon injection', () => {
+    // Same regex used in the Zod schema for branch fields
+    const GIT_REF_REGEX = /^[a-zA-Z0-9._/-]+$/;
+    expect(GIT_REF_REGEX.test('main; touch /tmp/v31-rce')).toBe(false);
+    expect(GIT_REF_REGEX.test('main && rm -rf /')).toBe(false);
+    expect(GIT_REF_REGEX.test('$(evil)')).toBe(false);
+  });
+
+  it('validateGitRef throws on injection and sentinel file is not created', async () => {
+    if (fs.existsSync(sentinel)) fs.rmSync(sentinel);
+    const { validateGitRef } = await import('bughunter/src/ops/forbidden-paths.js');
+    expect(() => validateGitRef(`main; touch ${sentinel}`)).toThrow();
+    expect(fs.existsSync(sentinel)).toBe(false);
+  });
+
+  it('bughunt_fix_dispatch returns error for injected branch, sentinel not created', async () => {
+    if (fs.existsSync(sentinel)) fs.rmSync(sentinel);
+    const projectDir = makeProject();
+    const server = new McpServer({ name: 'test', version: '0.0.0' });
+    const mod = await import('./fix-coord.js');
+    mod.fixJobs.clear();
+    mod.registerFixCoordTools(server);
+    addCluster(projectDir, 'r1', 'c1');
+
+    const handler = getToolHandler(server, 'bughunt_fix_dispatch');
+    // The handler calls validateGitRef on branchName — injection must be rejected
+    const result = await handler({
+      project: projectDir, runId: 'r1', clusterId: 'c1',
+      agent: 'coder', model: 'claude-3-5-sonnet', prompt: 'fix',
+      branch: `main; touch ${sentinel}`,
+    }) as { isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(fs.existsSync(sentinel)).toBe(false);
+
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  });
+});
+
 describe('bughunt_fix_gate', () => {
   let projectDir = '';
   let server: McpServer;
