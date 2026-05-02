@@ -1,6 +1,19 @@
 {
   "surfaces": [
     {
+      "name": "self-api",
+      "stack": "openapi",
+      "root": "api",
+      "baseUrl": "http://localhost:5791",
+      "port": 3140,
+      "launchDevCommand": "node server.js",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [],
+      "excludedRoutes": []
+    },
+    {
       "name": "self-spa",
       "stack": "vite",
       "root": "web",
@@ -14,21 +27,8 @@
       "excludedRoutes": []
     },
     {
-      "name": "self-api",
-      "stack": "node",
-      "root": "api",
-      "baseUrl": "http://localhost:5791",
-      "port": 3140,
-      "launchDevCommand": "node server.js",
-      "watchPaths": [],
-      "watchIgnore": [],
-      "auth": { "kind": "none" },
-      "roles": [],
-      "excludedRoutes": []
-    },
-    {
       "name": "race-bad",
-      "stack": "node",
+      "stack": "openapi",
       "root": "../race-bad",
       "baseUrl": "http://localhost:9994",
       "port": 3140,
@@ -41,7 +41,7 @@
     },
     {
       "name": "idor-bad",
-      "stack": "node",
+      "stack": "openapi",
       "root": "../idor-bad",
       "baseUrl": "http://localhost:4090",
       "port": 3140,
@@ -70,34 +70,8 @@
       "excludedRoutes": []
     },
     {
-      "name": "a11y-bad",
-      "stack": "static",
-      "root": "../a11y-bad",
-      "baseUrl": "http://localhost:5781",
-      "port": 3140,
-      "launchDevCommand": "npx serve -p 5781 .",
-      "watchPaths": [],
-      "watchIgnore": [],
-      "auth": { "kind": "none" },
-      "roles": [],
-      "excludedRoutes": []
-    },
-    {
-      "name": "seo-bad",
-      "stack": "static",
-      "root": "../seo-bad",
-      "baseUrl": "http://localhost:5782",
-      "port": 3140,
-      "launchDevCommand": "npx serve -p 5782 .",
-      "watchPaths": [],
-      "watchIgnore": [],
-      "auth": { "kind": "none" },
-      "roles": [],
-      "excludedRoutes": []
-    },
-    {
       "name": "pen-bad",
-      "stack": "node",
+      "stack": "openapi",
       "root": "../pen-bad",
       "baseUrl": "http://localhost:4091",
       "port": 3140,
