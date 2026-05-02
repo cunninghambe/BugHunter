@@ -19,6 +19,8 @@ import {
   makeInterleavedMutations,
   makeCrossTab,
 } from '../security/interleaving-palette.js';
+import { detectDateSensitiveReasons, classifyDateSensitiveBatch, ALL_CLOCK_CONDITION_NAMES } from '../security/clock-test-runner.js';
+import { defaultConditionsForReasons } from '../security/clock-conditions.js';
 import { formTestCases, apiTestCases, xssFormTestCases, xssApiTestCases } from '../mutation/apply.js';
 import { formCollapseSignature } from '../discovery/element-collapse.js';
 import { log } from '../log.js';
@@ -252,6 +254,88 @@ export async function runPlan(
     log.info(`race: planned ${raceCases.length} interleaving tests`);
   }
 
+  // v0.23: clock-testing second pass — classify date-sensitive test cases and expand per condition.
+  const clockEnabled = config.clockTesting?.enabled ?? false;
+  let clockVariantsCount = 0;
+  if (clockEnabled) {
+    const allowlist = config.clockTesting?.dateSensitiveAllowlist ?? [];
+    const denylist = config.clockTesting?.dateSensitiveDenylist ?? [];
+
+    // Classify all test cases for date-sensitivity using form/schema/DOM signals.
+    // classifyDateSensitiveBatch stamps dateSensitive on matching cases.
+    const classified = classifyDateSensitiveBatch(testCases, allowlist, denylist);
+    testCases.length = 0;
+    testCases.push(...classified);
+
+    // Enrich with DOM relative-time-element signals from discovery pages.
+    for (const tc of testCases) {
+      if (tc.dateSensitive !== undefined) continue;
+      const page = discovery.pages.find(p => p.route === tc.page);
+      if (page?.relativeTimeElements !== undefined && page.relativeTimeElements.length > 0) {
+        tc.dateSensitive = { reasons: ['dom_relative_time'] };
+      }
+    }
+
+    // Enrich form-submit test cases with signals from discovered form fields.
+    for (const tc of testCases) {
+      if (tc.dateSensitive !== undefined) continue;
+      if (tc.action.kind !== 'submit') continue;
+      const page = discovery.pages.find(p => p.route === tc.page);
+      if (page === undefined) continue;
+      for (const form of page.forms) {
+        const reasons = detectDateSensitiveReasons({
+          formFields: form.fields.map(f => ({ name: f.name, type: f.type })),
+        });
+        if (reasons.length > 0) {
+          tc.dateSensitive = { reasons };
+          break;
+        }
+      }
+    }
+
+    // Enrich API test cases with schema signals from tool metadata.
+    for (const tc of testCases) {
+      if (tc.dateSensitive !== undefined) continue;
+      if (tc.action.via !== 'api' || tc.action.toolId === undefined) continue;
+      const tool = enrichedTools.find(t => t.toolId === tc.action.toolId);
+      if (tool?.inputSchema.properties === undefined) continue;
+      const reasons = detectDateSensitiveReasons({
+        schemaProperties: tool.inputSchema.properties as Record<string, { format?: string }>,
+      });
+      if (reasons.length > 0) tc.dateSensitive = { reasons };
+    }
+
+    // Count date-sensitive unique shapes (collapsed by formSignature or toolId).
+    const seenClockShapes = new Set<string>();
+    const clockVariants: TestCase[] = [];
+
+    for (const tc of testCases) {
+      if (tc.dateSensitive === undefined) continue;
+      if (tc.action.expectedOutcome === 'expected_failure') continue;
+
+      const shapeKey = tc.formSignature ?? tc.action.toolId ?? tc.page;
+      if (seenClockShapes.has(shapeKey)) continue;
+      seenClockShapes.add(shapeKey);
+
+      const conditions = config.clockTesting?.activeConditions ?? defaultConditionsForReasons(tc.dateSensitive.reasons);
+      for (const conditionName of conditions) {
+        if (!ALL_CLOCK_CONDITION_NAMES.includes(conditionName)) continue;
+        clockVariants.push({
+          ...tc,
+          id: createId(),
+          dateSensitive: { ...tc.dateSensitive, reasons: [...tc.dateSensitive.reasons] },
+          // Carry condition into action palette for telemetry
+          action: { ...tc.action, palette: 'happy' },
+        });
+      }
+    }
+
+    clockVariantsCount = clockVariants.length;
+    if (clockVariantsCount > 0) {
+      log.info(`clock-testing: +${clockVariantsCount} clock-conditioned variants for ${seenClockShapes.size} date-sensitive shapes`);
+    }
+  }
+
   // Orphan-fixture warning: bodyFixtures keys not in catalog
   if (config.bodyFixtures !== undefined) {
     const catalogIds = new Set(enrichedTools.map(t => t.toolId));
@@ -280,16 +364,19 @@ export async function runPlan(
   const raceConcurrency = config.raceConditions?.raceConcurrency ?? Math.min(2, concurrency);
   const RACE_TEST_AVG_MS = 8_000;
   const raceTimeMs = raceCasesCount > 0 ? Math.ceil(raceCasesCount / raceConcurrency) * RACE_TEST_AVG_MS : 0;
+  // Clock tests run sequentially (fresh context per test); add to projected runtime.
+  const clockTimeMs = clockVariantsCount > 0 ? clockVariantsCount * AVG_TEST_MS : 0;
   // Race tests run after the main queue; add to projected runtime (open question 7: yes, include).
-  const projectedRuntimeMs = Math.max(uiTimeMs, apiTimeMs) + raceTimeMs;
+  const projectedRuntimeMs = Math.max(uiTimeMs, apiTimeMs) + raceTimeMs + clockTimeMs;
 
   const hrs = Math.floor(projectedRuntimeMs / 3_600_000);
   const mins = Math.floor((projectedRuntimeMs % 3_600_000) / 60_000);
+  const clockNote = clockVariantsCount > 0 ? ` +${clockVariantsCount} clock` : '';
   log.info(
-    `Plan complete. Projected: ${testCases.length} tests · concurrency ${concurrency} (browser) + ${apiConcurrency} (api) · est. ${hrs}h ${mins}m`
+    `Plan complete. Projected: ${testCases.length} tests${clockNote} · concurrency ${concurrency} (browser) + ${apiConcurrency} (api) · est. ${hrs}h ${mins}m`
   );
   process.stdout.write(
-    `\nProjected: ${testCases.length} tests · concurrency ${concurrency} (browser) + ${apiConcurrency} (api) · est. ${hrs}h ${mins}m\n` +
+    `\nProjected: ${testCases.length} tests${clockNote} · concurrency ${concurrency} (browser) + ${apiConcurrency} (api) · est. ${hrs}h ${mins}m\n` +
     `Set --max-runtime to a higher value or pass --budget <ms> to time-box this run.\n\n`
   );
 

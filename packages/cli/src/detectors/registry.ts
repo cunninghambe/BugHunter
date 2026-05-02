@@ -317,6 +317,47 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
   },
+  // — § v0.23 clock-injection kinds (wired via clock-test-runner) —
+  {
+    kind: 'clock_skew_token_invalid',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/security/clock-test-runner.ts',
+    runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V23_TIME_CLOCK.md',
+  },
+  {
+    kind: 'clock_overflow',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/security/clock-test-runner.ts',
+    runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V23_TIME_CLOCK.md',
+  },
+  {
+    kind: 'clock_dst_corruption',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/security/clock-test-runner.ts',
+    runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V23_TIME_CLOCK.md',
+  },
+  {
+    kind: 'clock_leap_day_failure',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/security/clock-test-runner.ts',
+    runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V23_TIME_CLOCK.md',
+  },
+  {
+    kind: 'clock_timezone_display',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/security/clock-test-runner.ts',
+    runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V23_TIME_CLOCK.md',
+  },
   // — § v0.16 active pen-testing (wired) —
   {
     kind: 'sql_injection',

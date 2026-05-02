@@ -1,7 +1,7 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
 import * as fs from 'node:fs';
-import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, Severity } from '../types.js';
+import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, Severity, ClockTestingTelemetry } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { buildCoverage } from './coverage.js';
 import { canonicalStringify } from '../lib/canonical.js';
@@ -51,6 +51,8 @@ export type TestCounters = {
   suppressedClusters?: number;
   /** v0.28: suppressed sample details (up to 20). */
   suppressedSamples?: RunSummary['suppressedSamples'];
+  /** v0.23: clock-testing telemetry — present when clockTesting.enabled = true. */
+  clockTesting?: ClockTestingTelemetry;
   /** v0.32: determinism telemetry — present when any determinism flag is set. */
   deterministic?: {
     seed?: number;
@@ -134,6 +136,7 @@ export function runEmit(
     ...(counters?.penTesting !== undefined ? { penTesting: counters.penTesting } : {}),
     ...(counters?.raceConditions !== undefined ? { raceConditions: counters.raceConditions } : {}),
     ...(counters?.idor !== undefined ? { idor: counters.idor } : {}),
+    ...(counters?.clockTesting !== undefined ? { clockTesting: counters.clockTesting } : {}),
     ...(counters?.deterministic !== undefined ? { deterministic: counters.deterministic } : {}),
   };
 

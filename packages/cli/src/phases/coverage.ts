@@ -121,6 +121,11 @@ const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
   race_condition_optimistic_revert: 'race',
   race_condition_interleaved_mutations: 'race',
   race_condition_cross_tab: 'race',
+  clock_dst_corruption: 'security-dynamic',
+  clock_leap_day_failure: 'security-dynamic',
+  clock_skew_token_invalid: 'security-dynamic',
+  clock_timezone_display: 'security-dynamic',
+  clock_overflow: 'security-dynamic',
 };
 
 type CounterSnapshot = {

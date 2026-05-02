@@ -26,7 +26,8 @@ import { runCrossUser } from '../phases/cross-user.js';
 import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { BugDetection, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant } from '../types.js';
+import type { BugDetection, ClockTestingConfig, ClockTestingTelemetry, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant } from '../types.js';
+import type { ClockConditionName } from '../security/clock-conditions.js';
 import { DEFAULT_VARIANTS } from '../security/interleaving-palette.js';
 import { runEmit } from '../phases/emit.js';
 import { classifyMemoryLeak } from '../classify/memory-leak.js';
@@ -131,6 +132,13 @@ export type RunOptions = {
   fuzzShrink?: boolean;
   /** --no-fuzz: hard disable, overrides config.fuzz.enabled = true */
   noFuzz?: boolean;
+  // v0.23 clock-testing flags
+  /** --clock-tests: enable the clock-injection palette (overrides config.clockTesting.enabled). */
+  clockTests?: boolean;
+  /** --no-clock-tests: disable clock palette even if config has enabled = true. */
+  noClockTests?: boolean;
+  /** --clock-conditions <csv>: comma-separated subset of condition names. */
+  clockConditions?: string;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -223,6 +231,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   // v0.39: resolve fuzz config from flags + config file
   const fuzzConfig = buildFuzzConfig(opts, config.fuzz);
+  // v0.23: resolve clock-testing config from flags + config file
+  const clockTestingConfig = buildClockTestingConfig(opts, config.clockTesting);
 
   // v0.22 nav-state flag resolution (§6.1): CLI flags override config; implication rules apply.
   // --nav-state-refresh-race and --enable-history-corruption imply --enable-nav-state.
@@ -264,6 +274,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     enableHistoryCorruption,
     navStateSkipRoutes: navStateSkipRoutes.length > 0 ? navStateSkipRoutes : undefined,
     navStateDeepLinkMaxDepth,
+    // v0.23 clock-testing
+    ...(clockTestingConfig !== undefined ? { clockTesting: clockTestingConfig } : {}),
   });
 
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
@@ -593,6 +605,37 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       });
     }
 
+    // Phase 3.8: clock-injection tests (v0.23).
+    // Runs after execute + pen-test, before classify. Fresh browser context per test.
+    let clockTestingTelemetry: ClockTestingTelemetry | undefined;
+    let clockTestingDetections: BugDetection[] = [];
+    const clockCfg = resolved.clockTesting;
+    if (clockCfg?.enabled === true) {
+      const { runClockTests, classifyDateSensitiveBatch, disabledClockTelemetry: disabledTelemetry } = await import('../security/clock-test-runner.js');
+      const dateSensitiveCases = classifyDateSensitiveBatch(
+        testCases,
+        clockCfg.dateSensitiveAllowlist ?? [],
+        clockCfg.dateSensitiveDenylist ?? [],
+      );
+      if (dateSensitiveCases.length > 0 && browser !== undefined) {
+        const clockResult = await runClockTests(
+          clockCfg,
+          dateSensitiveCases,
+          surface,
+          browser,
+          clockCfg.serverClockSource,
+        );
+        clockTestingDetections = clockResult.detections;
+        clockTestingTelemetry = clockResult.telemetry;
+        log.info('clock-test-runner: complete', {
+          variants: dateSensitiveCases.length,
+          detections: clockResult.detections.length,
+        });
+      } else {
+        clockTestingTelemetry = disabledTelemetry();
+      }
+    }
+
     // Synthesise visual baseline test cases + results (Option a from § 4.3.1).
     // These bypass execute and are merged directly into classify + cluster inputs.
     const { baselineTestCases, baselineResults } = synthesiseVisualBaselineCases(
@@ -608,6 +651,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(a11yBaselineDetections ?? []),
       ...(seoDetections ?? []),
       ...penTestingDetections,
+      ...clockTestingDetections,
     ];
     const { staticTestCases, staticResults } = synthesiseFakeDetectionCases(runId, staticDetectionList);
 
@@ -785,6 +829,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(seedHookTelemetry.length > 0 ? { seedHookExecutions: seedHookTelemetry } : {}),
       ...(heapAttributionSummary !== undefined ? { heapAttributionSummary } : {}),
       ...(penTestingTelemetry !== undefined ? { penTesting: penTestingTelemetry } : {}),
+      ...(clockTestingTelemetry !== undefined ? { clockTesting: clockTestingTelemetry } : {}),
       ...(raceConditionsTelemetry !== undefined ? { raceConditions: raceConditionsTelemetry } : {}),
       ...(fuzzTelemetry !== undefined ? { fuzz: fuzzTelemetry } : {}),
       ...(crossUserResult.idorTelemetry !== undefined ? { idor: crossUserResult.idorTelemetry } : {}),
@@ -1087,6 +1132,41 @@ function buildFuzzTelemetry(testCases: TestCase[], fuzzCfg: FuzzConfig): FuzzTel
     shrunkCount: fuzzCases.filter(tc => tc.fuzzMeta?.shrunkValue !== undefined).length,
     skippedSurfaces: 0,
     errors: [],
+  };
+}
+
+const ALLOWED_CLOCK_CONDITIONS: ReadonlyArray<ClockConditionName> = [
+  'dst_forward', 'dst_backward', 'leap_day', 'y2038_edge', 'far_future',
+  'client_skew_plus_1h', 'tz_skew_negative_8h',
+];
+
+function buildClockTestingConfig(
+  opts: RunOptions,
+  configFileClock: ClockTestingConfig | undefined,
+): ClockTestingConfig | undefined {
+  if (opts.noClockTests === true) return { ...(configFileClock ?? {}), enabled: false };
+
+  const baseEnabled = opts.clockTests === true || (configFileClock?.enabled ?? false);
+  if (!baseEnabled) return configFileClock;
+
+  let activeConditions: ClockConditionName[] | undefined = configFileClock?.activeConditions;
+
+  if (typeof opts.clockConditions === 'string' && opts.clockConditions !== '') {
+    const parsed = opts.clockConditions.split(',').map(s => s.trim()).filter(s => s !== '');
+    const invalid = parsed.filter(s => !ALLOWED_CLOCK_CONDITIONS.includes(s as ClockConditionName));
+    if (invalid.length > 0) {
+      throw new Error(
+        `Invalid --clock-conditions value(s): ${invalid.join(', ')}. ` +
+        `Allowed: ${ALLOWED_CLOCK_CONDITIONS.join(', ')}.`,
+      );
+    }
+    activeConditions = parsed as ClockConditionName[];
+  }
+
+  return {
+    ...(configFileClock ?? {}),
+    enabled: true,
+    ...(activeConditions !== undefined ? { activeConditions } : {}),
   };
 }
 

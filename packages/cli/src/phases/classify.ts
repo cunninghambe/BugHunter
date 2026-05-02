@@ -37,6 +37,12 @@ const KIND_PRIORITY: BugKind[] = [
   'command_injection',
   'path_traversal',
   'jwt_weak_alg',
+  // v0.23 clock kinds (above IDOR; clock_skew_token_invalid can lock real users out)
+  'clock_skew_token_invalid',
+  'clock_overflow',
+  'clock_dst_corruption',
+  'clock_leap_day_failure',
+  'clock_timezone_display',
   // v0.21 IDOR kinds (above legacy idor entries; mutate > read > suspicious)
   'idor_horizontal_mutate',
   'idor_horizontal_read',

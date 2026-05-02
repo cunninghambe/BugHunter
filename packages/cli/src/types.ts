@@ -2,6 +2,8 @@
 
 import type { NavigationEvent } from './adapters/cdp-session.js';
 export type { NavigationEvent };
+import type { ClockConditionName } from './security/clock-conditions.js';
+export type { ClockConditionName };
 
 export type InputType =
   | 'text'
@@ -36,6 +38,12 @@ export type BugKind =
   | 'dom_error_text'
   | 'surface_call_failed'
   | 'visual_anomaly'
+  // v0.23 clock-injection kinds
+  | 'clock_skew_token_invalid'
+  | 'clock_overflow'
+  | 'clock_dst_corruption'
+  | 'clock_leap_day_failure'
+  | 'clock_timezone_display'
   // v0.22 nav-state kinds
   | 'nav_state_corruption'
   | 'nav_resubmit_on_back'
@@ -460,6 +468,12 @@ export type DiscoveredPage = {
   };
   /** Telemetry: which source produced this page. */
   navSource?: NavSource;
+  /**
+   * v0.23: relative-time elements harvested from the page DOM.
+   * Present when clock-testing is enabled and the harvester ran.
+   * Presence (non-empty) triggers the 'dom_relative_time' date-sensitivity reason.
+   */
+  relativeTimeElements?: Array<{ selector: string; text: string }>;
 };
 
 export type VisionSeverity = 'minor' | 'major' | 'critical';
@@ -583,6 +597,23 @@ export type SkippedItem = {
   reason: string;
 };
 
+/**
+ * v0.23: signals that caused a test case to be classified as date-sensitive.
+ * Used by the clock-testing planner to select relevant clock conditions.
+ */
+export type DateSensitiveReason =
+  | 'form_field_date'
+  | 'form_field_name_pattern'
+  | 'schema_format_date'
+  | 'schema_property_name_pattern'
+  | 'dom_relative_time'
+  | 'config_allowlist';
+
+/** v0.23: metadata set by the planner when a test is classified as date-sensitive. */
+export type DateSensitive = {
+  reasons: DateSensitiveReason[];
+};
+
 export type TestCase = {
   id: string;
   runId: string;
@@ -593,6 +624,8 @@ export type TestCase = {
   palette: PaletteVariant;
   formSignature?: string;
   elementSignature?: string;
+  /** v0.23: set when the test case has date-sensitive signals. */
+  dateSensitive?: DateSensitive;
   /**
    * v0.39: present on every fuzz-minted TestCase. Absent on fixed-palette cases.
    * Never included in cluster signature derivation.
@@ -921,6 +954,33 @@ export type BugDetection = {
     triggeringSelector?: string;
     activeElementTag?: string | null;
   };
+  /** v0.23: populated for clock-injection findings. */
+  clockContext?: ClockContext;
+};
+
+/** v0.23: clock-injection proof context attached to clock-related BugDetections. */
+export type ClockContext = {
+  /** Which clock condition was active when this finding was produced. */
+  condition: ClockConditionName;
+  /** unix-ms the polyfill set the page clock to (undefined for tz-only conditions). */
+  injectedNowMs?: number;
+  /** IANA TZ name (undefined for clock-only conditions). */
+  injectedTimezone?: string;
+  /** Server-truth wall-clock at probe time (from Date response header or config.clockTesting.serverClockSource). */
+  baselineNowMs: number;
+  /** Specific proof that triggered this finding. */
+  proof:
+    | 'dst_value_drift'
+    | 'leap_day_input_rejected'
+    | 'leap_day_value_round_trip_mismatch'
+    | 'token_rejected_under_skew'
+    | 'timezone_display_drift'
+    | 'int32_overflow_nan'
+    | 'far_future_rejected';
+  /** Up to 200-char snippet of the proof evidence. */
+  evidence: string;
+  /** Degraded mode: late_inject (CDP race), tz_only (no wall-clock injection), or none. */
+  degradedMode?: 'late_inject' | 'tz_only' | 'none';
 };
 
 export type RunPhase =
@@ -1332,6 +1392,53 @@ export type BugHunterConfig = {
   bisect?: BisectConfig;
   /** v0.48: outbound notification channels. Disabled by default. */
   notifications?: import('./notify/types.js').NotificationsConfig;
+  /** v0.23: clock-injection palette config. Default: disabled. */
+  clockTesting?: ClockTestingConfig;
+};
+
+/** v0.23: configuration for the clock-injection palette. */
+export type ClockTestingConfig = {
+  /** Master switch. Default: false (opt-in; palette is N×M and slows every run). */
+  enabled?: boolean;
+  /**
+   * Override the set of clock conditions to run.
+   * Default: derived per test case via defaultConditionsForReasons.
+   */
+  activeConditions?: Array<ClockConditionName>;
+  /**
+   * Tool IDs, route patterns, or form IDs to force date-sensitive classification.
+   * Maps to 'config_allowlist' reason → all 7 conditions.
+   */
+  dateSensitiveAllowlist?: string[];
+  /**
+   * IDs to force non-date treatment even when heuristics match.
+   * Negates date-sensitivity for items matching any entry.
+   */
+  dateSensitiveDenylist?: string[];
+  /**
+   * URL used to read the server's current wall clock (Date response header).
+   * Defaults to appBaseUrl (Date header) or surfaceMcpUrl/healthz.
+   * Used as baseline for client_skew_plus_1h and proof comparisons.
+   */
+  serverClockSource?: string;
+  /**
+   * IANA timezone string for the test user's profile.
+   * Used by clock_timezone_display proof comparison.
+   * Default: 'UTC'. Mis-setting leads to false positives (documented limitation).
+   */
+  userProfileTimezone?: string;
+};
+
+/** v0.23: telemetry block written to summary.json when clock testing ran. */
+export type ClockTestingTelemetry = {
+  enabled: boolean;
+  conditionsApplied: string[];
+  dateSensitiveTests: number;
+  expandedTests: number;
+  testsSkipped: Array<{ reason: string; count: number }>;
+  detectionsByKind: Record<string, number>;
+  degradedModeCount: number;
+  durationMs: number;
 };
 
 // --- v0.14 seed-data hook types ---

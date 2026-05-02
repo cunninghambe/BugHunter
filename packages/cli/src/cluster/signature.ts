@@ -273,6 +273,18 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     case 'seo_robots_blocking_crawl':
       return `seo_robots_blocking_crawl|${detection.pageRoute ?? ''}`;
 
+    // v0.23 clock-injection kinds
+    case 'clock_dst_corruption':
+      return `clock_dst_corruption|${detection.endpoint ?? detection.pageRoute ?? ''}|${detection.clockContext?.condition ?? ''}`;
+    case 'clock_leap_day_failure':
+      return `clock_leap_day_failure|${detection.endpoint ?? detection.pageRoute ?? ''}|${detection.clockContext?.proof ?? ''}`;
+    case 'clock_skew_token_invalid':
+      return `clock_skew_token_invalid|${detection.endpoint ?? ''}|${detection.clockContext?.condition ?? ''}`;
+    case 'clock_timezone_display':
+      return `clock_timezone_display|${detection.pageRoute ?? ''}|${detection.clockContext?.injectedTimezone ?? ''}`;
+    case 'clock_overflow':
+      return `clock_overflow|${detection.endpoint ?? detection.pageRoute ?? ''}|${detection.clockContext?.condition ?? ''}`;
+
     // v0.22 nav-state kinds (§4.2)
 
     // nav_state_corruption: pageRoute + transition.kind + mismatchKind + seed.action.kind

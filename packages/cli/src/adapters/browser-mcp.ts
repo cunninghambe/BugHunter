@@ -158,6 +158,23 @@ export interface BrowserMcpAdapter {
    * skipReason 'no_route_fulfill_support' (EC-10).
    */
   routeFulfill?(scope: RouteFulfillScope, response: RouteFulfillResponse): Promise<UnregisterFn>;
+
+  /**
+   * v0.23: set timezone override via Emulation.setTimezoneOverride (CDP passthrough).
+   * Returns { applied: true } when applied at CDP level, or { applied: false, degraded }
+   * when the underlying MCP does not support the tool and a JS fallback was used.
+   *
+   * Pass null to clear any previously-set override.
+   */
+  setTimezoneOverride?(tz: string | null): Promise<{ applied: boolean; degraded?: 'evaluate_intl' | 'unsupported' }>;
+
+  /**
+   * v0.23: install an init script via Page.addScriptToEvaluateOnNewDocument.
+   * Returns { applied: true } when the script will run before app code, or
+   * { applied: false, degraded: 'late_inject' } when the MCP lacks support and
+   * evaluate() was used immediately (after-navigate fallback — race risk).
+   */
+  addInitScript?(source: string): Promise<{ applied: boolean; degraded?: 'late_inject' | 'unsupported' }>;
 }
 
 /** Scope narrows which requests are intercepted. All fields are ANDed. */
@@ -642,6 +659,44 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     };
   }
 
+  async setTimezoneOverride(tz: string | null): Promise<{ applied: boolean; degraded?: 'evaluate_intl' | 'unsupported' }> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.setTimezoneOverride(tz);
+    const tabId = this.requireTab();
+    try {
+      await this.tool<{ ok: boolean }>('set_timezone', { tabId, timezone: tz ?? '' });
+      return { applied: true };
+    } catch (err) {
+      const msg = String(err);
+      if (/unknown tool|tool not found|not registered/i.test(msg)) {
+        // Fallback: patch Intl.DateTimeFormat via evaluate to force TZ
+        if (tz !== null) {
+          const expr = `(function(tz){var orig=Intl.DateTimeFormat;Intl.DateTimeFormat=function(loc,opts){return new orig(loc,Object.assign({},opts,{timeZone:tz}));};return true;})(${JSON.stringify(tz)})`;
+          await this.tool<unknown>('evaluate', { tabId, expression: expr }).catch(() => {});
+          return { applied: false, degraded: 'evaluate_intl' };
+        }
+        return { applied: false, degraded: 'unsupported' };
+      }
+      throw err;
+    }
+  }
+
+  async addInitScript(source: string): Promise<{ applied: boolean; degraded?: 'late_inject' | 'unsupported' }> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.addInitScript(source);
+    const tabId = this.requireTab();
+    try {
+      await this.tool<{ ok: boolean }>('init_script', { tabId, script: source });
+      return { applied: true };
+    } catch (err) {
+      const msg = String(err);
+      if (/unknown tool|tool not found|not registered/i.test(msg)) {
+        // Late-inject fallback: evaluate runs after page JS — race risk documented
+        await this.tool<unknown>('evaluate', { tabId, expression: source }).catch(() => {});
+        return { applied: false, degraded: 'late_inject' };
+      }
+      throw err;
+    }
+  }
+
   async withTab<T>(
     url: string,
     extraHeaders: ExtraHeaders | undefined,
@@ -1063,6 +1118,40 @@ export class CamofoxBrowserHttpAdapter implements BrowserMcpAdapter {
     return async () => {
       await this.mcpCall<{ ok: boolean }>('route_fulfill_remove', { tabId, fulfillId }).catch(() => {});
     };
+  }
+
+  async setTimezoneOverride(tz: string | null): Promise<{ applied: boolean; degraded?: 'evaluate_intl' | 'unsupported' }> {
+    const tabId = this.requireTab();
+    try {
+      await this.mcpCall<{ ok: boolean }>('set_timezone', { tabId, timezone: tz ?? '' });
+      return { applied: true };
+    } catch (err) {
+      const msg = String(err);
+      if (/unknown tool|tool not found|not registered/i.test(msg)) {
+        if (tz !== null) {
+          const expr = `(function(tz){var orig=Intl.DateTimeFormat;Intl.DateTimeFormat=function(loc,opts){return new orig(loc,Object.assign({},opts,{timeZone:tz}));};return true;})(${JSON.stringify(tz)})`;
+          await this.mcpCall<unknown>('evaluate', { tabId, expression: expr }).catch(() => {});
+          return { applied: false, degraded: 'evaluate_intl' };
+        }
+        return { applied: false, degraded: 'unsupported' };
+      }
+      throw err;
+    }
+  }
+
+  async addInitScript(source: string): Promise<{ applied: boolean; degraded?: 'late_inject' | 'unsupported' }> {
+    const tabId = this.requireTab();
+    try {
+      await this.mcpCall<{ ok: boolean }>('init_script', { tabId, script: source });
+      return { applied: true };
+    } catch (err) {
+      const msg = String(err);
+      if (/unknown tool|tool not found|not registered/i.test(msg)) {
+        await this.mcpCall<unknown>('evaluate', { tabId, expression: source }).catch(() => {});
+        return { applied: false, degraded: 'late_inject' };
+      }
+      throw err;
+    }
   }
 
   async withTab<T>(
