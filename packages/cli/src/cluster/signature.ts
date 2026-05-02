@@ -320,6 +320,7 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
       return `nav_form_state_stale|${detection.pageRoute ?? ''}|${formSig}|${staleField}`;
     }
 
+
     // v0.36 browser-platform kinds
 
     case 'service_worker_stale':
@@ -377,6 +378,27 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
       const variant = detection.networkFaultContext?.faultVariant ?? '';
       return `infinite_loading|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}|${action}|${variant}`;
     }
+
+    // v0.43 agentic-app detection kinds
+
+    case 'agent_response_hallucinated': {
+      const claimNorm = normalizeAgentClaim(detection.agentContext?.proof?.kind === 'unsupported_claim' ? detection.agentContext.proof.claim : '');
+      return `agent_response_hallucinated|${detection.endpoint ?? ''}|${claimNorm}`;
+    }
+    case 'agent_action_timeout':
+      return `agent_action_timeout|${detection.endpoint ?? ''}`;
+    case 'prompt_injection_executed':
+      return `prompt_injection_executed|${detection.endpoint ?? ''}|${detection.injectionContext?.paramName ?? ''}|${detection.injectionContext?.variant ?? ''}`;
+    case 'streaming_response_truncated': {
+      const reason = detection.agentContext?.proof?.kind === 'truncated' ? detection.agentContext.proof.reason : 'unknown';
+      return `streaming_response_truncated|${detection.endpoint ?? ''}|${reason}`;
+    }
+    case 'tool_call_failure_unhandled': {
+      const toolEndpoint = detection.agentContext?.proof?.kind === 'silent_failure' ? detection.agentContext.proof.toolEndpoint : '';
+      return `tool_call_failure_unhandled|${toolEndpoint}`;
+    }
+    case 'agent_cost_per_turn_high':
+      return `agent_cost_per_turn_high|${detection.endpoint ?? ''}|${detection.agentContext?.modelId ?? 'unknown'}`;
   }
 }
 
@@ -415,6 +437,20 @@ export function normalizeVisualDescription(text: string): string {
   // Strip quoted strings
   s = s.replace(/["'`][^"'`]*["'`]/g, '');
   // Tokenize to words and take first 8
+  const words = s.split(/\W+/).filter(w => w.length > 0).slice(0, 8);
+  return words.join('-');
+}
+
+/**
+ * Normalize an agent claim for clustering:
+ * 1. Lowercase
+ * 2. Strip quoted strings
+ * 3. Take first 8 words, joined with '-'
+ * Mirrors normalizeVisualDescription shape (§ 8.1).
+ */
+export function normalizeAgentClaim(text: string): string {
+  let s = text.toLowerCase();
+  s = s.replace(/["'`][^"'`]*["'`]/g, '');
   const words = s.split(/\W+/).filter(w => w.length > 0).slice(0, 8);
   return words.join('-');
 }

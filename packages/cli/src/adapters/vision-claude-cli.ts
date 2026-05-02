@@ -3,7 +3,7 @@
 
 import { spawn } from 'node:child_process';
 import * as path from 'node:path';
-import type { VisionClientInterface, VisionRequest, VisionResponse } from './vision-client.js';
+import type { VisionClientInterface, VisionRequest, VisionResponse, TextRequest } from './vision-client.js';
 import { VisionApiError } from './vision-client.js';
 import { z } from 'zod';
 
@@ -21,6 +21,10 @@ export class ClaudeCliVisionClient implements VisionClientInterface {
     private readonly model: string,
     private readonly timeoutMs: number
   ) {}
+
+  async classifyText(req: TextRequest): Promise<VisionResponse> {
+    return this.spawnClaude(req.promptText, req.model);
+  }
 
   async classify(req: VisionRequest): Promise<VisionResponse> {
     const absoluteImagePath = path.resolve(req.imagePath);

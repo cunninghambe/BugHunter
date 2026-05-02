@@ -45,7 +45,8 @@ type InputFamily =
   | 'security-dynamic'
   | 'vision'
   | 'race'
-  | 'browser-platform';
+  | 'browser-platform'
+  | 'agent';
 
 /** Canonical kind → input family mapping (spec §4.2). */
 const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
@@ -117,6 +118,12 @@ const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
   idor_horizontal_mutate: 'security-dynamic',
   idor_vertical_suspicious: 'security-dynamic',
   visual_anomaly: 'vision',
+  agent_response_hallucinated: 'agent',
+  agent_action_timeout: 'agent',
+  prompt_injection_executed: 'agent',
+  streaming_response_truncated: 'agent',
+  tool_call_failure_unhandled: 'agent',
+  agent_cost_per_turn_high: 'agent',
   race_condition_double_submit: 'race',
   race_condition_click_navigate: 'race',
   race_condition_optimistic_revert: 'race',
@@ -185,6 +192,10 @@ function isBrowserPlatformObserved(runState: RunState): boolean {
   return runState.config.browserPlatform?.enabled !== false;
 }
 
+function isAgentObserved(runState: RunState): boolean {
+  return runState.config.agent?.enabled === true;
+}
+
 /** Compute inputObserved for a given kind, given run state and counters. */
 function inputObservedForFamily(
   family: InputFamily,
@@ -201,6 +212,7 @@ function inputObservedForFamily(
     case 'vision': return isVisionObserved(counters);
     case 'race': return isRaceObserved(counters);
     case 'browser-platform': return isBrowserPlatformObserved(runState);
+    case 'agent': return isAgentObserved(runState);
   }
 }
 

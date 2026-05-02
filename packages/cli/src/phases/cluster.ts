@@ -293,6 +293,25 @@ function generateFixHints(detection: BugDetection): string[] {
       hints.push(lines.join('\n'));
       break;
     }
+    // v0.43 agentic-app detection fix hints
+    case 'agent_response_hallucinated':
+      hints.push('Agent response contains a claim not supported by retrieval/source data. Add grounding verification or retrieval-augmented guardrails.');
+      break;
+    case 'agent_action_timeout':
+      hints.push(`Agent turn exceeded latency threshold. Check upstream LLM response time and streaming configuration.`);
+      break;
+    case 'prompt_injection_executed':
+      hints.push(`Prompt injection via ${detection.injectionContext?.paramName ?? 'unknown param'}. Sanitize user input before including in system prompt, or use structured tool calling.`);
+      break;
+    case 'streaming_response_truncated':
+      hints.push('SSE/chunked stream closed without a terminal marker. Ensure the server sends a completion event (e.g. data: [DONE]) and handles connection resets.');
+      break;
+    case 'tool_call_failure_unhandled':
+      hints.push('Agent tool call failed silently. Add error handling in the agent loop to surface tool failures to the user.');
+      break;
+    case 'agent_cost_per_turn_high':
+      hints.push(`Agent turn cost exceeded threshold. Consider reducing context window, summarizing conversation history, or switching to a cheaper model for this route.`);
+      break;
   }
   return hints;
 }

@@ -130,7 +130,14 @@ export type BugKind =
   // v0.20 network-fault kinds
   | 'network_fault_unhandled'
   | 'network_fault_optimistic_no_revert'
-  | 'infinite_loading';
+  | 'infinite_loading'
+  // v0.43 agentic-app detection kinds
+  | 'agent_response_hallucinated'
+  | 'agent_action_timeout'
+  | 'prompt_injection_executed'
+  | 'streaming_response_truncated'
+  | 'tool_call_failure_unhandled'
+  | 'agent_cost_per_turn_high';
 
 /**
  * v0.19 back-compat alias: old v0.5 JSONL records used these kinds.
@@ -402,6 +409,10 @@ export type ToolMeta = {
   sourceLine: number;
   sourceFunctionName?: string;
   isServerAction: boolean;
+  /** v0.43: true when this tool routes input to an LLM (enables prompt-injection probes). */
+  routesToLlm?: boolean;
+  /** v0.43: streaming and tool-call hints for agent observation. */
+  agentRouteHints?: { stream?: boolean; tools?: string[] };
 };
 
 export type JsonSchema = {
@@ -866,8 +877,8 @@ export type NetworkFaultsTelemetry = {
 export type PenTestingConfig = {
   /** Master switch. Default: false (probing is actively mutating). */
   enabled?: boolean;
-  /** Which probe buckets to run. Default: all four. */
-  variants?: Array<'sql' | 'cmd' | 'path' | 'jwt'>;
+  /** Which probe buckets to run. Default: all four (five with v0.43 prompt bucket). */
+  variants?: Array<'sql' | 'cmd' | 'path' | 'jwt' | 'prompt'>;
   /** Max probes per endpoint. Default: 25 (5 variants × 5 BugKinds). */
   maxProbesPerEndpoint?: number;
   /**
@@ -896,6 +907,56 @@ export type PenTestingTelemetry = {
   probesSkipped: { reason: string; count: number }[];
   detectionsByKind: Record<string, number>;
   durationMs: number;
+};
+
+// --- v0.43 agentic-app detection types ---
+
+export type PromptVariantName =
+  | 'system_override_simple'
+  | 'system_override_role_play'
+  | 'tool_invocation_smuggle'
+  | 'data_exfiltration_via_echo'
+  | 'instruction_in_data_field';
+
+export type AgentConfig = {
+  /** Master switch. Default: false. */
+  enabled?: boolean;
+  /** Verifier model for hallucination check. Default: 'claude-sonnet-4-6'. */
+  verifierModel?: string;
+  /** Per-run cap on hallucination-check API calls. Default: 50. */
+  maxLlmOfOutputCalls?: number;
+  /** Per-turn latency threshold (ms). Default: 30000. */
+  maxTurnLatencyMs?: number;
+  /** Per-turn cost threshold (USD). Default: 0.10. */
+  maxCostUsdPerTurn?: number;
+  /** Stream stale-chunk window (ms). Default: 5000. */
+  streamStaleChunkMs?: number;
+  /** Tool-failure settle window (ms). Default: 5000. */
+  toolFailureSettleMs?: number;
+  /** Synthesise tool-call failures via routeFulfill. Default: false. */
+  synthesiseToolFailures?: boolean;
+  /** Variants of the prompt-injection bucket to fire. Default: all five. */
+  promptInjectionVariants?: PromptVariantName[];
+  /** Selectors that indicate a visible error state when present. Optional. */
+  errorIndicatorSelector?: string;
+  /** Substrings that mark stream completion. Default: see § 3.4. */
+  streamTerminalMarkers?: string[];
+};
+
+export type AgentDetectionContext = {
+  turnId: string;
+  modelId?: string;
+  latencyMs?: number;
+  costUsd?: number;
+  tokenCounts?: { input: number; output: number };
+  streamId?: string;
+  toolCallId?: string;
+  sourceData?: { sourceCount: number; totalBytes: number };
+  proof?:
+    | { kind: 'unsupported_claim'; claim: string; evidence: string }
+    | { kind: 'instruction_override'; variant: string; nonce: string; evidence: string }
+    | { kind: 'truncated'; reason: string; lastChunkSnippet: string; chunkCount: number; durationMs: number }
+    | { kind: 'silent_failure'; toolEndpoint: string; status: number; settleWaitMs: number };
 };
 
 // --- v0.6 performance types ---
@@ -1062,6 +1123,8 @@ export type BugDetection = {
   browserPlatformContext?: BrowserPlatformContext;
   /** v0.20: populated for network-fault findings. */
   networkFaultContext?: NetworkFaultContext;
+  /** v0.43: populated for agentic-app detection findings. */
+  agentContext?: AgentDetectionContext;
 };
 
 /** v0.23: clock-injection proof context attached to clock-related BugDetections. */
@@ -1512,6 +1575,8 @@ export type BugHunterConfig = {
   browserPlatform?: BrowserPlatformConfig;
   /** v0.20: network-fault injection palette. Default: disabled (opt-in via --network-faults). */
   networkFaults?: NetworkFaultsConfig;
+  /** v0.43: agentic-app detection subsystem. Default: disabled. */
+  agent?: AgentConfig;
 };
 
 /** v0.23: configuration for the clock-injection palette. */
@@ -1725,6 +1790,19 @@ export type RunSummary = {
   };
   /** v0.36: browser-platform probe telemetry — present when browserPlatform.enabled = true. */
   browserPlatform?: BrowserPlatformTelemetry;
+  /** v0.43: agentic-app detection telemetry — present when agent.enabled = true. */
+  agent?: {
+    enabled: boolean;
+    turnsObserved: number;
+    streamsObserved: number;
+    llmOfOutputCalls: number;
+    llmOfOutputCostUsd: number;
+    promptInjectionProbesAttempted: number;
+    promptInjectionProbesSucceeded: number;
+    totalSubjectAgentSpendUsd: number;
+    detectionsByKind: Record<string, number>;
+    abortReason?: 'auth' | 'transport' | 'budget' | null;
+  };
 };
 
 // --- v0.19 race-condition types ---

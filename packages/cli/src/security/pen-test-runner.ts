@@ -14,6 +14,7 @@ import {
   detectCommandInjection,
   detectPathTraversal,
   detectJwtWeakAlg,
+  detectPromptInjection,
   BOOLEAN_DELTA_THRESHOLD,
 } from './pen-detectors.js';
 import { log } from '../log.js';
@@ -176,6 +177,12 @@ async function probeToolParam(
     }
   }
 
+  // Prompt probes — only on routesToLlm tools (§ 4.4)
+  if (payload.kind === 'prompt' && tool.routesToLlm !== true) {
+    addSkip(skipCounter, 'not_llm_routed');
+    return;
+  }
+
   // Send GET endpoints with Cache-Control: no-cache (EC-9)
   const extraHeaders: Record<string, string> = tool.method.toUpperCase() === 'GET'
     ? { 'Cache-Control': 'no-cache' }
@@ -228,6 +235,12 @@ function runDetector(
       const secretUsed = payload.variant === 'weak_hmac_short_secret' ? 'secret' : undefined;
       const result = detectJwtWeakAlg(payload, response, endpoint, secretUsed);
       return result.ok ? result.detection : null;
+    }
+    case 'prompt': {
+      return detectPromptInjection(
+        { variant: payload.variant, nonce: payload.nonce, paramName, endpoint },
+        { assistantText: response.body },
+      );
     }
   }
 }

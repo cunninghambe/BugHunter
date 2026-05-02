@@ -85,8 +85,14 @@ const KIND_PRIORITY: BugKind[] = [
   'network_fault_optimistic_no_revert',  // most actionable — UI lied to user
   'network_fault_unhandled',
   'infinite_loading',
+  'agent_response_hallucinated',     // v0.43 — stronger than visual_anomaly when it fires
   'visual_anomaly',
+  'prompt_injection_executed',       // v0.43 — between visual and missing_state_change
+  'tool_call_failure_unhandled',     // v0.43 — same tier as visual_anomaly: 'error' category
+  'streaming_response_truncated',    // v0.43 — between visual and missing_state_change
   'missing_state_change',
+  'agent_action_timeout',            // v0.43 — below missing_state_change
+  'agent_cost_per_turn_high',        // v0.43 — informational priority
   // v0.22 form lost (§4.1) — UX-grade, lower priority
   'nav_form_state_lost',
   'console_error',
