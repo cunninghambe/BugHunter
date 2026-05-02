@@ -1,4 +1,5 @@
 import type { BugCluster, BugKind, ClusterVerdict, Severity } from '../types.ts';
+import { suspectedFilePath } from '../types.ts';
 
 // ---------------------------------------------------------------------------
 // FilterState
@@ -81,7 +82,7 @@ export function applyFilters(
       const inRootCause = cluster.rootCause.toLowerCase().includes(needle);
       const inKind = cluster.kind.toLowerCase().includes(needle);
       const inPages = cluster.occurrences.some(occ => occ.page.toLowerCase().includes(needle));
-      const inFiles = cluster.suspectedFiles.some(f => f.toLowerCase().includes(needle));
+      const inFiles = cluster.suspectedFiles.some(f => suspectedFilePath(f).toLowerCase().includes(needle));
       if (!inRootCause && !inKind && !inPages && !inFiles) {
         return false;
       }
