@@ -137,6 +137,10 @@ const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
   subresource_integrity_violation: 'browser-platform',
   coop_coep_violation: 'browser-platform',
   trusted_types_violation: 'browser-platform',
+  // v0.20 network-fault kinds
+  network_fault_unhandled: 'security-dynamic',
+  network_fault_optimistic_no_revert: 'security-dynamic',
+  infinite_loading: 'security-dynamic',
 };
 
 type CounterSnapshot = {

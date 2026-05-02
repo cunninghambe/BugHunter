@@ -151,6 +151,11 @@ export type RunOptions = {
   browserPlatformForceDeny?: boolean;
   /** --browser-platform-sw-stale-ms <ms>: override SW staleness threshold. */
   browserPlatformSwStaleMs?: number;
+  // v0.20 network-fault flags
+  /** --network-faults: enable v0.20 network-fault injection. Sets config.networkFaults.enabled = true. */
+  networkFaults?: boolean;
+  /** --no-network-faults: force-disable even if config has it on. */
+  noNetworkFaults?: boolean;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -286,6 +291,17 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const readOnlyFromEnv = process.env['BUGHUNTER_READ_ONLY'] === '1';
   const readOnly = opts.readOnly === true || readOnlyFromEnv || (config.readOnly ?? false);
 
+  // v0.20: network-fault flag resolution
+  const networkFaultsEnabled =
+    opts.noNetworkFaults === true ? false :
+    opts.networkFaults === true ? true :
+    (config.networkFaults?.enabled ?? false);
+  const networkFaultsConfig = networkFaultsEnabled
+    ? { ...(config.networkFaults ?? {}), enabled: true }
+    : config.networkFaults?.enabled === true
+      ? { ...config.networkFaults, enabled: false }
+      : config.networkFaults;
+
   const resolved = resolvedConfig({
     ...config,
     ...(opts.maxBugs !== undefined ? { maxBugs: opts.maxBugs } : {}),
@@ -304,6 +320,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(bundleProbeConfig !== undefined ? { bundleProbe: bundleProbeConfig } : {}),
     ...(raceConditionsConfig !== undefined ? { raceConditions: raceConditionsConfig } : {}),
     ...(fuzzConfig !== undefined ? { fuzz: fuzzConfig } : {}),
+    // v0.20 network-faults
+    ...(networkFaultsConfig !== undefined ? { networkFaults: networkFaultsConfig } : {}),
     // v0.22 nav-state
     enableNavState,
     enableNavStateRefreshRace: navStateRefreshRace,

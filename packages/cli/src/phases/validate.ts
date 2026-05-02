@@ -69,6 +69,42 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
     log.info('Browser MCP reachable');
   }
 
+  // v0.20: network-fault capability probe — abort if enabled but camofox lacks the tool.
+  if (opts.config.networkFaults?.enabled === true) {
+    if (opts.browserMcp === undefined) {
+      throw new Error(
+        'networkFaults.enabled = true requires a browser adapter (browserMcpUrl or browserMcpStdio). ' +
+        'Configure a browser transport and retry.'
+      );
+    }
+    if (opts.browserMcp.applyNetworkFault === undefined) {
+      throw new Error(
+        'networkFaults.enabled = true but camofox-mcp v0.1 does not support network-fault injection. ' +
+        'Required: camofox-mcp ≥ v0.2 with the network_fault tool. See SPEC_V20_NETWORK_FAULTS.md § 6.'
+      );
+    }
+    // Probe by calling with offline fault and checking the result
+    const probeTab = await opts.browserMcp.openTab('about:blank').catch((err: unknown) => {
+      throw new Error(`networkFaults probe: could not open probe tab: ${String(err)}`);
+    });
+    try {
+      // Build a tab-scoped apply by calling through the adapter directly
+      const probeResult = await opts.browserMcp.applyNetworkFault({ kind: 'offline' }).catch((err: unknown) => {
+        throw new Error(`networkFaults probe: applyNetworkFault threw: ${String(err)}`);
+      });
+      if (probeResult.applied === false && probeResult.reason === 'tool_not_available') {
+        throw new Error(
+          'networkFaults.enabled = true but camofox-mcp v0.1 does not support network-fault injection. ' +
+          'Required: camofox-mcp ≥ v0.2 with the network_fault tool. See SPEC_V20_NETWORK_FAULTS.md § 6.'
+        );
+      }
+      await opts.browserMcp.clearNetworkFault?.();
+    } finally {
+      await opts.browserMcp.closeTabExplicit(probeTab.tabId).catch(() => {});
+    }
+    log.info('networkFaults capability probe passed');
+  }
+
   // 3. Login check per role
   const roles = opts.config.roles ?? extractRolesFromCatalog(catalog.tools);
   const failedRoles: string[] = [];

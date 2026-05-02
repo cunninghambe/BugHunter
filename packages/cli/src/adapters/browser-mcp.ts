@@ -45,7 +45,8 @@ import {
   toCamofoxScrollDirection,
 } from './browser-mcp-snapshot.js';
 import type { StructuredSelector, SnapshotNode } from './browser-mcp-snapshot.js';
-import type { TriggerSelectorHint } from '../types.js';
+import type { TriggerSelectorHint, NetworkFaultSpec, ApplyNetworkFaultResult } from '../types.js';
+export type { NetworkFaultSpec, ApplyNetworkFaultResult };
 import type { BugHunterConfig } from '../types.js';
 import { runEvaluateClick } from '../phases/click-runner.js';
 import type { EvaluateClickResult } from '../phases/click-runner.js';
@@ -98,6 +99,14 @@ export type TabScope = {
    * probes) may omit this method from their scope mocks.
    */
   clickWithObservation?(selector: string | StructuredSelector): Promise<EvaluateClickResult & { ok: true }>;
+  /**
+   * v0.20: install a network fault on the tab's browser context.
+   * Optional — camofox-mcp v0.1 does not ship this tool; v0.2+ required.
+   * Implementations MUST be idempotent — calling apply twice replaces the spec.
+   */
+  applyNetworkFault?(fault: NetworkFaultSpec): Promise<ApplyNetworkFaultResult>;
+  /** v0.20: remove any network fault. Idempotent. Always succeeds (or throws transport). */
+  clearNetworkFault?(): Promise<void>;
 };
 
 export interface BrowserMcpAdapter {
@@ -175,6 +184,15 @@ export interface BrowserMcpAdapter {
    * evaluate() was used immediately (after-navigate fallback — race risk).
    */
   addInitScript?(source: string): Promise<{ applied: boolean; degraded?: 'late_inject' | 'unsupported' }>;
+
+  /**
+   * v0.20: install a network fault on the tab's browser context.
+   * Optional — camofox-mcp v0.1 does not expose this tool; v0.2+ required.
+   * Implementations MUST be idempotent — calling apply twice replaces the spec.
+   */
+  applyNetworkFault?(fault: NetworkFaultSpec): Promise<ApplyNetworkFaultResult>;
+  /** v0.20: remove any network fault. Idempotent. Always succeeds (or throws transport). */
+  clearNetworkFault?(): Promise<void>;
 }
 
 /** Scope narrows which requests are intercepted. All fields are ANDed. */
@@ -697,6 +715,45 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     }
   }
 
+  async applyNetworkFault(fault: NetworkFaultSpec): Promise<ApplyNetworkFaultResult> {
+    if (this.legacyDelegate !== undefined) {
+      const delegate = this.legacyDelegate;
+      if (delegate.applyNetworkFault === undefined) {
+        return { applied: false, reason: 'tool_not_available' };
+      }
+      return await delegate.applyNetworkFault(fault);
+    }
+    const tabId = this.requireTab();
+    try {
+      const result = await this.tool<{ ok: boolean; applied: boolean; reason?: string }>(
+        'network_fault',
+        { tabId, fault },
+      );
+      if (result.applied === false) {
+        return { applied: false, reason: result.reason ?? 'fault_unsupported' };
+      }
+      return { applied: true };
+    } catch (err) {
+      const msg = String(err);
+      if (/unknown tool|tool not found|not registered/i.test(msg)) {
+        return { applied: false, reason: 'tool_not_available' };
+      }
+      return { applied: false, reason: msg };
+    }
+  }
+
+  async clearNetworkFault(): Promise<void> {
+    if (this.legacyDelegate !== undefined) {
+      const delegate = this.legacyDelegate;
+      if (delegate.clearNetworkFault !== undefined) {
+        await delegate.clearNetworkFault();
+      }
+      return;
+    }
+    const tabId = this.requireTab();
+    await this.tool<{ ok: boolean }>('clear_network_fault', { tabId }).catch(() => {});
+  }
+
   async withTab<T>(
     url: string,
     extraHeaders: ExtraHeaders | undefined,
@@ -769,6 +826,29 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
           value: r.result ?? r.value,
         })),
       clickByHint: (hint) => this.clickByHintForTab(tabId, hint),
+      applyNetworkFault: (fault) => {
+        const self = this;
+        return (async () => {
+          try {
+            const result = await self.tool<{ ok: boolean; applied: boolean; reason?: string }>(
+              'network_fault',
+              { tabId, fault },
+            );
+            if (result.applied === false) {
+              return { applied: false as const, reason: result.reason ?? 'fault_unsupported' };
+            }
+            return { applied: true as const };
+          } catch (err) {
+            const msg = String(err);
+            if (/unknown tool|tool not found|not registered/i.test(msg)) {
+              return { applied: false as const, reason: 'tool_not_available' as const };
+            }
+            return { applied: false as const, reason: msg };
+          }
+        })();
+      },
+      clearNetworkFault: () =>
+        this.tool<{ ok: boolean }>('clear_network_fault', { tabId }).then(() => undefined).catch(() => undefined),
     };
   }
 
@@ -1225,6 +1305,9 @@ export class CamofoxBrowserHttpAdapter implements BrowserMcpAdapter {
           value: r.result ?? r.value,
         })),
       clickByHint: (hint) => this.clickByHintForTab(tabId, hint),
+      // v0.20: network fault methods — not available in the legacy adapter
+      applyNetworkFault: (_fault) => Promise.resolve({ applied: false as const, reason: 'tool_not_available' as const }),
+      clearNetworkFault: () => Promise.resolve(),
     };
   }
 
@@ -1250,6 +1333,14 @@ export class CamofoxBrowserHttpAdapter implements BrowserMcpAdapter {
       (hint.ariaLabel !== undefined && hint.ariaLabel !== '') ||
       (hint.text !== undefined && hint.text !== '');
     return { clicked: false, reason: hasPopulatedField ? 'not_found' : 'no_hint_fields' };
+  }
+
+  applyNetworkFault(_fault: NetworkFaultSpec): Promise<ApplyNetworkFaultResult> {
+    return Promise.resolve({ applied: false as const, reason: 'tool_not_available' as const });
+  }
+
+  clearNetworkFault(): Promise<void> {
+    return Promise.resolve();
   }
 }
 

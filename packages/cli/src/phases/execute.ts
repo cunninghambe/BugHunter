@@ -70,6 +70,10 @@ import type { DiscoveredPage, BrowserPlatformTelemetry } from '../types.js';
 import { isReadOnlyAction, MutatingActionRejectedError } from '../util/read-only.js';
 import { runBrowserPlatformProbe } from '../discovery/browser-platform-probe.js';
 import type { BrowserPlatformProbeOpts } from '../discovery/browser-platform-probe.js';
+import { detectNetworkFaultUnhandled } from '../classify/network-fault-unhandled.js';
+import { detectOptimisticNoRevert } from '../classify/network-fault-optimistic-revert.js';
+import type { OptimisticSnapshot } from '../classify/network-fault-optimistic-revert.js';
+import { detectInfiniteLoading } from '../classify/infinite-loading.js';
 
 export type ExecuteOptions = {
   testCases: TestCase[];
@@ -1165,9 +1169,101 @@ async function executeUiTest(
 
   let result: TestResult;
   try {
-    result = await browser.withTab(pageUrl, headers, (scope) =>
-      executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, extras, clock)
-    );
+    result = await browser.withTab(pageUrl, headers, async (scope) => {
+      // v0.20: apply network fault before executing the action; clear in finally.
+      if (tc.faultInjected !== undefined) {
+        if (scope.applyNetworkFault === undefined) {
+          return {
+            testId: tc.id,
+            occurrenceId,
+            passed: false,
+            bugs: [],
+            infrastructureFailure: {
+              id: createId(),
+              runId,
+              timestamp: nowIso(clock),
+              kind: 'generic',
+              detail: 'network fault: applyNetworkFault not available on tab scope',
+              role: tc.role,
+              page: tc.page,
+              action: tc.action,
+            },
+            durationMs: Date.now() - start,
+          } satisfies TestResult;
+        }
+        const applyResult = await scope.applyNetworkFault(tc.faultInjected).catch((err: unknown) => {
+          return { applied: false as const, reason: String(err) };
+        });
+        if (!applyResult.applied) {
+          return {
+            testId: tc.id,
+            occurrenceId,
+            passed: false,
+            bugs: [],
+            infrastructureFailure: {
+              id: createId(),
+              runId,
+              timestamp: nowIso(clock),
+              kind: 'generic',
+              detail: `network fault apply failed: ${'reason' in applyResult ? applyResult.reason : 'unknown'}`,
+              role: tc.role,
+              page: tc.page,
+              action: tc.action,
+            },
+            durationMs: Date.now() - start,
+          } satisfies TestResult;
+        }
+      }
+
+      let innerResult: TestResult;
+      try {
+        innerResult = await executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, extras, clock);
+      } finally {
+        if (tc.faultInjected !== undefined && scope.clearNetworkFault !== undefined) {
+          await scope.clearNetworkFault().catch(() => {});
+        }
+      }
+
+      // v0.20: run network-fault detectors when fault was applied.
+      if (tc.faultInjected !== undefined && innerResult.preState !== undefined && innerResult.postState !== undefined) {
+        const retryStormThresholdRps = 10; // default; TODO: wire from config
+        const faultAsyncMaxWaitMs = asyncMaxWaitMs ?? 30_000;
+
+        const unhandled = detectNetworkFaultUnhandled(
+          innerResult.preState,
+          innerResult.postState,
+          tc.faultInjected,
+          retryStormThresholdRps,
+          faultAsyncMaxWaitMs,
+        );
+        if (unhandled !== null) innerResult.bugs.push({ ...unhandled, triggeringAction: tc.action, pageRoute: tc.page });
+
+        // Optimistic revert: we don't have a real intermediate snapshot here since it
+        // would require capturing DOM 200ms after action fire inside executeUiTestInner.
+        // For v0.20, pass null (no intermediate snapshot available from this path).
+        const noRevert = detectOptimisticNoRevert(
+          innerResult.preState,
+          innerResult.postState,
+          tc.faultInjected,
+          null as OptimisticSnapshot | null,
+          retryStormThresholdRps,
+        );
+        if (noRevert !== null) innerResult.bugs.push({ ...noRevert, triggeringAction: tc.action, pageRoute: tc.page });
+
+        // Infinite loading: check if a loading indicator appeared and persisted.
+        // preHadSpinner / postHasSpinner require DOM evaluation; conservative defaults.
+        const infiniteLoad = detectInfiniteLoading(
+          innerResult.preState,
+          innerResult.postState,
+          tc.faultInjected,
+          false, // preHadSpinner — we don't capture this yet; conservative default
+          false, // postHasSpinner — requires evaluate; not available in this path
+        );
+        if (infiniteLoad !== null) innerResult.bugs.push({ ...infiniteLoad, triggeringAction: tc.action, pageRoute: tc.page });
+      }
+
+      return innerResult;
+    });
   } catch (err) {
     // withTab itself failed (openTab or closeTab threw, or fn re-threw after unexpected error)
     result = {

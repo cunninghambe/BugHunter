@@ -360,6 +360,23 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
         : '';
       return `trusted_types_violation|${detection.pageRoute ?? ''}|${blockedURI}`;
     }
+
+    // v0.20 network-fault kinds: route + selectorClass + action + variant
+    case 'network_fault_unhandled': {
+      const action = detection.triggeringAction?.kind ?? '';
+      const variant = detection.networkFaultContext?.faultVariant ?? '';
+      return `network_fault_unhandled|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}|${action}|${variant}`;
+    }
+    case 'network_fault_optimistic_no_revert': {
+      const action = detection.triggeringAction?.kind ?? '';
+      const variant = detection.networkFaultContext?.faultVariant ?? '';
+      return `network_fault_optimistic_no_revert|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}|${action}|${variant}`;
+    }
+    case 'infinite_loading': {
+      const action = detection.triggeringAction?.kind ?? '';
+      const variant = detection.networkFaultContext?.faultVariant ?? '';
+      return `infinite_loading|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}|${action}|${variant}`;
+    }
   }
 }
 
