@@ -99,7 +99,20 @@ const KIND_PRIORITY: BugKind[] = [
   'agent_cost_per_turn_high',        // v0.43 — informational priority
   // v0.22 form lost (§4.1) — UX-grade, lower priority
   'nav_form_state_lost',
+  // v0.38 interaction-palette env/viewport kinds (Minor tier — just above console_error)
+  // media-query env variants: WCAG compliance + layout correctness; below general visual anomaly
+  'print_stylesheet_broken',
+  'reduced_motion_violation',
+  'forced_colors_failure',
+  'dark_mode_layout_break',
+  'zoom_layout_break',
   'console_error',
+  // v0.38 interaction-palette synthetic-event kinds (Major tier — just above accessibility_critical)
+  // drag/animation: UX-breaking but user-observable; paste/autofill: data-corruption risk
+  'drag_drop_failure',
+  'animation_state_corruption',
+  'paste_handler_failure',
+  'autofill_state_desync',
   'accessibility_critical',
   // v0.6 a11y baseline kinds (same tier as accessibility_critical)
   'shadow_dom_a11y_violation',

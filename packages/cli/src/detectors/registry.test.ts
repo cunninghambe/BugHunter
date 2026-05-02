@@ -8,31 +8,22 @@ describe('DETECTOR_REGISTRY', () => {
     expect(unique.size).toBe(kinds.length);
   });
 
-  it('has 121 entries covering all BugKinds', () => {
-    expect(DETECTOR_REGISTRY.length).toBe(121);
+  it('has 122 entries covering all BugKinds (v0.38: +9 interaction-palette wired)', () => {
+    expect(DETECTOR_REGISTRY.length).toBe(122);
   });
 
-  it('has exactly 10 deferred entries', () => {
+  it('has exactly 1 deferred entry (xss_stored)', () => {
     const deferred = DETECTOR_REGISTRY.filter(e => e.status === 'deferred');
-    expect(deferred).toHaveLength(10);
+    expect(deferred).toHaveLength(1);
     const deferredKinds = deferred.map(e => e.kind).sort();
     expect(deferredKinds).toEqual([
-      'animation_state_corruption',
-      'autofill_state_desync',
-      'dark_mode_layout_break',
-      'drag_drop_failure',
-      'forced_colors_failure',
-      'paste_handler_failure',
-      'print_stylesheet_broken',
-      'reduced_motion_violation',
       'xss_stored',
-      'zoom_layout_break',
     ]);
   });
 
-  it('has 111 wired entries', () => {
+  it('has 121 wired entries (v0.38: +9 interaction-palette)', () => {
     const wired = DETECTOR_REGISTRY.filter(e => e.status === 'wired');
-    expect(wired).toHaveLength(111);
+    expect(wired).toHaveLength(121);
   });
 
   it('has 0 dead entries', () => {

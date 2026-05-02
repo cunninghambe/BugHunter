@@ -487,6 +487,23 @@ export async function runPlan(
     skipReasonCounts.set(reason, (skipReasonCounts.get(reason) ?? 0) + count);
   }
 
+  // v0.38 interaction-palette: mint per-action and per-route interaction variants
+  if (config.interactionPalette?.enabled === true) {
+    const { cases: ipCases, skips: ipSkips } = mintInteractionPaletteCases(
+      testCases,
+      discovery.pages,
+      config,
+      roles,
+    );
+    testCases.push(...ipCases);
+    for (const skip of ipSkips) {
+      skipReasonCounts.set(`ip_${skip.reason}`, (skipReasonCounts.get(`ip_${skip.reason}`) ?? 0) + 1);
+    }
+    if (ipCases.length > 0) {
+      log.info(`interaction-palette: planned ${ipCases.length} cases (${ipSkips.length} skipped)`);
+    }
+  }
+
   const skipReasons = [...skipReasonCounts.entries()].map(([reason, count]) => ({ reason, count }));
 
   if (skipReasons.length > 0) {
