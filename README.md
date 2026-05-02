@@ -8,6 +8,18 @@ Vibe coding is fast at the build step and brutal at the verify step. "Does the p
 
 BugHunter automates the boring half. It discovers your app's surface from [SurfaceMCP](https://github.com/cunninghambe/SurfaceMCP) (API side) and a browser MCP (UI side), then drives every action systematically. It captures failures with enough context that another agent can actually fix them.
 
+## Empirical numbers
+
+These numbers come from real BugHunter runs against the deliberate-bugs fixture (self-test) and the vibe-todo bench app (calibration), not from aspirational targets. They represent the current honest baseline.
+
+**V33 self-test** (178/178 tests run, no crashes): 6/105 golden BugKinds detected — **5.7% recall**, **0 false positives**. The six detected kinds are `coop_coep_violation`, `focus_lost_after_action`, `missing_state_change`, `seo_h1_missing_or_multiple`, `seo_title_duplicate_across_routes`, and `xss_reflected`. The 94.3% miss rate traces to four discrete structural blockers: the fixture's API server is not registered as a SurfaceMCP surface (blocking ~25 pen-test/race/IDOR kinds), HAR network capture is empty (blocking ~15 network/console/react kinds), the bundle probe returns 0 bytes (blocking perf kinds), and the axe runner emits 0 results silently (blocking a11y kinds). Each blocker is a scoped follow-up; the pipeline itself is healthy. (Measurement is pre-fix-PRs #102/103/104/105; smoke #5 was in flight at time of writing.)
+
+**Calibration on vibe-todo** ([issue #93](https://github.com/cunninghambe/BugHunter/issues/93)): precision 0% / recall 0% / F1 0. These numbers reflect a partially-broken calibration pipeline: `calibrate.ts` was reading clusters from `summary.json.clusters` (always empty) instead of `bugs.jsonl`. PR [#94](https://github.com/cunninghambe/BugHunter/issues/94) fixed the silent-lie path. A re-run against vibe-todo with the fix applied, the Express backend registered as a SurfaceMCP surface, and browser auth working is needed before meaningful precision/recall numbers are possible. BugHunter did surface 20 real findings (COOP/COEP violations, SEO issues, vulnerable dependencies) that were not in the gold standard — those are not false positives, they are unlisted bugs.
+
+**Determinism** ([issue #86](https://github.com/cunninghambe/BugHunter/issues/86)): verified — two consecutive runs with `--seed 42 --frozen-clock` against the race-bad fixture produce byte-identical canonical `summary.json` (SHA-256 `9c5ea3362c04efb4a4fbf7495ece90cb014e814a0744554c71dc8d17a8747faf`). The only fields that differ between runs are `actualRuntimeMs` (stripped from canonical hash per spec §6.5) and `runId` (by design).
+
+**Last measured:** 2026-05-02
+
 ## Status
 
 Spec only. See **[SPEC.md](SPEC.md)**.
