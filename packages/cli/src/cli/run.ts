@@ -972,7 +972,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(suppressedSamples.length > 0 ? { suppressedSamples } : {}),
       ...(deterministicBlock !== undefined ? { deterministic: deterministicBlock } : {}),
       ...(readOnlyTelemetry !== undefined ? { readOnly: readOnlyTelemetry } : {}),
-    });
+    }, clock);
     runState.emitted = true;
     runState.phase = 'done';
     saveRunState(runState);

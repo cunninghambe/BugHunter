@@ -140,4 +140,21 @@ export default [
       // import/order intentionally deferred
     },
   },
+  // V34: ban raw Date APIs in phases/ to preserve --seed determinism.
+  {
+    files: ['packages/cli/src/phases/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']",
+          message: "Use nowMs(clock) from lib/clock.ts instead of Date.now() to preserve --seed determinism.",
+        },
+        {
+          selector: "CallExpression[callee.object.type='NewExpression'][callee.object.callee.name='Date'][callee.property.name='toISOString']",
+          message: "Use nowIso(clock) from lib/clock.ts instead of new Date().toISOString() to preserve --seed determinism.",
+        },
+      ],
+    },
+  },
 ];

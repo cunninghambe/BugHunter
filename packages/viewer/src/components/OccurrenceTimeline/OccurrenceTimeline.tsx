@@ -20,8 +20,8 @@ type Props = {
 export function OccurrenceTimeline({ occurrence, artifacts, artifactsLoading }: Props) {
   const full = occurrence.fullArtifacts ? (occurrence as OccurrenceFull) : null;
 
-  const preState: PreState | undefined = full !== null ? (full as unknown as { preState?: PreState }).preState : undefined;
-  const postState: PostState | undefined = full !== null ? (full as unknown as { postState?: PostState }).postState : undefined;
+  const preState: PreState | undefined = full?.preState;
+  const postState: PostState | undefined = full?.postState;
   const consoleErrors: ConsoleError[] = postState?.consoleErrors ?? [];
   const networkRequests: NetworkRequest[] = postState?.networkRequests ?? [];
 

@@ -754,9 +754,15 @@ export async function loginInTabScope(
   const verifyTimeoutMs = opts?.verifyTimeoutMs ?? 10_000;
   const verifyPollMs = opts?.verifyPollMs ?? 500;
 
-  // TabScope is structurally compatible with the BrowserMcpAdapter subset used here
-  // (navigate, click, type, evaluate). Cast is safe; getCookies is not called.
-  const scopeAsBrowser = scope as unknown as BrowserMcpAdapter;
+  const scopeAsBrowser: BrowserMcpAdapter = {
+    ...scope,
+    listTabs: async () => ({ tabs: [] }),
+    closeTab: async () => ({ closed: false }),
+    openTab: async () => ({ tabId: '', finalUrl: '' }),
+    closeTabExplicit: async () => undefined,
+    withTab: <T>(_u: string, _h: Record<string, string> | undefined, fn: (s: TabScope) => Promise<T>) => fn(scope),
+    cookies: async () => ({ tabId: '', cookies: [] }),
+  };
   const loginUrl = plan.uiLoginPath;
 
   try {

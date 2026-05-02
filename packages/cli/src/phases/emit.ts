@@ -9,6 +9,8 @@ import { openHistoryDb, previousRunForProject, clustersForRun, writeRunToHistory
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import { log } from '../log.js';
 import { fireNotifications } from '../notify/send.js';
+import { nowIso } from '../lib/clock.js';
+import type { Clock } from '../lib/clock.js';
 
 const BUGHUNTER_VERSION = '0.1.0';
 // v0.29: severity not yet in DetectorRegistryEntry — defaults to 'info' for all entries.
@@ -82,7 +84,8 @@ export function runEmit(
   runState: RunState,
   projectedRuntimeMs: number,
   actualRuntimeMs: number,
-  counters?: TestCounters
+  counters?: TestCounters,
+  clock: Clock = { kind: 'wall' }
 ): void {
   const paths = runPaths(runState.projectDir, runState.runId);
 
@@ -199,7 +202,7 @@ export function runEmit(
   writeJsonFile(paths.summaryFile, { ...summary, ...(crossRun !== undefined ? { crossRun } : {}) });
 
   try {
-    const coverage = buildCoverage(runState.runId, new Date().toISOString(), runState, clusters, counters);
+    const coverage = buildCoverage(runState.runId, nowIso(clock), runState, clusters, counters);
     writeJsonFile(paths.coverageFile, coverage);
   } catch (err) {
     log.warn('coverage.json write failed (non-fatal)', { error: err instanceof Error ? err.message : String(err) });

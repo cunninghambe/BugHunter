@@ -508,6 +508,8 @@ export type ToolMeta = {
   routesToLlm?: boolean;
   /** v0.43: streaming and tool-call hints for agent observation. */
   agentRouteHints?: { stream?: boolean; tools?: string[] };
+  /** v0.40: 'commutative' when concurrent calls to this tool do not produce state divergence. */
+  commutativityHint?: string;
 };
 
 export type JsonSchema = {
