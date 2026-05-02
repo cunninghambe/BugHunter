@@ -147,7 +147,13 @@ function readClusters(projectDir: string, runId: string): BugCluster[] {
       'Underlying BugHunter run is partial (crashed or timed out). Cannot calibrate a partial run.',
     );
   }
-  return summary.clusters ?? [];
+  // summary.json does not include a clusters array — clusters are written to bugs.jsonl.
+  if (summary.clusters !== undefined) return summary.clusters;
+  if (!fs.existsSync(paths.bugsFile)) return [];
+  return fs.readFileSync(paths.bugsFile, 'utf-8')
+    .split('\n')
+    .filter(line => line.trim().length > 0)
+    .map(line => JSON.parse(line) as BugCluster);
 }
 
 function resolveBenchVersion(appPath: string): string {
