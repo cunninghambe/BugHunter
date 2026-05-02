@@ -1,0 +1,132 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "pen-bad",
+    "description": "Synthetic vulnerable fixture for BugHunter pen-testing smoke tests. INTENTIONALLY VULNERABLE.",
+    "version": "1.0.0"
+  },
+  "servers": [{ "url": "http://localhost:9991" }],
+  "paths": {
+    "/search": {
+      "get": {
+        "operationId": "search",
+        "summary": "Search users — SQL injection via string interpolation (sqli bug)",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Search term — injected directly into SQL without escaping"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching users as JSON array",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/User" } } } }
+          },
+          "500": {
+            "description": "SQLite error (may contain injected payload in message)",
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/lookup": {
+      "get": {
+        "operationId": "lookup",
+        "summary": "Lookup host — command injection via shell exec (cmdi bug)",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Hostname — passed to execSync without sanitisation"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shell output",
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          },
+          "500": {
+            "description": "Shell error",
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/file": {
+      "get": {
+        "operationId": "readFile",
+        "summary": "Read a file from /var/www — path traversal bug (no sanitisation)",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filename relative to /var/www — not sanitised, allows ../ traversal"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File contents",
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          },
+          "404": {
+            "description": "File not found",
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/admin/promote": {
+      "post": {
+        "operationId": "adminPromote",
+        "summary": "Promote user — accepts JWT with alg=none (jwt_alg_none bug)",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Promoted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "promoted": { "type": "boolean" },
+                    "subject": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed token",
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "role": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,275 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "self-api",
+    "description": "BugHunter self-test API — deliberately vulnerable endpoints for smoke tests.",
+    "version": "1.0.0"
+  },
+  "servers": [{ "url": "http://localhost:5791" }],
+  "paths": {
+    "/api/boom": {
+      "get": {
+        "operationId": "boom",
+        "summary": "Always returns 500 (network_5xx fixture)",
+        "responses": {
+          "500": {
+            "description": "Internal Server Error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } } }
+          }
+        }
+      }
+    },
+    "/api/teapot": {
+      "get": {
+        "operationId": "teapot",
+        "summary": "Always returns 418 (network_4xx_unexpected fixture)",
+        "responses": {
+          "418": {
+            "description": "I'm a teapot",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } } }
+          }
+        }
+      }
+    },
+    "/api/refuse": {
+      "get": {
+        "operationId": "refuse",
+        "summary": "Always returns 503 (surface_call_failed fixture)",
+        "responses": {
+          "503": {
+            "description": "Service unavailable",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } } }
+          }
+        }
+      }
+    },
+    "/api/echo": {
+      "get": {
+        "operationId": "echo",
+        "summary": "Reflects q param into HTML — intentionally unsafe XSS fixture",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "Value reflected verbatim into HTML body" }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML response with reflected input",
+            "content": { "text/html": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/api/login-fixation": {
+      "get": {
+        "operationId": "loginFixation",
+        "summary": "Session fixation fixture — accepts client-supplied sessionId",
+        "parameters": [
+          { "name": "sessionId", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": { "type": "string" },
+                    "user": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reset": {
+      "get": {
+        "operationId": "passwordReset",
+        "summary": "Password reset — token is accepted but never invalidated (password_reset_token_reuse fixture)",
+        "parameters": [
+          { "name": "token", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reset accepted",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" }, "token": { "type": "string" } } } } }
+          },
+          "400": {
+            "description": "Token missing",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } } }
+          }
+        }
+      }
+    },
+    "/headers/no-csp": {
+      "get": {
+        "operationId": "headersNoCsp",
+        "summary": "Response with no Content-Security-Policy header (missing_csp_header fixture)",
+        "responses": {
+          "200": {
+            "description": "OK — no CSP",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } }
+          }
+        }
+      }
+    },
+    "/headers/wide-cors": {
+      "get": {
+        "operationId": "headersWideCors",
+        "summary": "Wildcard CORS with credentials (permissive_cors fixture)",
+        "responses": {
+          "200": {
+            "description": "OK — wildcard CORS + credentials",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } }
+          }
+        }
+      }
+    },
+    "/headers/bad-cookie": {
+      "get": {
+        "operationId": "headersBadCookie",
+        "summary": "Sets a cookie missing Secure/HttpOnly/SameSite (cookie_security_flags fixture)",
+        "responses": {
+          "200": {
+            "description": "OK — insecure cookie set",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } }
+          }
+        }
+      }
+    },
+    "/redirect": {
+      "get": {
+        "operationId": "openRedirect",
+        "summary": "Redirects to arbitrary user-supplied URL (open_redirect fixture)",
+        "parameters": [
+          { "name": "to", "in": "query", "schema": { "type": "string" }, "description": "Target URL — not validated" }
+        ],
+        "responses": {
+          "302": { "description": "Redirect to supplied URL" }
+        }
+      }
+    },
+    "/api/transfer": {
+      "get": {
+        "operationId": "transfer",
+        "summary": "Accepts ssn and token in URL query string (sensitive_data_in_url fixture)",
+        "parameters": [
+          { "name": "ssn", "in": "query", "schema": { "type": "string" } },
+          { "name": "token", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transfer result echoing sensitive params",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transferred": { "type": "boolean" },
+                    "ssn": { "type": "string" },
+                    "token": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/throw": {
+      "get": {
+        "operationId": "throwError",
+        "summary": "Returns raw Node.js stack trace in response (stack_trace_leak_in_response fixture)",
+        "responses": {
+          "500": {
+            "description": "Error with raw stack trace",
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/api/csrf-mutate": {
+      "post": {
+        "operationId": "csrfMutate",
+        "summary": "Mutating POST with no CSRF protection (csrf_missing_on_mutating_route fixture)",
+        "responses": {
+          "200": {
+            "description": "Mutation accepted",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "mutated": { "type": "boolean" } } } } }
+          }
+        }
+      }
+    },
+    "/api/item/{id}": {
+      "get": {
+        "operationId": "getItem",
+        "summary": "Returns a single item by id (n_plus_one fixture)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "value": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/foo": {
+      "get": {
+        "operationId": "foo",
+        "summary": "Generic endpoint for request_dedup_missing fixture",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "ts": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/slow.png": {
+      "get": {
+        "operationId": "slowPng",
+        "summary": "Returns a 1x1 PNG after a 4-second delay (slow_lcp fixture)",
+        "responses": {
+          "200": {
+            "description": "1x1 PNG image",
+            "content": { "image/png": { "schema": { "type": "string", "format": "binary" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorBody": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

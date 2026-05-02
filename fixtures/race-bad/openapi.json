@@ -1,0 +1,93 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "race-bad fixture API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/items": {
+      "post": {
+        "operationId": "createItem",
+        "summary": "Create item — double-submit bug (no idempotency key)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": {} }
+            }
+          }
+        }
+      }
+    },
+    "/api/save": {
+      "post": {
+        "operationId": "save",
+        "summary": "Save data — click-then-navigate bug (slow 200ms response)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": {} }
+            }
+          }
+        }
+      }
+    },
+    "/api/like": {
+      "post": {
+        "operationId": "like",
+        "summary": "Like — optimistic-revert bug (500 on X-Force-Fail header)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": {} }
+            }
+          }
+        }
+      }
+    },
+    "/api/counter/increment": {
+      "post": {
+        "operationId": "counterIncrement",
+        "summary": "Increment counter — interleaved-mutations bug (non-atomic read-modify-write)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": {} }
+            }
+          }
+        }
+      }
+    },
+    "/api/counter/decrement": {
+      "post": {
+        "operationId": "counterDecrement",
+        "summary": "Decrement counter — interleaved-mutations bug (non-atomic read-modify-write)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": {} }
+            }
+          }
+        }
+      }
+    },
+    "/api/vote": {
+      "post": {
+        "operationId": "vote",
+        "summary": "Vote — cross-tab bug (last-write-wins, no conflict detection)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": {} }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "Health check"
+      }
+    }
+  }
+}
