@@ -30,7 +30,7 @@ export function isReadOnlyAction(
   if (action.kind === 'render' || action.kind === 'navigate') return true;
 
   const toolId = 'toolId' in action ? action.toolId : undefined;
-  if (toolId === undefined || toolId === null) return false;
+  if (toolId === undefined) return false;
 
   const tool = toolCatalog.get(toolId);
   if (tool === undefined) return false;

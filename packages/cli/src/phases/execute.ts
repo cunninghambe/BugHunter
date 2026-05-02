@@ -275,7 +275,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     try {
       // v0.45 Tier 3: runtime guard — fatal if a mutating action reaches executors in read-only mode.
       // Tier 2 (plan) should prevent this; if it fires, we have a gating bug.
-      if (runState.config.readOnly === true && !isReadOnlyAction(tc.action, toolMap ?? new Map())) {
+      if (runState.config.readOnly === true && !isReadOnlyAction(tc.action, toolMap ?? new Map<string, ToolMeta>())) {
         throw new MutatingActionRejectedError(
           `read-only mode: refusing to execute action kind=${tc.action.kind} toolId=${'toolId' in tc.action ? (tc.action.toolId ?? 'unknown') : 'none'}`
         );
