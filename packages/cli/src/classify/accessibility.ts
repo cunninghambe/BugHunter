@@ -22,6 +22,21 @@ export const AXE_RUN_SCRIPT = `
 })()
 `;
 
+// v0.41: axe script that also runs target-size (touch target AA) for mobile viewports.
+export const AXE_RUN_SCRIPT_MOBILE = `
+(function() {
+  if (!window.axe) return { violations: [] };
+  return new Promise(resolve => {
+    window.axe.run(document, {
+      runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'best-practice'] },
+      rules: { 'target-size': { enabled: true } }
+    })
+      .then(results => resolve({ violations: results.violations }))
+      .catch(() => resolve({ violations: [] }));
+  });
+})()
+`;
+
 export function classifyA11yDelta(
   preViolations: A11yViolation[],
   postViolations: A11yViolation[],

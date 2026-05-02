@@ -27,17 +27,17 @@ describe('detectorsCommand', () => {
     process.exitCode = undefined;
   });
 
-  it('lists all 122 entries in JSON format (v0.38: +9 interaction-palette wired kinds)', () => {
+  it('lists all 128 entries in JSON format (v0.41: +6 mobile wired kinds)', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { format: 'json' }));
     const json = JSON.parse(output) as { meta: { total: number }; entries: unknown[] };
-    expect(json.entries).toHaveLength(122);
-    expect(json.meta.total).toBe(122);
+    expect(json.entries).toHaveLength(128);
+    expect(json.meta.total).toBe(128);
   });
 
   it('JSON meta has correct wired/deferred/dead counts', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { format: 'json' }));
     const json = JSON.parse(output) as { meta: { wired: number; deferred: number; dead: number } };
-    expect(json.meta.wired).toBe(121);
+    expect(json.meta.wired).toBe(127);
     expect(json.meta.deferred).toBe(1);
     expect(json.meta.dead).toBe(0);
   });
@@ -60,12 +60,12 @@ describe('detectorsCommand', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('table output includes all 122 entries (v0.38: +9 interaction-palette wired kinds)', () => {
+  it('table output includes all 128 entries (v0.41: +6 mobile wired kinds)', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { format: 'table' }));
     const lines = output.split('\n').filter(l => l.includes('|'));
     // header + divider aren't included in line count; entries have '|' separator
     const entryLines = lines.filter(l => !l.startsWith('-') && !l.startsWith('BugKind'));
-    expect(entryLines).toHaveLength(122);
+    expect(entryLines).toHaveLength(128);
   });
 
   it('table output has no ANSI escape codes', () => {

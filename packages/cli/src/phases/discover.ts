@@ -22,6 +22,7 @@ import { collapseElements } from '../discovery/element-collapse.js';
 import { classifyVisualAnomaliesConsistent } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
+import { scanCssForHoverOnly } from '../static/tools/hover-only-affordance.js';
 import { log } from '../log.js';
 import micromatch from 'micromatch';
 import { runLocaleStress, captureLtrRectMap } from './locale-stress.js';
@@ -616,6 +617,49 @@ async function runStaticAnalysisPhase(
 
   if (detections.length > 0) {
     log.info(`static: found ${detections.length} detection(s) across ${runs.filter(r => !r.skipped).length} tool(s)`);
+  }
+
+  // v0.41: hover-only CSS scan when mobile mode is enabled.
+  if (config.mobile?.enabled === true && config.mobile.hoverOnlyScan !== false) {
+    const cssDetections = runHoverOnlyCssScan(projectDir);
+    detections.push(...cssDetections);
+  }
+
+  return detections;
+}
+
+/** Scan all .css files in projectDir for hover-only affordances. */
+function runHoverOnlyCssScan(projectDir: string): BugDetection[] {
+  const detections: BugDetection[] = [];
+  const cssFiles: string[] = [];
+
+  function collectCss(dir: string, depth: number): void {
+    if (depth > 6) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        collectCss(full, depth + 1);
+      } else if (entry.isFile() && entry.name.endsWith('.css')) {
+        cssFiles.push(full);
+      }
+    }
+  }
+
+  collectCss(projectDir, 0);
+
+  for (const cssPath of cssFiles) {
+    let css: string;
+    try { css = fs.readFileSync(cssPath, 'utf-8'); } catch { continue; }
+    const source = path.relative(projectDir, cssPath);
+    const found = scanCssForHoverOnly(css, source);
+    detections.push(...found);
+  }
+
+  if (detections.length > 0) {
+    log.info(`mobile/hover-only: found ${detections.length} detection(s) in ${cssFiles.length} CSS files`);
   }
 
   return detections;

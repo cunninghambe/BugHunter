@@ -493,6 +493,19 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
       const invariantName = detection.dataIntegrityContext?.invariantName ?? '';
       return `${detection.kind}|${invariantName}|${detection.endpoint ?? detection.pageRoute ?? ''}`;
     }
+    // v0.41 mobile / responsive kinds
+    case 'touch_target_too_small':
+      return `touch_target_too_small|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+    case 'hover_only_affordance':
+      return `hover_only_affordance|${detection.selectorClass ?? ''}`;
+    case 'viewport_100vh_break':
+      return `viewport_100vh_break|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+    case 'soft_keyboard_occlusion':
+      return `soft_keyboard_occlusion|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+    case 'orientation_change_layout_break':
+      return `orientation_change_layout_break|${detection.pageRoute ?? ''}|${detection.selectorClass ?? ''}`;
+    case 'pull_to_refresh_conflict':
+      return `pull_to_refresh_conflict|${detection.pageRoute ?? ''}`;
   }
 }
 

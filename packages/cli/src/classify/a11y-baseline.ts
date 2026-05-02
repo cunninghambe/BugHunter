@@ -86,6 +86,19 @@ export function classifyA11yBaseline(input: A11yBaselineInput): BugDetection[] {
           a11yContext: { axeRuleId: 'label' },
         });
       }
+    } else if (violation.id === 'target-size') {
+      // v0.41: axe target-size (touch target AA 24×24 px minimum) — mobile viewports only.
+      for (const node of violation.nodes) {
+        const sel = selectorFromNode(node);
+        const msg = (node as AxeNode).any?.[0]?.message ?? '';
+        detections.push({
+          kind: 'touch_target_too_small',
+          rootCause: `Touch target below 24×24 px minimum${sel !== '' ? ` on ${sel}` : ''}${msg !== '' ? `: ${msg}` : ''}`,
+          pageRoute,
+          selectorClass: sel !== '' ? sel : undefined,
+          a11yContext: { axeRuleId: 'target-size' },
+        });
+      }
     }
     // All other axe ids: ignored at baseline — delta path handles them per-action.
   }

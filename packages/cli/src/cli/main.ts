@@ -158,6 +158,14 @@ Performance / heap:
   --heap-diff-min-instances <n>  Min instances for diff (default 10)
   --heap-diff-min-bytes <n>   Min bytes for diff (default 5000000)
 
+Mobile / responsive (v0.41):
+  --mobile                    Enable mobile mode: iOS/Android UA + mobile viewports.
+                              Runs touch-target, hover-only, 100vh, soft-keyboard,
+                              orientation-change, and pull-to-refresh detectors.
+  --mobile-ua <ua>            Override User-Agent string (default: iOS Safari 17.5).
+  --mobile-viewport <WxH>     Add extra viewport (e.g. 390x844). Comma-separated.
+                              Always includes 375x667, 390x844, 412x915.
+
 Cross-run / regression / history:
   bughunter bisect <bug-id> [--commit-range <a..b>] [--consensus <n>] [--threshold <m>]
                             [--strict] [--build-command <cmd>] [--app-command <cmd>]
@@ -365,6 +373,10 @@ async function main(): Promise<void> {
           noInteractionPalette: flags['no-interaction-palette'] === true,
           interactionPaletteMax: typeof flags['interaction-palette-max'] === 'string' ? parseInt(flags['interaction-palette-max'], 10) : undefined,
           interactionVisionThreshold: typeof flags['interaction-vision-threshold'] === 'string' ? parseFloat(flags['interaction-vision-threshold']) : undefined,
+          // v0.41 mobile / responsive flags
+          mobile: flags['mobile'] === true,
+          mobileUa: typeof flags['mobile-ua'] === 'string' ? flags['mobile-ua'] : undefined,
+          mobileViewport: typeof flags['mobile-viewport'] === 'string' ? flags['mobile-viewport'].split(',') : undefined,
         });
         break;
       }

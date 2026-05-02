@@ -227,6 +227,12 @@ export interface BrowserMcpAdapter {
     eventType: string,
     eventInit?: Record<string, unknown>,
   ): Promise<{ dispatched: boolean; defaultPrevented: boolean }>;
+
+  /** v0.41: override the browser User-Agent string. Optional — absent on adapters that predate v0.41. */
+  setUserAgent?(ua: string): Promise<{ ok: true } | { ok: false; reason: string }>;
+
+  /** v0.41: simulate virtual keyboard insets (CDP Emulation.setDeviceMetricsOverride). Optional. */
+  setVirtualKeyboardInsets?(bottomPx: number, viewportWidth: number, viewportHeight: number): Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
 /** Scope narrows which requests are intercepted. All fields are ANDed. */
@@ -689,6 +695,50 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
         }
       }
       return { ok: false, reason: errMsg };
+    }
+  }
+
+  async setUserAgent(ua: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.setUserAgent(ua);
+    const tabId = this.requireTab();
+    try {
+      await this.tool<{ ok: boolean }>('set_user_agent', { tabId, userAgent: ua });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: String(err) };
+    }
+  }
+
+  async setVirtualKeyboardInsets(
+    bottomPx: number,
+    viewportWidth: number,
+    viewportHeight: number,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (this.legacyDelegate !== undefined) {
+      return this.legacyDelegate.setVirtualKeyboardInsets(bottomPx, viewportWidth, viewportHeight);
+    }
+    const tabId = this.requireTab();
+    try {
+      await this.tool<{ ok: boolean }>('set_virtual_keyboard', { tabId, height: bottomPx });
+      return { ok: true };
+    } catch (_mcpErr) {
+      // Fallback: shrink viewport height to simulate keyboard inset via CDP.
+      const simulatedHeight = viewportHeight - bottomPx;
+      const expr = [
+        `(function(){`,
+        `  window.__bh_kbHeight=${bottomPx};`,
+        `  window.resizeTo(${viewportWidth},${simulatedHeight});`,
+        `  if(window.visualViewport){window.visualViewport.dispatchEvent(new Event('resize'));}`,
+        `  window.dispatchEvent(new Event('resize'));`,
+        `  return true;`,
+        `})()`,
+      ].join('');
+      try {
+        await this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+        return { ok: true };
+      } catch (fallbackErr) {
+        return { ok: false, reason: `no_keyboard_simulation_available: ${String(fallbackErr)}` };
+      }
     }
   }
 
@@ -1213,6 +1263,45 @@ export class CamofoxBrowserHttpAdapter implements BrowserMcpAdapter {
         }
       }
       return { ok: false, reason: errMsg };
+    }
+  }
+
+  async setUserAgent(ua: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const tabId = this.requireTab();
+    try {
+      await this.mcpCall<{ ok: boolean }>('set_user_agent', { tabId, userAgent: ua });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: String(err) };
+    }
+  }
+
+  async setVirtualKeyboardInsets(
+    bottomPx: number,
+    viewportWidth: number,
+    viewportHeight: number,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const tabId = this.requireTab();
+    try {
+      await this.mcpCall<{ ok: boolean }>('set_virtual_keyboard', { tabId, height: bottomPx });
+      return { ok: true };
+    } catch (_mcpErr) {
+      const simulatedHeight = viewportHeight - bottomPx;
+      const expr = [
+        `(function(){`,
+        `  window.__bh_kbHeight=${bottomPx};`,
+        `  window.resizeTo(${viewportWidth},${simulatedHeight});`,
+        `  if(window.visualViewport){window.visualViewport.dispatchEvent(new Event('resize'));}`,
+        `  window.dispatchEvent(new Event('resize'));`,
+        `  return true;`,
+        `})()`,
+      ].join('');
+      try {
+        await this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: expr });
+        return { ok: true };
+      } catch (fallbackErr) {
+        return { ok: false, reason: `no_keyboard_simulation_available: ${String(fallbackErr)}` };
+      }
     }
   }
 

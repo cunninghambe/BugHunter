@@ -1041,6 +1041,61 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Soft-deleted record still visible via read query.',
   },
+
+  // — § v0.41 mobile / responsive kinds (wired) —
+  {
+    kind: 'touch_target_too_small',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/classify/a11y-baseline.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'production',
+    specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
+    note: 'Interactive element bounding rect below 44×44 CSS px on mobile viewport.',
+  },
+  {
+    kind: 'hover_only_affordance',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/static/tools/hover-only-affordance.ts',
+    inputSource: 'production',
+    specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
+    note: 'CSS :hover-only interactive affordance with no touch/focus equivalent.',
+  },
+  {
+    kind: 'viewport_100vh_break',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/perf/viewport-100vh-detector.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'production',
+    specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
+    note: '100vh layout breaks when mobile browser chrome shrinks viewport.',
+  },
+  {
+    kind: 'soft_keyboard_occlusion',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/perf/soft-keyboard-detector.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
+    note: 'Focused input field hidden behind virtual keyboard insets.',
+  },
+  {
+    kind: 'orientation_change_layout_break',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/perf/orientation-change-detector.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
+    note: 'Layout break detected after device orientation change.',
+  },
+  {
+    kind: 'pull_to_refresh_conflict',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/perf/pull-to-refresh-detector.ts',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'production',
+    specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
+    note: 'Pull-to-refresh gesture conflicts with in-page scroll container.',
+  },
 ];
 
 /**

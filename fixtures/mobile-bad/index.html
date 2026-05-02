@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>mobile-bad fixture</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- touch_target_too_small: 12x12 button (below 24px AA threshold) -->
+  <button class="icon-btn" aria-label="close">X</button>
+
+  <!-- hover_only_affordance: a link with hover-only CSS feedback -->
+  <a href="#" class="btn">Click me</a>
+
+  <!-- soft_keyboard_occlusion: a form with an input positioned low on page -->
+  <form style="margin-top: 600px;">
+    <label for="email">Email</label>
+    <input id="email" type="email" name="email" placeholder="you@example.com">
+    <button type="submit">Submit</button>
+  </form>
+
+  <!-- viewport_100vh_break: div sized 100vh in a fixed position -->
+  <div class="sticky-footer" aria-label="footer-overlay">Footer</div>
+
+  <!-- pull_to_refresh_conflict: non-passive touchstart listener near top of page -->
+  <script>
+    // Non-passive touchstart — conflicts with browser PTR gesture
+    document.addEventListener('touchstart', function(e) {
+      e.preventDefault();
+    }); // passive: false (default)
+
+    document.addEventListener('touchmove', function(e) {
+      e.preventDefault();
+    }); // passive: false (default)
+  </script>
+</body>
+</html>
