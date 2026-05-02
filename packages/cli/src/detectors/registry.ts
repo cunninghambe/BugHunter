@@ -752,6 +752,32 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'Trusted Types CSP violation — unsafe DOM sink usage detected.',
   },
+
+  // — § v0.20 network-fault kinds (wired) —
+  {
+    kind: 'network_fault_unhandled',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/classify/network-fault-unhandled.ts:54',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V20_NETWORK_FAULTS.md',
+  },
+  {
+    kind: 'network_fault_optimistic_no_revert',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/classify/network-fault-optimistic-revert.ts:51',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V20_NETWORK_FAULTS.md',
+  },
+  {
+    kind: 'infinite_loading',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/classify/infinite-loading.ts:69',
+    runnerSite: 'packages/cli/src/phases/execute.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V20_NETWORK_FAULTS.md',
+  },
 ];
 
 /**

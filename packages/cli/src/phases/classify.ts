@@ -80,6 +80,11 @@ const KIND_PRIORITY: BugKind[] = [
   // v0.22 form stale (§4.1)
   'nav_form_state_stale',
   'dom_error_text',
+  // v0.20 network-fault kinds: above visual_anomaly / missing_state_change,
+  // below network_4xx_unexpected (which we suppress under fault anyway).
+  'network_fault_optimistic_no_revert',  // most actionable — UI lied to user
+  'network_fault_unhandled',
+  'infinite_loading',
   'visual_anomaly',
   'missing_state_change',
   // v0.22 form lost (§4.1) — UX-grade, lower priority
@@ -120,6 +125,30 @@ function priorityOf(kind: BugKind): number {
   return idx === -1 ? KIND_PRIORITY.length : idx;
 }
 
+/**
+ * v0.20: suppress detections that are caused by the fault injection, not by app bugs.
+ * Called when the parent TestCase has faultInjected !== undefined.
+ *
+ * Suppressed: network_5xx, network_4xx_unexpected, surface_call_failed.
+ * Console errors are suppressed unless they indicate an unhandled-promise rejection
+ * or parse error (which are bugs regardless of fault context).
+ * unhandled_exception is always kept — exceptions are bugs.
+ */
+function applyFaultSuppressionFilter(detections: BugDetection[]): BugDetection[] {
+  return detections.filter(d => {
+    if (d.kind === 'network_5xx' || d.kind === 'network_4xx_unexpected' || d.kind === 'surface_call_failed') {
+      return false;
+    }
+    if (d.kind === 'console_error') {
+      // Keep if it's an unhandled rejection or parse error
+      const text = d.rootCause;
+      const isSignificant = /unhandled.*rejection|uncaught.*error|syntaxerror|parse.*error|json.*parse/i.test(text);
+      return isSignificant;
+    }
+    return true;
+  });
+}
+
 // Given multiple detections for one test result, pick the canonical (highest-priority)
 // one and attach the rest as secondaryObservations.
 function applyPriorityFilter(detections: BugDetection[]): BugDetection | null {
@@ -134,7 +163,7 @@ function applyPriorityFilter(detections: BugDetection[]): BugDetection | null {
   };
 }
 
-export function runClassify(results: TestResult[]): ClassifyResult {
+export function runClassify(results: TestResult[], testCaseMap?: Map<string, { faultInjected?: unknown }>): ClassifyResult {
   const bugs: Array<{ testId: string; detection: BugDetection }> = [];
   const infraFailures: InfrastructureFailure[] = [];
 
@@ -144,7 +173,16 @@ export function runClassify(results: TestResult[]): ClassifyResult {
       // Infrastructure failures do NOT enter bugs
       continue;
     }
-    const canonical = applyPriorityFilter(result.bugs);
+
+    let detections = result.bugs;
+
+    // v0.20: apply fault suppression when this test had a fault injected
+    const tc = testCaseMap?.get(result.testId);
+    if (tc?.faultInjected !== undefined) {
+      detections = applyFaultSuppressionFilter(detections);
+    }
+
+    const canonical = applyPriorityFilter(detections);
     if (canonical !== null) {
       bugs.push({ testId: result.testId, detection: canonical });
     }

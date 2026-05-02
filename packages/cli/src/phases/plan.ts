@@ -4,8 +4,9 @@ import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   BugHunterConfig, DiscoveredForm, DiscoveredPage, DiscoveryOutput, TestCase, ToolMeta,
   RaceConditionsConfig, InterleavingVariant,
-  Action, FuzzConfig,
+  Action, FuzzConfig, NetworkFaultSpec,
 } from '../types.js';
+import { resolveFaultPalette, isToolDenylisted } from '../security/network-fault-palette.js';
 import type { FuzzOptions, FuzzStrategy } from '../mutation/fuzz.js';
 import {
   DEFAULT_VARIANTS,
@@ -370,6 +371,60 @@ export async function runPlan(
     if (clockVariantsCount > 0) {
       log.info(`clock-testing: +${clockVariantsCount} clock-conditioned variants for ${seenClockShapes.size} date-sensitive shapes`);
     }
+  }
+
+  // v0.20: network-fault test case generation (§ 3.1)
+  if (config.networkFaults?.enabled === true) {
+    const faultPalette = resolveFaultPalette(config.networkFaults.variants);
+    const denylist = config.networkFaults.toolDenylist ?? [];
+    const maxFaultTests = config.networkFaults.maxFaultTests ?? 200;
+    const includeNavigation = config.networkFaults.includeNavigation ?? false;
+
+    // Collect mutating actions from the already-generated test cases, grouped by role.
+    // "Mutating" = sideEffectClass='mutating' (api) or UI click/submit (browser path).
+    // Collapse by (role, action-signature, variant) to avoid combinatorial explosion.
+    const faultTestsByRole = new Map<string, number>();
+    const seenFaultSigs = new Set<string>();
+    const faultCases: TestCase[] = [];
+
+    for (const tc of testCases) {
+      if (tc.race !== undefined) continue; // skip race test cases
+      if (tc.faultInjected !== undefined) continue; // skip already-fault-injected cases
+
+      const isMutating = tc.action.kind === 'submit'
+        || tc.action.kind === 'click'
+        || (tc.action.kind === 'api_call' && tc.action.expectedOutcome !== 'expected_failure');
+      const isNavigating = tc.action.kind === 'navigate' || tc.action.kind === 'render';
+
+      if (!isMutating && !(includeNavigation && isNavigating)) continue;
+
+      // Skip tools on the denylist
+      if (tc.action.toolId !== undefined && isToolDenylisted(tc.action.toolId, denylist)) continue;
+
+      const roleCount = faultTestsByRole.get(tc.role) ?? 0;
+      if (roleCount >= maxFaultTests) continue;
+
+      for (const fault of faultPalette) {
+        const sig = `${tc.role}|${tc.formSignature ?? tc.elementSignature ?? tc.action.selector ?? tc.action.kind}|${fault.kind}`;
+        if (seenFaultSigs.has(sig)) continue;
+        seenFaultSigs.add(sig);
+
+        const newRoleCount = faultTestsByRole.get(tc.role) ?? 0;
+        if (newRoleCount >= maxFaultTests) break;
+
+        const faultCase: TestCase = {
+          ...tc,
+          id: `${tc.id}_fault_${fault.kind}`,
+          expectedOutcome: 'expected_failure',
+          faultInjected: fault as NetworkFaultSpec,
+        };
+        faultCases.push(faultCase);
+        faultTestsByRole.set(tc.role, newRoleCount + 1);
+      }
+    }
+
+    testCases.push(...faultCases);
+    log.info(`network-faults: planned ${faultCases.length} fault-injection tests`);
   }
 
   // Orphan-fixture warning: bodyFixtures keys not in catalog

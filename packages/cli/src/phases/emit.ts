@@ -1,7 +1,7 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
 import * as fs from 'node:fs';
-import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, BrowserPlatformTelemetry, Severity, ClockTestingTelemetry } from '../types.js';
+import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, BrowserPlatformTelemetry, Severity, ClockTestingTelemetry, NetworkFaultsTelemetry } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { buildCoverage } from './coverage.js';
 import { canonicalStringify } from '../lib/canonical.js';
@@ -49,6 +49,8 @@ export type TestCounters = {
   idor?: IdorTelemetry;
   /** v0.36: browser-platform probe telemetry — present when browserPlatform.enabled = true. */
   browserPlatform?: BrowserPlatformTelemetry;
+  /** v0.20: network-fault telemetry — present when networkFaults.enabled = true. */
+  networkFaults?: NetworkFaultsTelemetry;
   /** v0.28: number of clusters suppressed by .bughunter/suppressions.json. */
   suppressedClusters?: number;
   /** v0.28: suppressed sample details (up to 20). */
@@ -140,6 +142,7 @@ export function runEmit(
     ...(counters?.idor !== undefined ? { idor: counters.idor } : {}),
     ...(counters?.clockTesting !== undefined ? { clockTesting: counters.clockTesting } : {}),
     ...(counters?.browserPlatform !== undefined ? { browserPlatform: counters.browserPlatform } : {}),
+    ...(counters?.networkFaults !== undefined ? { networkFaults: counters.networkFaults } : {}),
     ...(counters?.deterministic !== undefined ? { deterministic: counters.deterministic } : {}),
   };
 

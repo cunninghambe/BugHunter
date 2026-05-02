@@ -1,6 +1,7 @@
 // Core domain types for BugHunter v0.1 — extended for v0.5 security & hygiene.
 
 import type { NavigationEvent } from './adapters/cdp-session.js';
+import type { NotificationsConfig } from './notify/types.js';
 export type { NavigationEvent };
 import type { ClockConditionName } from './security/clock-conditions.js';
 export type { ClockConditionName };
@@ -125,7 +126,11 @@ export type BugKind =
   | 'webrtc_ice_failure'
   | 'subresource_integrity_violation'
   | 'coop_coep_violation'
-  | 'trusted_types_violation';
+  | 'trusted_types_violation'
+  // v0.20 network-fault kinds
+  | 'network_fault_unhandled'
+  | 'network_fault_optimistic_no_revert'
+  | 'infinite_loading';
 
 /**
  * v0.19 back-compat alias: old v0.5 JSONL records used these kinds.
@@ -665,6 +670,11 @@ export type TestCase = {
    * Executor branches on this field → executeRaceTest instead of runUiTest.
    */
   race?: { variant: InterleavingVariant };
+  /**
+   * v0.20: when set, the executor wraps the action in applyNetworkFault → action → clearNetworkFault
+   * and the classifier applies fault-suppression rules (§ 5.4).
+   */
+  faultInjected?: NetworkFaultSpec;
 };
 
 export type TestResult = {
@@ -771,6 +781,86 @@ export type InjectionDetectionContext = {
   proof: string;
   /** Up to 200-char snippet of the matching response substring. */
   evidence: string;
+};
+
+// --- v0.20 network-fault types ---
+
+/**
+ * Discriminated union describing each network fault variant.
+ * Mirrors the palette in security/network-fault-palette.ts.
+ */
+export type NetworkFaultSpec =
+  | { kind: 'offline' }
+  | { kind: 'slow_3g' }
+  | { kind: 'high_latency'; latencyMs: number }
+  | { kind: 'timeout_at_request' }
+  | { kind: 'timeout_at_response' }
+  | { kind: 'intermittent'; dropEveryN: number }
+  | { kind: 'server_5xx'; status: 500 | 502 | 503 }
+  | { kind: 'malformed_response'; mode: 'truncated_json' | 'wrong_content_type' };
+
+/** Result shape from applyNetworkFault. */
+export type ApplyNetworkFaultResult =
+  | { applied: true }
+  | { applied: false; reason: 'tool_not_available' | 'fault_unsupported' | string };
+
+/** Context attached to v0.20 network-fault BugDetections. */
+export type NetworkFaultContext = {
+  /** The fault variant that was applied. */
+  faultVariant: NetworkFaultSpec['kind'];
+  /** Spec of the fault, for serialisation. */
+  faultSpec: NetworkFaultSpec;
+  /** Endpoint(s) the action triggered, normalized. */
+  affectedEndpoints: string[];
+  /** True if post-fault same-endpoint request rate exceeded retryStormThresholdRps. */
+  retryStormDetected: boolean;
+  /** Observed post-fault req/sec on the busiest endpoint. */
+  observedRetryRateRps: number;
+  /**
+   * Detection proof.
+   * 'no_error_ui_no_rollback': UI showed no error and no rollback for asyncMaxWaitMs.
+   * 'optimistic_state_persisted': pre-action and observed-success states diverged then never converged on failure.
+   * 'spinner_persists': aria-busy or known-loading-class present at action-time AND still present at asyncMaxWaitMs.
+   */
+  proof: 'no_error_ui_no_rollback' | 'optimistic_state_persisted' | 'spinner_persists';
+};
+
+export type NetworkFaultsConfig = {
+  /** Master switch. Default: false. */
+  enabled?: boolean;
+  /** Variants to run. Default: DEFAULT_FAULT_PALETTE (six of eight). */
+  variants?: NetworkFaultSpec[];
+  /**
+   * toolIds whose fault tests are skipped (e.g. payment endpoints). Glob-supported.
+   * Always-skipped: tools tagged sideEffectClass='external'.
+   */
+  toolDenylist?: string[];
+  /** Hard cap on fault tests per role across the whole run. Default: 200. */
+  maxFaultTests?: number;
+  /**
+   * Post-fault same-endpoint requests/sec threshold above which retryStormDetected fires.
+   * Default: 10.
+   */
+  retryStormThresholdRps?: number;
+  /**
+   * Per-test wall-clock cap for fault tests, in ms. Capped at min(asyncMaxWaitMs * 1.5, 60000).
+   * Default: derived from asyncMaxWaitMs.
+   */
+  perTestMaxMs?: number;
+  /**
+   * Include read-only navigation actions in fault scheduling. Default: false (mutating-only).
+   */
+  includeNavigation?: boolean;
+};
+
+export type NetworkFaultsTelemetry = {
+  enabled: boolean;
+  faultsAttempted: number;
+  faultsSucceeded: number;
+  faultsSkipped: { reason: string; count: number }[];
+  detectionsByKind: Record<string, number>;
+  retryStormsDetected: number;
+  durationMs: number;
 };
 
 export type PenTestingConfig = {
@@ -970,6 +1060,8 @@ export type BugDetection = {
   clockContext?: ClockContext;
   /** v0.36: populated for browser-platform surface findings. */
   browserPlatformContext?: BrowserPlatformContext;
+  /** v0.20: populated for network-fault findings. */
+  networkFaultContext?: NetworkFaultContext;
 };
 
 /** v0.23: clock-injection proof context attached to clock-related BugDetections. */
@@ -1418,6 +1510,8 @@ export type BugHunterConfig = {
   readOnly?: boolean;
   /** v0.36: browser-platform surface probe config. Default: disabled. */
   browserPlatform?: BrowserPlatformConfig;
+  /** v0.20: network-fault injection palette. Default: disabled (opt-in via --network-faults). */
+  networkFaults?: NetworkFaultsConfig;
 };
 
 /** v0.23: configuration for the clock-injection palette. */
