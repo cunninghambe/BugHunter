@@ -1,5 +1,6 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import type { BugCluster } from '../../types.ts';
+import { suspectedFilePath } from '../../types.ts';
 import type { ActionLogEntry, HarFile } from '../../fs/directory-loader.ts';
 import { ExpandableOccurrence } from '../OccurrenceTimeline/OccurrenceTimeline.tsx';
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary.tsx';
@@ -88,7 +89,7 @@ function OverviewTab({ cluster }: { cluster: BugCluster }) {
           <dt>Suspected Files</dt>
           <dd>
             <ul className={styles.fileList}>
-              {cluster.suspectedFiles.map(f => <li key={f}><code>{f}</code></li>)}
+              {cluster.suspectedFiles.map(f => { const p = suspectedFilePath(f); return <li key={p}><code>{p}</code></li>; })}
             </ul>
           </dd>
         </>

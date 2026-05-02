@@ -24,7 +24,12 @@ export type {
   InjectionDetectionContext,
   RaceDetectionContext,
   PerfArtifacts,
+  SuspectedFileLike,
 } from '@bughunter/types';
+
+// Re-export the suspectedFilePath helper so viewer code can normalise
+// both legacy string entries and v0.46+ SuspectedFile objects uniformly.
+export { suspectedFilePath } from '@bughunter/types';
 
 // Derived types for inline shapes from BugDetection that have no standalone name.
 import type { BugDetection } from '@bughunter/types';
