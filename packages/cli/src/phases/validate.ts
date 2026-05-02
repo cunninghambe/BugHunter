@@ -94,8 +94,14 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
         'See SPEC_V20_NETWORK_FAULTS.md § 6.'
       );
     }
-    // Probe by calling with offline fault and checking the result
-    const probeTab = await opts.browserMcp.openTab('about:blank').catch((err: unknown) => {
+    // Probe using appBaseUrl (must be an http/https URL — camofox rejects about:blank with HTTP 400)
+    if (opts.config.appBaseUrl === undefined) {
+      throw new Error(
+        'networkFaults.enabled = true requires appBaseUrl to be set (used as probe URL). ' +
+        'Add "appBaseUrl" to your .bughunter/config.json and retry.'
+      );
+    }
+    const probeTab = await opts.browserMcp.openTab(opts.config.appBaseUrl).catch((err: unknown) => {
       throw new Error(`networkFaults probe: could not open probe tab: ${String(err)}`);
     });
     try {
