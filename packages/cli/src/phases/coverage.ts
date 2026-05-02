@@ -46,7 +46,8 @@ type InputFamily =
   | 'vision'
   | 'race'
   | 'browser-platform'
-  | 'agent';
+  | 'agent'
+  | 'i18n';
 
 /** Canonical kind → input family mapping (spec §4.2). */
 const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
@@ -148,6 +149,14 @@ const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
   network_fault_unhandled: 'security-dynamic',
   network_fault_optimistic_no_revert: 'security-dynamic',
   infinite_loading: 'security-dynamic',
+  // v0.37 i18n kinds
+  i18n_rtl_layout_break: 'i18n',
+  i18n_long_string_overflow: 'i18n',
+  i18n_date_format_ambiguous: 'i18n',
+  i18n_hardcoded_string: 'i18n',
+  i18n_pluralization_broken: 'i18n',
+  i18n_currency_format_broken: 'i18n',
+  i18n_timezone_display_wrong: 'i18n',
 };
 
 type CounterSnapshot = {
@@ -196,6 +205,10 @@ function isAgentObserved(runState: RunState): boolean {
   return runState.config.agent?.enabled === true;
 }
 
+function isI18nObserved(runState: RunState): boolean {
+  return runState.config.localeStress === true;
+}
+
 /** Compute inputObserved for a given kind, given run state and counters. */
 function inputObservedForFamily(
   family: InputFamily,
@@ -213,6 +226,7 @@ function inputObservedForFamily(
     case 'race': return isRaceObserved(counters);
     case 'browser-platform': return isBrowserPlatformObserved(runState);
     case 'agent': return isAgentObserved(runState);
+    case 'i18n': return isI18nObserved(runState);
   }
 }
 

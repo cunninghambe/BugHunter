@@ -829,6 +829,63 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
   },
+
+  // — § v0.37 i18n / locale stress kinds (wired) —
+  {
+    kind: 'i18n_rtl_layout_break',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/discovery/locale/rtl.ts:33',
+    runnerSite: 'packages/cli/src/phases/locale-stress.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V37_I18N_STRESS.md',
+  },
+  {
+    kind: 'i18n_long_string_overflow',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/discovery/locale/long-string.ts:42',
+    runnerSite: 'packages/cli/src/phases/locale-stress.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V37_I18N_STRESS.md',
+  },
+  {
+    kind: 'i18n_date_format_ambiguous',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/discovery/locale/ambiguous-date.ts:40',
+    runnerSite: 'packages/cli/src/phases/locale-stress.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V37_I18N_STRESS.md',
+  },
+  {
+    kind: 'i18n_hardcoded_string',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/static/tools/hardcoded-strings.ts:138',
+    inputSource: 'production',
+    specReference: 'SPEC_V37_I18N_STRESS.md',
+  },
+  {
+    kind: 'i18n_pluralization_broken',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/discovery/locale/pluralization.ts:41',
+    runnerSite: 'packages/cli/src/phases/locale-stress.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V37_I18N_STRESS.md',
+  },
+  {
+    kind: 'i18n_currency_format_broken',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/discovery/locale/currency.ts:44',
+    runnerSite: 'packages/cli/src/phases/locale-stress.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V37_I18N_STRESS.md',
+  },
+  {
+    kind: 'i18n_timezone_display_wrong',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/discovery/locale/timezone-display.ts:43',
+    runnerSite: 'packages/cli/src/phases/locale-stress.ts',
+    inputSource: 'synthetic-only',
+    specReference: 'SPEC_V37_I18N_STRESS.md',
+  },
 ];
 
 /**

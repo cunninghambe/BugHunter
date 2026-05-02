@@ -405,7 +405,14 @@
       "fixture": "browser-platform-bad",
       "port": 5793,
       "route": "/trusted-types-violate"
-    }
+    },
+    "i18n_rtl_layout_break":             { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
+    "i18n_long_string_overflow":         { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
+    "i18n_date_format_ambiguous":        { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
+    "i18n_hardcoded_string":             { "fixture": "i18n-bad",          "port": null, "route": "/" },
+    "i18n_pluralization_broken":         { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
+    "i18n_currency_format_broken":       { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
+    "i18n_timezone_display_wrong":       { "fixture": "i18n-bad",          "port": 5792, "route": "/" }
   },
   "deferred": [
     "xss_stored"

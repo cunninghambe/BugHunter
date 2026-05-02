@@ -27,25 +27,25 @@ describe('detectorsCommand', () => {
     process.exitCode = undefined;
   });
 
-  it('lists all 62 entries in JSON format', () => {
+  it('lists all 80 entries in JSON format', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { format: 'json' }));
     const json = JSON.parse(output) as { meta: { total: number }; entries: unknown[] };
-    expect(json.entries).toHaveLength(62);
-    expect(json.meta.total).toBe(62);
+    expect(json.entries).toHaveLength(80);
+    expect(json.meta.total).toBe(80);
   });
 
   it('JSON meta has correct wired/deferred/dead counts', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { format: 'json' }));
     const json = JSON.parse(output) as { meta: { wired: number; deferred: number; dead: number } };
-    expect(json.meta.wired).toBe(57);
-    expect(json.meta.deferred).toBe(5);
+    expect(json.meta.wired).toBe(79);
+    expect(json.meta.deferred).toBe(1);
     expect(json.meta.dead).toBe(0);
   });
 
-  it('--status deferred returns exactly 5 entries', () => {
+  it('--status deferred returns exactly 1 entry', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { status: 'deferred', format: 'json' }));
     const json = JSON.parse(output) as { entries: unknown[] };
-    expect(json.entries).toHaveLength(5);
+    expect(json.entries).toHaveLength(1);
   });
 
   it('--kind console_error returns one entry with correct detectorSite', () => {
@@ -60,12 +60,12 @@ describe('detectorsCommand', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('table output includes all 62 entries', () => {
+  it('table output includes all 80 entries', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { format: 'table' }));
     const lines = output.split('\n').filter(l => l.includes('|'));
     // header + divider aren't included in line count; entries have '|' separator
     const entryLines = lines.filter(l => !l.startsWith('-') && !l.startsWith('BugKind'));
-    expect(entryLines).toHaveLength(62);
+    expect(entryLines).toHaveLength(80);
   });
 
   it('table output has no ANSI escape codes', () => {

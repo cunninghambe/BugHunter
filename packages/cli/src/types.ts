@@ -137,7 +137,33 @@ export type BugKind =
   | 'prompt_injection_executed'
   | 'streaming_response_truncated'
   | 'tool_call_failure_unhandled'
-  | 'agent_cost_per_turn_high';
+  | 'agent_cost_per_turn_high'
+  // v0.37 i18n / locale stress kinds
+  | 'i18n_currency_format_broken'
+  | 'i18n_date_format_ambiguous'
+  | 'i18n_hardcoded_string'
+  | 'i18n_long_string_overflow'
+  | 'i18n_pluralization_broken'
+  | 'i18n_rtl_layout_break'
+  | 'i18n_timezone_display_wrong';
+
+/**
+ * v0.37: Lightweight bounding-rect value type — avoids importing DOM globals in Node.
+ * x/y = left/top, w = width, h = height.
+ */
+export type DOMRectLite = { x: number; y: number; w: number; h: number };
+
+/**
+ * v0.37: Ordered locale variant identifiers for the locale-stress pass.
+ */
+export type LocaleVariant =
+  | 'ltr_baseline'
+  | 'rtl'
+  | 'long_string_de'
+  | 'long_string_zh'
+  | 'ambiguous_date'
+  | 'currency_jpy_bhd'
+  | 'pluralization_n0_n1_nmany';
 
 /**
  * v0.19 back-compat alias: old v0.5 JSONL records used these kinds.
@@ -617,6 +643,8 @@ export type DiscoveryOutput = {
    * These routes are excluded from hallucinated-route detection.
    */
   fixtureUnresolvableRoutes?: string[];
+  /** v0.37: detections from the locale-stress post-discovery phase. */
+  localeStressDetections?: BugDetection[];
 };
 
 export type SkippedItem = {
@@ -1577,6 +1605,8 @@ export type BugHunterConfig = {
   networkFaults?: NetworkFaultsConfig;
   /** v0.43: agentic-app detection subsystem. Default: disabled. */
   agent?: AgentConfig;
+  /** v0.37: enable locale-stress post-discovery phase. CLI: --locale-stress. */
+  localeStress?: boolean;
 };
 
 /** v0.23: configuration for the clock-injection palette. */

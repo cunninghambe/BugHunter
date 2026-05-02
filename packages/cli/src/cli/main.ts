@@ -119,6 +119,11 @@ Deterministic mode (v0.32):
   --allow-network-miss        When --frozen-network, fall through to live network on miss
                               instead of failing. Voids the determinism contract.
 
+i18n / locale stress:
+  --locale-stress             Enable i18n locale-stress post-discovery phase (RTL, long strings,
+                              ambiguous dates, currency format, pluralization, timezone).
+                              Gated by vision budget; runs per-URL after discovery.
+
 Accessibility / SEO:
   --a11y                      Enable accessibility_critical baseline + delta checks.
                               Delta runs axe pre/post each UI action; adds ~400ms/action.
@@ -343,6 +348,7 @@ async function main(): Promise<void> {
           browserPlatformSwStaleMs: typeof flags['browser-platform-sw-stale-ms'] === 'string'
             ? parseInt(flags['browser-platform-sw-stale-ms'], 10)
             : undefined,
+          localeStress: flags['locale-stress'] === true,
         });
         break;
       }

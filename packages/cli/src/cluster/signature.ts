@@ -399,6 +399,23 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
     }
     case 'agent_cost_per_turn_high':
       return `agent_cost_per_turn_high|${detection.endpoint ?? ''}|${detection.agentContext?.modelId ?? 'unknown'}`;
+    // v37 i18n / locale stress kinds
+    case 'i18n_rtl_layout_break':
+    case 'i18n_long_string_overflow':
+    case 'i18n_date_format_ambiguous':
+    case 'i18n_pluralization_broken':
+    case 'i18n_currency_format_broken':
+    case 'i18n_timezone_display_wrong': {
+      const sel = detection.selectorClass ?? '';
+      return `${detection.kind}|${detection.pageRoute ?? ''}|${sel}`;
+    }
+
+    case 'i18n_hardcoded_string': {
+      const file = detection.staticContext?.sourceFile ?? '';
+      const line = String(detection.staticContext?.sourceLine ?? '');
+      return `i18n_hardcoded_string|${file}|${line}`;
+    }
+
   }
 }
 

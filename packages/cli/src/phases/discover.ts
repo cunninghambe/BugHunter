@@ -24,6 +24,8 @@ import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
 import { log } from '../log.js';
 import micromatch from 'micromatch';
+import { runLocaleStress, captureLtrRectMap } from './locale-stress.js';
+import { runHardcodedStringsScanner } from '../static/tools/hardcoded-strings.js';
 
 const VISION_BASELINE_SETTLE_MS = 1500;
 
@@ -236,6 +238,33 @@ export async function runDiscover(
   // Static analysis pass (§ 3.4 — default-on; disable via staticAnalysis.enabled=false).
   const staticDetections = await runStaticAnalysisPhase(projectDir, config);
 
+  // v0.37: locale-stress post-discovery phase (§4.1) — opt-in via --locale-stress.
+  let localeStressDetections: BugDetection[] | undefined;
+  if (config.localeStress === true && browser !== undefined && visionClient !== undefined && visionBudget !== undefined) {
+    const allLocaleDetections: BugDetection[] = [];
+    for (const page of pages) {
+      const url = page.route;
+      try {
+        const ltrRectMap = await captureLtrRectMap(browser);
+        const output = await runLocaleStress({
+          url,
+          domWalk: { elements: page.elements, forms: page.forms, links: page.links },
+          ltrScreenshotPath: '',
+          ltrRectMap,
+          browser,
+          vision: visionClient,
+          visionBudget,
+          runId,
+          outDir: projectDir,
+        });
+        allLocaleDetections.push(...output.detections);
+      } catch (err) {
+        log.warn('locale-stress: page failed', { url, err: String(err) });
+      }
+    }
+    if (allLocaleDetections.length > 0) localeStressDetections = allLocaleDetections;
+  }
+
   return {
     pages,
     apiTools: filteredApiTools,
@@ -247,6 +276,7 @@ export async function runDiscover(
     visionConsistencyTelemetry: visionResult.consistencyTelemetry,
     visionByViewport: visionResult.byViewport,
     fixtureUnresolvableRoutes: fixtureUnresolvableRoutes.length > 0 ? fixtureUnresolvableRoutes : undefined,
+    localeStressDetections,
   };
 }
 
@@ -576,6 +606,12 @@ async function runStaticAnalysisPhase(
       log.warn(`static: tool ${run.toolId} warnings`, { warnings: run.warnings });
     }
     detections.push(...run.detections);
+  }
+
+  // v0.37: hardcoded-strings scanner — gated by localeStress flag.
+  if (config.localeStress === true) {
+    const hardcodedDetections = await runHardcodedStringsScanner({ projectRoot: projectDir });
+    detections.push(...hardcodedDetections);
   }
 
   if (detections.length > 0) {
