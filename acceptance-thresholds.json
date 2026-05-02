@@ -1,0 +1,23 @@
+{
+  "default": {
+    "precision": 0.85,
+    "recall": 0.80
+  },
+  "perKind": {
+    "visual_anomaly": {
+      "precision": 0.70,
+      "recall": 0.70,
+      "rationale": "Visual diffs are inherently noisy; tighter thresholds require image-classifier upgrade."
+    },
+    "axe_color_contrast_strong": {
+      "precision": 0.80,
+      "recall": 0.85,
+      "rationale": "axe-core itself can flag near-miss contrast pairs differently across browsers; recall is high but precision sometimes dips."
+    },
+    "memory_leak_attributed": {
+      "precision": 0.75,
+      "recall": 0.75,
+      "rationale": "Heap-attribution is approximate; exact root frame can vary."
+    }
+  }
+}

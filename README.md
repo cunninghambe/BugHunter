@@ -28,3 +28,17 @@ The skill is the smooth UX; the CLI is the load-bearing thing.
 
 - [SurfaceMCP](https://github.com/cunninghambe/SurfaceMCP) — the API surface
 - [ClaudeMCP](https://github.com/cunninghambe/ClaudeMCP) — the build-delegation MCP used for auto-fix
+- [BugHunter-bench](https://github.com/cunninghambe/BugHunter-bench) — public calibration corpus (5 apps, gold-standard bug lists)
+
+<!-- BEGIN CALIBRATION -->
+## Calibration (last updated TBD; bench v0.1.0; 5 apps; TBD gold entries)
+
+Precision/recall numbers are populated by CI after each merge to main.
+Run `bughunter calibrate --app <bench-app> --enforce-thresholds` locally to verify.
+
+| BugKind                                 | Precision | Recall | F1   | Apps |
+|-----------------------------------------|-----------|--------|------|------|
+| (pending first CI run)                  | —         | —      | —    | —    |
+
+[View raw report](https://github.com/cunninghambe/BugHunter/actions) · See [BugHunter-bench](https://github.com/cunninghambe/BugHunter-bench) for corpus details.
+<!-- END CALIBRATION -->

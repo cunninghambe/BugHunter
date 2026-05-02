@@ -33,6 +33,7 @@ import { ciCommand } from './ci.js';
 import { publishCommand } from './publish.js';
 import { bisectCommand } from './bisect/bisect-cmd.js';
 import { runBisectStep } from './bisect/bisect-step.js';
+import { calibrateCommand, CalibrateSetupError, CalibrateEnvironmentError, CalibrateGoldError, CalibrateRunError } from './calibrate.js';
 import type { DetectorStatus } from '../detectors/registry.js';
 import type { BugKind, PaletteVariant } from '../types.js';
 import { log } from '../log.js';
@@ -173,6 +174,23 @@ Diagnostics (self-test):
                               stays absent) within the wallclock budget.
                               Exit 0 = all pass, 1 = miss/false-positive/budget, 2 = setup error.
                               Contributor tool only — must run from a BugHunter repo checkout.
+
+Calibration:
+  bughunter calibrate --app <path> [--gold <path>] [--out <path>]
+                      [--enforce-thresholds] [--thresholds <path>]
+                      [--record-identities] [--force] [--no-boot] [--json]
+                              Runs BugHunter against a BugHunter-bench app directory,
+                              matches emitted clusters to gold-standard.jsonl, and computes
+                              per-kind precision/recall/F1. Emits calibration-report.json.
+                              --enforce-thresholds: exit 1 on per-kind threshold violation.
+                              --record-identities: rewrite gold-standard.jsonl with bugIdentity.
+                              --no-boot: skip bootScript/healthCheck/teardownScript.
+                              Exit codes: 0=pass, 1=threshold violation, 2=env error,
+                                          3=gold authoring error, 4=run failure.
+
+  Gold-standard format: JSONL, one object per line. Each entry: goldId, kind, expected,
+  bugIdentity (optional), structuralMatch (required if no bugIdentity), rationale, humanRepro[],
+  minClusterSize (optional), addedInBenchVersion.
 `;
 
 function parseArgs(argv: string[]): { command: string; args: string[]; flags: Record<string, string | boolean> } {
@@ -615,6 +633,45 @@ async function main(): Promise<void> {
           keepRun: flags['keep-run'] === true,
           skipFixtureUp: flags['skip-fixture-up'] === true,
         });
+        break;
+      }
+
+      case 'calibrate': {
+        const appPath = typeof flags['app'] === 'string' ? flags['app'] : '';
+        if (appPath === '') {
+          process.stderr.write('Usage: bughunter calibrate --app <path> [options]\n');
+          process.exitCode = 3;
+          break;
+        }
+        try {
+          await calibrateCommand({
+            appPath,
+            goldPath: typeof flags['gold'] === 'string' ? flags['gold'] : undefined,
+            outPath: typeof flags['out'] === 'string' ? flags['out'] : undefined,
+            enforceThresholds: flags['enforce-thresholds'] === true,
+            thresholdsPath: typeof flags['thresholds'] === 'string' ? flags['thresholds'] : undefined,
+            recordIdentities: flags['record-identities'] === true,
+            force: flags['force'] === true,
+            noBootTeardown: flags['no-boot'] === true,
+            jsonOutput: flags['json'] === true,
+          });
+        } catch (e) {
+          if (e instanceof CalibrateGoldError) {
+            process.stderr.write(`[calibrate] Gold authoring error: ${e.message}\n`);
+            process.exitCode = 3;
+          } else if (e instanceof CalibrateEnvironmentError) {
+            process.stderr.write(`[calibrate] Environment error: ${e.message}\n`);
+            process.exitCode = 2;
+          } else if (e instanceof CalibrateRunError) {
+            process.stderr.write(`[calibrate] Run error: ${e.message}\n`);
+            process.exitCode = 4;
+          } else if (e instanceof CalibrateSetupError) {
+            process.stderr.write(`[calibrate] Setup error: ${e.message}\n`);
+            process.exitCode = 2;
+          } else {
+            throw e;
+          }
+        }
         break;
       }
 
