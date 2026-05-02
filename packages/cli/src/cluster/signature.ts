@@ -434,6 +434,65 @@ export function clusterSignature(detection: BugDetection): ClusterKey {
       return `i18n_hardcoded_string|${file}|${line}`;
     }
 
+    // v0.38 interaction-palette kinds
+    case 'drag_drop_failure': {
+      const ctx = detection.interactionContext;
+      const proof = ctx?.kind === 'drag_drop' ? ctx.proof : '';
+      return `drag_drop_failure|${detection.pageRoute ?? ''}|${proof}`;
+    }
+    case 'paste_handler_failure': {
+      const ctx = detection.interactionContext;
+      const pasteSource = ctx?.kind === 'paste' ? ctx.pasteSource : '';
+      const proof = ctx?.kind === 'paste' ? ctx.proof : '';
+      return `paste_handler_failure|${detection.pageRoute ?? ''}|${pasteSource}|${proof}`;
+    }
+    case 'autofill_state_desync': {
+      const ctx = detection.interactionContext;
+      const field = ctx?.kind === 'autofill' ? ctx.autofillField : '';
+      const proof = ctx?.kind === 'autofill' ? ctx.proof : '';
+      return `autofill_state_desync|${detection.pageRoute ?? ''}|${field}|${proof}`;
+    }
+    case 'animation_state_corruption': {
+      const ctx = detection.interactionContext;
+      const proof = ctx?.kind === 'animation' ? ctx.proof : '';
+      return `animation_state_corruption|${detection.pageRoute ?? ''}|${proof}`;
+    }
+    case 'print_stylesheet_broken': {
+      const ctx = detection.interactionContext;
+      const proof = ctx?.kind === 'env' ? ctx.proof : '';
+      return `print_stylesheet_broken|${detection.pageRoute ?? ''}|${proof}`;
+    }
+    case 'reduced_motion_violation': {
+      const ctx = detection.interactionContext;
+      const proof = ctx?.kind === 'env' ? ctx.proof : '';
+      return `reduced_motion_violation|${detection.pageRoute ?? ''}|${proof}`;
+    }
+    case 'forced_colors_failure': {
+      const ctx = detection.interactionContext;
+      const proof = ctx?.kind === 'env' ? ctx.proof : '';
+      return `forced_colors_failure|${detection.pageRoute ?? ''}|${proof}`;
+    }
+    case 'dark_mode_layout_break': {
+      const ctx = detection.interactionContext;
+      const proof = ctx?.kind === 'env' ? ctx.proof : '';
+      return `dark_mode_layout_break|${detection.pageRoute ?? ''}|${proof}`;
+    }
+    case 'zoom_layout_break': {
+      const ctx = detection.interactionContext;
+      const proof = ctx?.kind === 'env' ? ctx.proof : '';
+      return `zoom_layout_break|${detection.pageRoute ?? ''}|${proof}`;
+    }
+
+    // v0.42 data-integrity invariant kinds
+    case 'data_integrity_orphan':
+    case 'money_math_precision':
+    case 'cache_staleness':
+    case 'idempotency_key_violation':
+    case 'audit_log_missing_for_mutation':
+    case 'soft_delete_consistency': {
+      const invariantName = detection.dataIntegrityContext?.invariantName ?? '';
+      return `${detection.kind}|${invariantName}|${detection.endpoint ?? detection.pageRoute ?? ''}`;
+    }
   }
 }
 

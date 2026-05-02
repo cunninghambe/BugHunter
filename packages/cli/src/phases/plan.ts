@@ -23,6 +23,7 @@ import {
 import { detectDateSensitiveReasons, classifyDateSensitiveBatch, ALL_CLOCK_CONDITION_NAMES } from '../security/clock-test-runner.js';
 import { defaultConditionsForReasons } from '../security/clock-conditions.js';
 import { formTestCases, apiTestCases, xssFormTestCases, xssApiTestCases } from '../mutation/apply.js';
+import { mintInteractionPaletteCases } from '../mutation/interaction-palette.js';
 import { formCollapseSignature } from '../discovery/element-collapse.js';
 import { log } from '../log.js';
 import { createId } from '@paralleldrive/cuid2';
@@ -425,6 +426,16 @@ export async function runPlan(
 
     testCases.push(...faultCases);
     log.info(`network-faults: planned ${faultCases.length} fault-injection tests`);
+  }
+
+  // v0.38: third pass — interaction-palette planner
+  if (config.interactionPalette?.enabled === true) {
+    const roles = config.roles ?? [];
+    const { cases: paletteCases, skips: paletteSkips } = mintInteractionPaletteCases(
+      testCases, discovery.pages, config, roles,
+    );
+    testCases.push(...paletteCases);
+    log.info(`interaction-palette: planned ${paletteCases.length} variant tests (${paletteSkips.length} skipped)`);
   }
 
   // Orphan-fixture warning: bodyFixtures keys not in catalog

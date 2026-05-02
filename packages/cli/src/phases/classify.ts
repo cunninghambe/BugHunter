@@ -128,6 +128,16 @@ const KIND_PRIORITY: BugKind[] = [
   'excessive_re_renders',
   'memory_leak_attributed',
   'memory_leak_suspected',
+  // v0.38 interaction-palette kinds
+  'drag_drop_failure',
+  'paste_handler_failure',
+  'autofill_state_desync',
+  'animation_state_corruption',
+  'print_stylesheet_broken',
+  'reduced_motion_violation',
+  'forced_colors_failure',
+  'dark_mode_layout_break',
+  'zoom_layout_break',
 ];
 
 function priorityOf(kind: BugKind): number {

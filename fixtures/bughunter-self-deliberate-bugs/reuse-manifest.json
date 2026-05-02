@@ -415,6 +415,15 @@
     "i18n_timezone_display_wrong":       { "fixture": "i18n-bad",          "port": 5792, "route": "/" }
   },
   "deferred": [
-    "xss_stored"
+    "xss_stored",
+    "drag_drop_failure",
+    "paste_handler_failure",
+    "autofill_state_desync",
+    "animation_state_corruption",
+    "print_stylesheet_broken",
+    "reduced_motion_violation",
+    "forced_colors_failure",
+    "dark_mode_layout_break",
+    "zoom_layout_break"
   ]
 }

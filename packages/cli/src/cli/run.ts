@@ -26,7 +26,7 @@ import { runCrossUser } from '../phases/cross-user.js';
 import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { BugDetection, ClockTestingConfig, ClockTestingTelemetry, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant, BugHunterConfig, MultiContextConfig } from '../types.js';
+import type { BugDetection, ClockTestingConfig, ClockTestingTelemetry, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant, BugHunterConfig, MultiContextConfig, InteractionPaletteConfig } from '../types.js';
 import type { ClockConditionName } from '../security/clock-conditions.js';
 import { DEFAULT_VARIANTS } from '../security/interleaving-palette.js';
 import { runEmit } from '../phases/emit.js';
@@ -164,6 +164,15 @@ export type RunOptions = {
   noNetworkFaults?: boolean;
   /** --locale-stress: enable i18n locale-stress post-discovery phase. */
   localeStress?: boolean;
+  // v0.38 interaction-palette flags
+  /** --interaction-palette: enable interaction-palette test generation. */
+  interactionPalette?: boolean;
+  /** --no-interaction-palette: disable even if config has enabled = true. */
+  noInteractionPalette?: boolean;
+  /** --interaction-palette-max <n>: cap on total interaction test cases. Default: 300. */
+  interactionPaletteMax?: number;
+  /** --interaction-vision-threshold <f>: vision diff threshold for env-variant detectors. */
+  interactionVisionThreshold?: number;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -280,6 +289,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const clockTestingConfig = buildClockTestingConfig(opts, config.clockTesting);
   // v0.40: resolve multi-context config from flags + config file
   const multiContextConfig = buildMultiContextConfig(opts, config.multiContext);
+  // v0.38: resolve interaction-palette config from flags + config file
+  const interactionPaletteConfig = buildInteractionPaletteConfig(opts, config.interactionPalette);
 
   // v0.22 nav-state flag resolution (§6.1): CLI flags override config; implication rules apply.
   // --nav-state-refresh-race and --enable-history-corruption imply --enable-nav-state.
@@ -333,6 +344,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     // v0.20 network-faults
     ...(networkFaultsConfig !== undefined ? { networkFaults: networkFaultsConfig } : {}),
     ...(multiContextConfig !== undefined ? { multiContext: multiContextConfig } : {}),
+    ...(interactionPaletteConfig !== undefined ? { interactionPalette: interactionPaletteConfig } : {}),
     // v0.22 nav-state
     enableNavState,
     enableNavStateRefreshRace: navStateRefreshRace,
@@ -1294,6 +1306,24 @@ function buildMultiContextConfig(
   }
 
   return configFileMultiContext;
+}
+
+/** v0.38: resolve interaction-palette config from CLI flags + config file. */
+function buildInteractionPaletteConfig(
+  opts: RunOptions,
+  configFilePalette: InteractionPaletteConfig | undefined,
+): InteractionPaletteConfig | undefined {
+  if (opts.noInteractionPalette === true) {
+    return { ...(configFilePalette ?? { enabled: false }), enabled: false };
+  }
+  const baseEnabled = opts.interactionPalette === true || (configFilePalette?.enabled ?? false);
+  if (!baseEnabled) return configFilePalette;
+  return {
+    ...(configFilePalette ?? {}),
+    enabled: true,
+    ...(opts.interactionPaletteMax !== undefined ? { maxTests: opts.interactionPaletteMax } : {}),
+    ...(opts.interactionVisionThreshold !== undefined ? { visionThreshold: opts.interactionVisionThreshold } : {}),
+  };
 }
 
 async function closeAllExistingTabs(browser: BrowserMcpAdapter): Promise<void> {

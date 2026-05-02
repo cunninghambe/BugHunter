@@ -67,7 +67,7 @@ import type { SeoPageInput } from '../classify/seo.js';
 import { harEntriesToCsrfObservations } from '../adapters/har-writer.js';
 import { detectMissingCsrf } from '../security/csrf-detector.js';
 import { detectHallucinatedRoutes } from '../classify/hallucinated-route.js';
-import type { DiscoveredPage, BrowserPlatformTelemetry } from '../types.js';
+import type { DiscoveredPage, BrowserPlatformTelemetry, InvariantEvaluation } from '../types.js';
 import { isReadOnlyAction, MutatingActionRejectedError } from '../util/read-only.js';
 import { runBrowserPlatformProbe } from '../discovery/browser-platform-probe.js';
 import type { BrowserPlatformProbeOpts } from '../discovery/browser-platform-probe.js';
@@ -75,6 +75,10 @@ import { detectNetworkFaultUnhandled } from '../classify/network-fault-unhandled
 import { detectOptimisticNoRevert } from '../classify/network-fault-optimistic-revert.js';
 import type { OptimisticSnapshot } from '../classify/network-fault-optimistic-revert.js';
 import { detectInfiniteLoading } from '../classify/infinite-loading.js';
+import { filterInvariants } from '../dataIntegrity/filter.js';
+import { snapshotInvariantsBefore, evaluateInvariantsAfter } from '../dataIntegrity/evaluator.js';
+import type { ActionResult } from '../dataIntegrity/evaluator.js';
+import { appendJsonl } from '../store/filesystem.js';
 
 export type ExecuteOptions = {
   testCases: TestCase[];
@@ -147,6 +151,8 @@ export type ExecuteResult = {
   browserPlatformDetections?: BugDetection[];
   /** v0.36 browser-platform probe telemetry. */
   browserPlatformTelemetry?: BrowserPlatformTelemetry;
+  /** v0.42: all invariant evaluation records from the execute phase. */
+  dataIntegrityEvaluations?: InvariantEvaluation[];
 };
 
 export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
@@ -296,8 +302,18 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
   const results: TestResult[] = [];
   const perfArtifacts = new Map<string, PerfArtifacts>();
+  const allDataIntegrityEvaluations: InvariantEvaluation[] = [];
   let abortReason: ExecuteResult['abortReason'];
   let consecutiveInfraFailures = runState.consecutiveInfraFailures;
+
+  // v0.42: resolve data-integrity config once
+  const diConfig = runState.config.dataIntegrity ?? null;
+  const diEnabled = diConfig !== null && diConfig.enabled !== false && diConfig.invariants.length > 0;
+  const diEvalCtx = {
+    projectDir: runState.projectDir,
+    appBaseUrl: appBaseUrl ?? '',
+    runId: runState.runId,
+  };
 
   // Compute skip reasons and emit pre-execution banner
   const skipReasons: Array<{ reason: string; count: number }> = [];
@@ -364,10 +380,38 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
         return result;
       }
 
+      // v0.42: snapshot invariant before clauses for mutating actions
+      const isMutating = isMutatingTestCase(tc, toolMap);
+      // diEnabled implies diConfig !== null (see declaration above)
+      const matchingInvariants = (diEnabled && isMutating)
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- diEnabled is true only when diConfig !== null
+        ? filterInvariants(diConfig!.invariants, tc)
+        : [];
+      const diPending = matchingInvariants.length > 0
+        ? await snapshotInvariantsBefore(matchingInvariants, tc, diEvalCtx)
+        : [];
+
       const result = tc.action.via === 'ui'
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
         ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined }, clock)
         : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds, appBaseUrl, clock);
+
+      // v0.42: evaluate invariant after clauses and collect detections
+      if (diPending.length > 0) {
+        const actionResult: ActionResult = {
+          url: tc.page,
+          method: toolMap?.get(tc.action.toolId ?? '')?.method,
+        };
+        const { evaluations, detections } = await evaluateInvariantsAfter(diPending, tc, actionResult, diEvalCtx);
+        allDataIntegrityEvaluations.push(...evaluations);
+        for (const ev of evaluations) {
+          appendJsonl(paths.dataIntegrityJsonl, ev);
+        }
+        if (detections.length > 0) {
+          result.bugs.push(...detections);
+          result.passed = false;
+        }
+      }
 
       // Perf drain: collect vitals/HAR after the action completes
       if (perfCollector !== undefined && tc.action.via === 'ui') {
@@ -530,7 +574,21 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     seoDetections: seoDetections !== undefined && seoDetections.length > 0 ? seoDetections : undefined,
     browserPlatformDetections: browserPlatformDetections.length > 0 ? browserPlatformDetections : undefined,
     browserPlatformTelemetry: opts.browserPlatformOpts !== undefined ? browserPlatformTelemetryAccum : undefined,
+    dataIntegrityEvaluations: allDataIntegrityEvaluations.length > 0 ? allDataIntegrityEvaluations : undefined,
   };
+}
+
+/**
+ * v0.42: determine if a test case is mutating. Uses toolMap for API tests;
+ * for UI tests, submit/click actions are treated as mutating (render is safe).
+ */
+function isMutatingTestCase(tc: TestCase, toolMap: Map<string, ToolMeta> | undefined): boolean {
+  if (tc.action.via === 'api') {
+    const tool = tc.action.toolId !== undefined ? toolMap?.get(tc.action.toolId) : undefined;
+    return tool?.sideEffectClass === 'mutating';
+  }
+  // For UI actions: submit and click (non-render) are treated as mutating
+  return tc.action.kind === 'submit' || tc.action.kind === 'click';
 }
 
 /**

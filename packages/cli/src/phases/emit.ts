@@ -1,7 +1,7 @@
 // Phase 6: emit — write JSONL + summary (§ 3.7).
 
 import * as fs from 'node:fs';
-import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, BrowserPlatformTelemetry, Severity, ClockTestingTelemetry, NetworkFaultsTelemetry, MultiContextTelemetry } from '../types.js';
+import type { BugCluster, CrossRunSummary, InfrastructureFailure, RunState, RunSummary, SeedHookExecution, VisionConsistencyTelemetry, PenTestingTelemetry, RaceConditionsTelemetry, IdorTelemetry, BrowserPlatformTelemetry, Severity, ClockTestingTelemetry, NetworkFaultsTelemetry, MultiContextTelemetry, DataIntegritySummary, InvariantEvaluation } from '../types.js';
 import { runPaths, appendJsonl, writeJsonFile } from '../store/filesystem.js';
 import { buildCoverage } from './coverage.js';
 import { canonicalStringify } from '../lib/canonical.js';
@@ -66,6 +66,12 @@ export type TestCounters = {
     frozenNetworkPath?: string;
     networkReplay?: { matched: number; missed: number; unmatchedRecorded: number };
   };
+  /** v0.42: data-integrity invariant evaluations from the execute phase. */
+  dataIntegrityEvaluations?: InvariantEvaluation[];
+  /** v0.42: data-integrity config status. */
+  dataIntegrityEnabled?: boolean;
+  /** v0.42: number of configured invariants. */
+  dataIntegrityInvariantsConfigured?: number;
 };
 
 export function runEmit(
@@ -147,6 +153,7 @@ export function runEmit(
     ...(counters?.browserPlatform !== undefined ? { browserPlatform: counters.browserPlatform } : {}),
     ...(counters?.networkFaults !== undefined ? { networkFaults: counters.networkFaults } : {}),
     ...(counters?.deterministic !== undefined ? { deterministic: counters.deterministic } : {}),
+    ...(counters?.dataIntegrityEvaluations !== undefined ? { dataIntegrity: buildDataIntegritySummary(counters) } : {}),
   };
 
   let crossRun: CrossRunSummary | undefined;
@@ -271,6 +278,32 @@ function buildPerfSummaryLines(perf: RunSummary['perfSummary']): string[] {
 function buildProbeCounters(runState: RunState): { run: number; skippedByBudget: number; durationMs: number } {
   const t = runState.discovery?.probe?.telemetry;
   return { run: t?.probesRun ?? 0, skippedByBudget: t?.skippedByBudget ?? 0, durationMs: t?.durationMs ?? 0 };
+}
+
+function buildDataIntegritySummary(counters: TestCounters): DataIntegritySummary {
+  const evaluations = counters.dataIntegrityEvaluations ?? [];
+  const counts = { passed: 0, violated: 0, skipped: 0, queryFailed: 0 };
+  let durationMsTotal = 0;
+  const violations: DataIntegritySummary['violations'] = [];
+  const evaluatedActionIds = new Set<string>();
+
+  for (const ev of evaluations) {
+    durationMsTotal += ev.durationMs;
+    evaluatedActionIds.add(ev.actionId);
+    if (ev.outcome === 'passed') counts.passed++;
+    else if (ev.outcome === 'violated') { counts.violated++; violations.push({ invariantName: ev.invariantName, bugKind: ev.bugKind, actionId: ev.actionId }); }
+    else if (ev.outcome === 'skipped') counts.skipped++;
+    else counts.queryFailed++;
+  }
+
+  return {
+    enabled: counters.dataIntegrityEnabled !== false,
+    invariantsConfigured: counters.dataIntegrityInvariantsConfigured ?? 0,
+    actionsEvaluated: evaluatedActionIds.size,
+    evaluations: counts,
+    violations,
+    durationMsTotal,
+  };
 }
 
 function buildBundleSummaryLines(bundle: RunSummary['bundleSummary']): string[] {
