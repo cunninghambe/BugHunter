@@ -201,6 +201,20 @@ export const ConfigSchema = z.object({
   enableHistoryCorruption: z.boolean().optional(),
   navStateSkipRoutes: z.array(z.string()).optional(),
   navStateDeepLinkMaxDepth: z.number().int().positive().optional(),
+  // v0.35 bisect config
+  bisect: z.object({
+    buildCommand: z.string().optional(),
+    appCommand: z.string().optional(),
+    appReadyUrl: z.string().url().optional(),
+    appReadyTimeoutMs: z.number().int().positive().optional(),
+    buildTimeoutMs: z.number().int().positive().optional(),
+    consensusRuns: z.number().int().min(1).optional(),
+    consensusThreshold: z.number().int().min(1).optional(),
+    defaultRange: z.string().optional(),
+    killGracePeriodMs: z.number().int().nonnegative().optional(),
+    resetCommandsBetweenCommits: z.array(z.string()).optional(),
+    appPortRange: z.string().optional(),
+  }).optional(),
   // v0.49 browser transport config
   browserTransport: z.enum(['mcp-http', 'mcp-stdio', 'http-legacy']).default('mcp-http'),
   browserMcpAuthKey: z.string().min(1).optional(),
