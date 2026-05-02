@@ -7,7 +7,7 @@ import type { BrowserMcpAdapter, TabScope } from '../adapters/browser-mcp.js';
 import { executeRaceTest } from './race-runner.js';
 import { executeMultiContextTest } from './multi-context-runner.js';
 import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
-import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
+import type { SurfaceMcpAdapter, SurfaceCallResult } from '../adapters/surface-mcp.js';
 import type {
   TestCase, TestResult, BugDetection, InfrastructureFailure, PreState, PostState,
   ConsoleError, NetworkRequest, RunState, ToolMeta, DiscoveredIds, BugHunterConfig, PerfArtifacts,
@@ -391,16 +391,29 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
         ? await snapshotInvariantsBefore(matchingInvariants, tc, diEvalCtx)
         : [];
 
-      const result = tc.action.via === 'ui'
+      let result: TestResult;
+      let apiCapturedCall: SurfaceCallResult | undefined;
+      if (tc.action.via === 'ui') {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
-        ? await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined }, clock)
-        : await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds, appBaseUrl, clock);
+        result = await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined }, clock);
+      } else {
+        const outcome = await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds, appBaseUrl, clock);
+        result = outcome.testResult;
+        apiCapturedCall = outcome.capturedCall;
+      }
 
       // v0.42: evaluate invariant after clauses and collect detections
       if (diPending.length > 0) {
+        const toolMeta = toolMap?.get(tc.action.toolId ?? '');
+        const resolvedUrl = resolveActionLogUrl(tc.page, appBaseUrl) ?? tc.page;
         const actionResult: ActionResult = {
-          url: tc.page,
-          method: toolMap?.get(tc.action.toolId ?? '')?.method,
+          url: resolvedUrl,
+          method: toolMeta?.method,
+          status: apiCapturedCall?.status,
+          responseBody: apiCapturedCall?.body,
+          requestBody: tc.action.input,
+          requestHeaders: apiCapturedCall?.headers,
+          idempotencyKey: apiCapturedCall?.headers?.['idempotency-key'] ?? apiCapturedCall?.headers?.['Idempotency-Key'],
         };
         const { evaluations, detections } = await evaluateInvariantsAfter(diPending, tc, actionResult, diEvalCtx);
         allDataIntegrityEvaluations.push(...evaluations);
@@ -1366,6 +1379,8 @@ async function executeUiTest(
   return result!;
 }
 
+type ApiTestOutcome = { testResult: TestResult; capturedCall?: SurfaceCallResult };
+
 async function executeApiTest(
   tc: TestCase,
   surface: SurfaceMcpAdapter,
@@ -1375,10 +1390,11 @@ async function executeApiTest(
   discoveredIds?: DiscoveredIds,
   appBaseUrl?: string,
   clock: Clock = { kind: 'wall' },
-): Promise<TestResult> {
+): Promise<ApiTestOutcome> {
   const start = Date.now();
   const bugs: BugDetection[] = [];
   const occurrenceId = createId();
+  let capturedCall: SurfaceCallResult | undefined;
 
   const toolSchema = (tc.action.toolId !== undefined && tc.action.toolId !== '') ? toolMap?.get(tc.action.toolId)?.inputSchema : undefined;
   const absolutePage = resolveActionLogUrl(tc.page, appBaseUrl) ?? tc.page;
@@ -1413,6 +1429,7 @@ async function executeApiTest(
         input: tc.action.input ?? {},
         noAutoRelogin: tc.action.palette !== 'happy',
       });
+      capturedCall = callResult;
 
       // Harvest resource IDs from successful responses for IDOR cross-user phase.
       // tc.action.toolId is always set in this branch (checked above)
@@ -1538,7 +1555,7 @@ async function executeApiTest(
   }
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- try+catch above always assigns result before finally
-  return result!;
+  return { testResult: result!, capturedCall };
 }
 
 function buildShrunkInput(tc: TestCase, shrunkValue: unknown): unknown {
