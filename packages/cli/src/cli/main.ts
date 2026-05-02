@@ -48,6 +48,7 @@ Usage:
   bughunter init [--no-interactive] [--project-name <name>] [--surface-mcp-url <url>]
                  [--browser-mcp-url <url>] [--browser-transport <mcp-http|mcp-stdio|http-legacy>]
                  [--reset-command <cmd>] [--reset-policy <policy>]
+  bughunter view [--port <n>] [--no-open] [--mcp <url>] [--run <runId>]
   bughunter run [options]
   bughunter replay <occurrenceId>
   bughunter inspect <occurrenceId|clusterId>
@@ -732,6 +733,17 @@ async function main(): Promise<void> {
       case 'notify-test': {
         await notifyTestCommand(projectDir, {
           json: flags['json'] === true,
+        });
+        break;
+      }
+
+      case 'view': {
+        const { runViewCommand } = await import('./view.js');
+        await runViewCommand({
+          port: typeof flags['port'] === 'string' ? parseInt(flags['port'], 10) : undefined,
+          noOpen: flags['no-open'] === true,
+          mcp: typeof flags['mcp'] === 'string' ? flags['mcp'] : undefined,
+          run: typeof flags['run'] === 'string' ? flags['run'] : undefined,
         });
         break;
       }

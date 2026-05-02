@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "packages/cli",
-    "packages/mcp"
+    "packages/mcp",
+    "packages/viewer"
   ],
   "scripts": {
     "build": "npm run build -w packages/cli && npm run build -w packages/mcp",

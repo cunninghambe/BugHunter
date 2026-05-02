@@ -47,14 +47,14 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['packages/*/src/**/*.ts'],
+    files: ['packages/*/src/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
         ...(TYPE_AWARE ? {
-          project: ['./packages/cli/tsconfig.json', './packages/mcp/tsconfig.json'],
+          project: ['./packages/cli/tsconfig.json', './packages/mcp/tsconfig.json', './packages/viewer/tsconfig.json'],
           tsconfigRootDir: import.meta.dirname,
         } : {}),
       },
@@ -68,12 +68,20 @@ export default [
         AbortController: 'readonly', AbortSignal: 'readonly',
         fetch: 'readonly', Response: 'readonly', Request: 'readonly',
         Headers: 'readonly', TextEncoder: 'readonly', TextDecoder: 'readonly',
+        // Browser globals for packages/viewer
+        window: 'readonly', document: 'readonly', navigator: 'readonly',
+        FileReader: 'readonly', File: 'readonly', Blob: 'readonly',
+        indexedDB: 'readonly', IDBDatabase: 'readonly',
+        EventSource: 'readonly', CSS: 'readonly', Element: 'readonly',
+        DOMException: 'readonly', ReadableStream: 'readonly',
+        TextDecoderStream: 'readonly', FileSystemDirectoryHandle: 'readonly',
+        FileSystemFileHandle: 'readonly',
       },
     },
     settings: {
       'import/resolver': {
         typescript: {
-          project: ['./packages/cli/tsconfig.json', './packages/mcp/tsconfig.json'],
+          project: ['./packages/cli/tsconfig.json', './packages/mcp/tsconfig.json', './packages/viewer/tsconfig.json'],
           noWarnOnMultipleProjects: true,
         },
         node: true,

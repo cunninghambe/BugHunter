@@ -113,6 +113,7 @@ export function runEmit(
   const probeTelemetry = runState.discovery?.probe?.telemetry;
   const summary = {
     runId: runState.runId,
+    viewerVersion: BUGHUNTER_VERSION,
     bugs_filed: clusters.length,
     bugs_specced: 0,
     bugs_attempted_fix: 0,

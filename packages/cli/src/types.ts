@@ -1757,6 +1757,8 @@ export type SeedHooksConfig = {
 
 export type RunSummary = {
   runId: string;
+  /** v0.47: CLI version that produced this run. Used by the web viewer to detect schema drift. */
+  viewerVersion?: string;
   bugs_filed: number;
   bugs_specced: number;
   bugs_attempted_fix: number;

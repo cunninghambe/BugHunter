@@ -17,12 +17,12 @@ type Props = {
 export function App({ clusters, actor, runId, callbacks }: Props): React.ReactElement {
   const [state, dispatch] = useReducer(triageReducer, clusters, makeInitialState);
 
-  const selectedCluster = state.clusters[state.selectedIdx];
+  const selectedCluster = state.clusters.at(state.selectedIdx);
 
   const handleKeyInput = useCallback((input: string, key: { escape?: boolean; tab?: boolean; return?: boolean }) => {
     if (state.modalKind === 'verdict') {
-      if (key.escape) { dispatch({ type: 'CLOSE_MODAL' }); return; }
-      const verdictMap: Record<string, string> = {
+      if (key.escape === true) { dispatch({ type: 'CLOSE_MODAL' }); return; }
+      const verdictMap: Partial<Record<string, string>> = {
         b: 'bug', f: 'fix-priority', p: 'false-positive', k: 'known',
       };
       const mark = verdictMap[input];
@@ -35,12 +35,12 @@ export function App({ clusters, actor, runId, callbacks }: Props): React.ReactEl
     }
 
     if (state.modalKind === 'suppress') {
-      if (key.escape) { dispatch({ type: 'CLOSE_MODAL' }); return; }
-      if (key.tab) {
+      if (key.escape === true) { dispatch({ type: 'CLOSE_MODAL' }); return; }
+      if (key.tab === true) {
         dispatch({ type: 'SET_INPUT_FIELD', field: state.inputField === 'pattern' ? 'reason' : 'pattern' });
         return;
       }
-      if (key.return) {
+      if (key.return === true) {
         if (selectedCluster !== undefined && state.reasonDraft.trim() !== '') {
           callbacks.onSuppress(selectedCluster, state.patternDraft, state.reasonDraft, actor, runId)
             .then(suppressionId => {
