@@ -149,7 +149,24 @@ export type BugKind =
   | 'i18n_long_string_overflow'
   | 'i18n_pluralization_broken'
   | 'i18n_rtl_layout_break'
-  | 'i18n_timezone_display_wrong';
+  | 'i18n_timezone_display_wrong'
+  // v0.42 data-integrity invariant kinds
+  | 'data_integrity_orphan'
+  | 'money_math_precision'
+  | 'cache_staleness'
+  | 'idempotency_key_violation'
+  | 'audit_log_missing_for_mutation'
+  | 'soft_delete_consistency'
+  // v0.38 interaction-palette kinds
+  | 'drag_drop_failure'
+  | 'paste_handler_failure'
+  | 'autofill_state_desync'
+  | 'animation_state_corruption'
+  | 'print_stylesheet_broken'
+  | 'reduced_motion_violation'
+  | 'forced_colors_failure'
+  | 'dark_mode_layout_break'
+  | 'zoom_layout_break';
 
 /**
  * v0.37: Lightweight bounding-rect value type — avoids importing DOM globals in Node.
@@ -237,6 +254,8 @@ export type Action = {
    * inputs when the user navigates away and comes back.
    */
   fillOnly?: boolean;
+  /** v0.38: interaction-palette variant to apply when executing this action. */
+  interactionPalette?: InteractionPaletteVariant;
 };
 
 export type PreState = {
@@ -724,6 +743,8 @@ export type TestCase = {
    * Mutually exclusive with race.
    */
   multiContext?: { variant: MultiContextVariant };
+  /** v0.38: interaction-palette variant kind for this test case. */
+  interactionPaletteKind?: InteractionPaletteVariantKind;
 };
 
 export type TestResult = {
@@ -1165,6 +1186,10 @@ export type BugDetection = {
   agentContext?: AgentDetectionContext;
   /** v0.40: populated for multi-context findings (multi_context_state_divergence, visibility_change_state_loss, multi_user_inconsistent_snapshot). */
   multiContextContext?: MultiContextDetectionContext;
+  /** v0.38: populated for interaction-palette findings. */
+  interactionContext?: InteractionContext;
+  /** v0.42: populated for data-integrity invariant violations. */
+  dataIntegrityContext?: DataIntegrityExtra;
 };
 
 /** v0.23: clock-injection proof context attached to clock-related BugDetections. */
@@ -1621,6 +1646,10 @@ export type BugHunterConfig = {
   agent?: AgentConfig;
   /** v0.37: enable locale-stress post-discovery phase. CLI: --locale-stress. */
   localeStress?: boolean;
+  /** v0.38: interaction-palette planner — additional variant test cases. */
+  interactionPalette?: InteractionPaletteConfig;
+  /** v0.42: data-integrity invariants evaluated after each mutating action. */
+  dataIntegrity?: DataIntegrityConfig;
 };
 
 /** v0.23: configuration for the clock-injection palette. */
@@ -2073,7 +2102,7 @@ export type SeedHookExecution = {
   exitCode?: number;
   /** HTTP status — present for http hooks. */
   status?: number;
-  lifecyclePoint: 'beforeRun' | 'afterLogin' | 'perRole' | 'beforeExecute' | 'cleanup';
+  lifecyclePoint: 'beforeRun' | 'afterLogin' | 'perRole' | 'beforeExecute' | 'afterEach' | 'cleanup';
   /** Present when lifecyclePoint is 'afterLogin' or 'perRole'. */
   role?: string;
 };
@@ -2188,4 +2217,131 @@ export type BrowserPlatformTelemetry = {
   rtcConnectionsObserved: number;
   permissionsForceDenied: number;
   bootstrapInstallFailures: number;
+};
+
+// --- v0.38 interaction-palette types ---
+
+export type InteractionPaletteVariant =
+  | { kind: 'drag_drop'; sourceMime: 'text/plain' | 'text/html' | 'application/json'; payload: string; targetSelector: string }
+  | { kind: 'paste'; source: 'word_html' | 'excel_html' | 'plain_text' | 'styled_html_with_script'; payload: string }
+  | { kind: 'autofill'; field: 'email' | 'password' | 'cc' | 'address'; value: string }
+  | { kind: 'animation_mid_transition'; transitionTriggerSelector: string; intercedingActionDelayMs: number }
+  | { kind: 'print' }
+  | { kind: 'reduced_motion' }
+  | { kind: 'forced_colors' }
+  | { kind: 'dark_mode' }
+  | { kind: 'zoom_200'; zoomFactor: 2.0 };
+
+export type InteractionPaletteVariantKind = InteractionPaletteVariant['kind'];
+
+export type InteractionContext =
+  | { kind: 'drag_drop'; sourceSelector: string; targetSelector: string; sourceMime: string; proof: string }
+  | { kind: 'paste'; fieldSelector: string; pasteSource: 'word_html' | 'excel_html' | 'plain_text' | 'styled_html_with_script'; proof: string }
+  | { kind: 'autofill'; formSelector: string; autofillField: string; proof: string }
+  | { kind: 'animation'; transitionTriggerSelector: string; proof: string }
+  | { kind: 'env'; mediaQuery: string; violatingSelector?: string; proof: string };
+
+export type InteractionPaletteConfig = {
+  enabled: boolean;
+  maxTests?: number;
+  visionThreshold?: number;
+  printStylesheetRequired?: boolean;
+};
+
+// --- v0.42 data-integrity invariant types ---
+
+export type DataIntegrityInvariantBugKind =
+  | 'data_integrity_orphan'
+  | 'money_math_precision'
+  | 'cache_staleness'
+  | 'idempotency_key_violation'
+  | 'audit_log_missing_for_mutation'
+  | 'soft_delete_consistency';
+
+export type AppliesToFilter = {
+  method?: string | string[];
+  urlPattern?: string;
+  palette?: PaletteVariant | PaletteVariant[];
+  actionIds?: string[];
+};
+
+export type ExtractClause = {
+  from: 'actionUrl' | 'actionRequestBody' | 'actionResponseBody' | 'actionRequestHeaders' | 'beforeSnapshot' | 'literal';
+  regex?: string;
+  jsonPath?: string;
+  literal?: string | number;
+};
+
+export type ExpectationOp =
+  | 'equals' | 'notEquals'
+  | 'lengthEquals' | 'lengthGte' | 'lengthLte'
+  | 'numericEquals'
+  | 'contains' | 'notContains'
+  | 'matches';
+
+export type Expectation = {
+  op: ExpectationOp;
+  jsonPath?: string;
+  value?: unknown;
+  tolerance?: number;
+};
+
+export type InvariantQuery = {
+  query: SeedHook;
+  parse: 'json' | 'text' | 'jsonl' | 'integer';
+  store?: Record<string, string>;
+  expect?: Expectation;
+  retry?: { count: number; delayMs: number };
+  timeoutMs?: number;
+  name?: string;
+};
+
+export type InvariantPhase = InvariantQuery | { queries: InvariantQuery[] };
+
+export type DataIntegrityInvariant = {
+  name: string;
+  bugKind: DataIntegrityInvariantBugKind;
+  description?: string;
+  appliesTo: AppliesToFilter;
+  extract?: Record<string, ExtractClause>;
+  injectInputs?: { field: string; values: unknown[] }[];
+  before?: InvariantPhase;
+  replay?: { withSameIdempotencyKey: boolean; expectSameResponseShape: boolean };
+  after?: InvariantPhase;
+  continueOnError?: boolean;
+};
+
+export type DataIntegrityConfig = {
+  invariants: DataIntegrityInvariant[];
+  enabled?: boolean;
+};
+
+export type InvariantEvaluation = {
+  invariantName: string;
+  bugKind: DataIntegrityInvariantBugKind;
+  actionId: string;
+  durationMs: number;
+  ok: boolean;
+  outcome: 'passed' | 'violated' | 'skipped' | 'query_failed';
+  reason?: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  detectionEmitted?: boolean;
+};
+
+export type DataIntegrityExtra =
+  | { kind: 'data_integrity_orphan'; invariantName: string; orphanedCount?: number; queryResult?: unknown }
+  | { kind: 'money_math_precision'; invariantName: string; storedValue?: unknown; expectedValue?: unknown }
+  | { kind: 'cache_staleness'; invariantName: string; staleValue?: unknown; expectedValue?: unknown }
+  | { kind: 'idempotency_key_violation'; invariantName: string; idempotencyKey?: string; firstResponse?: unknown; secondResponse?: unknown }
+  | { kind: 'audit_log_missing_for_mutation'; invariantName: string; expectedEntries?: number; foundEntries?: number }
+  | { kind: 'soft_delete_consistency'; invariantName: string; queryResult?: unknown };
+
+export type DataIntegritySummary = {
+  enabled: boolean;
+  invariantsConfigured: number;
+  actionsEvaluated: number;
+  evaluations: { passed: number; violated: number; skipped: number; queryFailed: number };
+  violations: Array<{ invariantName: string; bugKind: DataIntegrityInvariantBugKind; actionId: string }>;
+  durationMsTotal: number;
 };

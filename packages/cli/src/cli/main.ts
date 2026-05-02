@@ -35,6 +35,7 @@ import { bisectCommand } from './bisect/bisect-cmd.js';
 import { runBisectStep } from './bisect/bisect-step.js';
 import { calibrateCommand, CalibrateSetupError, CalibrateEnvironmentError, CalibrateGoldError, CalibrateRunError } from './calibrate.js';
 import { notifyTestCommand } from './notify-test.js';
+import { dataIntegrityCheckCommand } from './data-integrity-check.js';
 import type { DetectorStatus } from '../detectors/registry.js';
 import type { BugKind, PaletteVariant } from '../types.js';
 import { log } from '../log.js';
@@ -188,6 +189,15 @@ Diagnostics & introspection:
   bughunter config show [--resolved]
                               Print effective config (--resolved applies defaults)
                               or raw file. JSON output. vision.apiKey is redacted.
+
+Data integrity invariants (v0.42):
+  --no-data-integrity         Disable data-integrity invariant evaluation (invariants still parse-validated).
+  --data-integrity-only <name>
+                              Only run the named invariant(s); pass multiple times.
+  --data-integrity-explain    Emit per-action summary table to data-integrity-explain.txt.
+  --data-integrity-dry-run    Parse and match invariants but do not execute queries.
+  bughunter dataIntegrity check [--only <name>] [--format table|json]
+                              Validate invariant config against known routes.
 
 Diagnostics (self-test):
   bughunter self-test [--budget <ms>] [--max-bugs <n>] [--json] [--no-fail-on-flake]
@@ -349,6 +359,11 @@ async function main(): Promise<void> {
             ? parseInt(flags['browser-platform-sw-stale-ms'], 10)
             : undefined,
           localeStress: flags['locale-stress'] === true,
+          // v0.38 interaction-palette flags
+          interactionPalette: flags['interaction-palette'] === true,
+          noInteractionPalette: flags['no-interaction-palette'] === true,
+          interactionPaletteMax: typeof flags['interaction-palette-max'] === 'string' ? parseInt(flags['interaction-palette-max'], 10) : undefined,
+          interactionVisionThreshold: typeof flags['interaction-vision-threshold'] === 'string' ? parseFloat(flags['interaction-vision-threshold']) : undefined,
         });
         break;
       }
@@ -718,6 +733,19 @@ async function main(): Promise<void> {
         await notifyTestCommand(projectDir, {
           json: flags['json'] === true,
         });
+        break;
+      }
+
+      case 'dataIntegrity': {
+        const sub = args[0] ?? '';
+        if (sub !== 'check') {
+          process.stderr.write('Usage: bughunter dataIntegrity check [--only <name>] [--format table|json]\n');
+          process.exitCode = 2;
+          break;
+        }
+        const diFormat = typeof flags['format'] === 'string' ? (flags['format'] as 'table' | 'json') : undefined;
+        const diOnly = typeof flags['only'] === 'string' ? [flags['only']] : undefined;
+        dataIntegrityCheckCommand(projectDir, { onlyInvariant: diOnly, format: diFormat });
         break;
       }
 

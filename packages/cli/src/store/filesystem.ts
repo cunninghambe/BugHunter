@@ -21,6 +21,8 @@ export type RunPaths = {
   exportsDir: string;
   /** v0.34: per-run detector coverage report */
   coverageFile: string;
+  /** v0.42: per-evaluation data-integrity JSONL */
+  dataIntegrityJsonl: string;
 };
 
 export function runPaths(projectDir: string, runId: string): RunPaths {
@@ -40,6 +42,7 @@ export function runPaths(projectDir: string, runId: string): RunPaths {
     heapDir: path.join(runDir, 'heap'),
     exportsDir: path.join(runDir, 'exports'),
     coverageFile: path.join(runDir, 'coverage.json'),
+    dataIntegrityJsonl: path.join(runDir, 'data-integrity.jsonl'),
   };
 }
 

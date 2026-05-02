@@ -57,6 +57,85 @@ const SeedHookHttpSchema = z.object({
 
 const SeedHookSchema = z.discriminatedUnion('kind', [SeedHookShellSchema, SeedHookHttpSchema]);
 
+// --- v0.42 data-integrity invariant schema ---
+
+const AppliesToFilterSchema = z.object({
+  method: z.union([z.string(), z.array(z.string())]).optional(),
+  urlPattern: z.string().optional(),
+  palette: z.union([
+    z.enum(['null', 'happy', 'edge', 'out_of_bounds', 'xss_inject']),
+    z.array(z.enum(['null', 'happy', 'edge', 'out_of_bounds', 'xss_inject'])),
+  ]).optional(),
+  actionIds: z.array(z.string()).optional(),
+});
+
+const ExpectationSchema = z.object({
+  op: z.enum(['equals', 'notEquals', 'lengthEquals', 'lengthGte', 'lengthLte', 'numericEquals', 'contains', 'notContains', 'matches']),
+  jsonPath: z.string().optional(),
+  value: z.unknown(),
+  tolerance: z.number().optional(),
+});
+
+const InvariantQuerySchema = z.object({
+  query: SeedHookSchema,
+  parse: z.enum(['json', 'text', 'jsonl', 'integer']).default('json'),
+  store: z.record(z.string()).optional(),
+  expect: ExpectationSchema.optional(),
+  retry: z.object({ count: z.number().int().positive(), delayMs: z.number().int().nonnegative() }).optional(),
+  timeoutMs: z.number().int().positive().optional(),
+  name: z.string().optional(),
+});
+
+const InvariantPhaseSchema = z.union([
+  InvariantQuerySchema,
+  z.object({ queries: z.array(InvariantQuerySchema) }),
+]);
+
+const ExtractClauseSchema = z.object({
+  from: z.enum(['actionUrl', 'actionRequestBody', 'actionResponseBody', 'actionRequestHeaders', 'beforeSnapshot', 'literal']),
+  regex: z.string().optional(),
+  jsonPath: z.string().optional(),
+  literal: z.union([z.string(), z.number()]).optional(),
+});
+
+const DataIntegrityInvariantBugKindEnum = z.enum([
+  'data_integrity_orphan',
+  'money_math_precision',
+  'cache_staleness',
+  'idempotency_key_violation',
+  'audit_log_missing_for_mutation',
+  'soft_delete_consistency',
+]);
+
+const DataIntegrityInvariantSchema = z.object({
+  name: z.string().min(1),
+  bugKind: DataIntegrityInvariantBugKindEnum,
+  description: z.string().optional(),
+  appliesTo: AppliesToFilterSchema,
+  extract: z.record(ExtractClauseSchema).optional(),
+  injectInputs: z.array(z.object({ field: z.string(), values: z.array(z.unknown()) })).optional(),
+  before: InvariantPhaseSchema.optional(),
+  replay: z.object({ withSameIdempotencyKey: z.boolean(), expectSameResponseShape: z.boolean() }).optional(),
+  after: InvariantPhaseSchema.optional(),
+  continueOnError: z.boolean().optional(),
+}).superRefine((inv, ctx) => {
+  if (inv.bugKind === 'idempotency_key_violation' && inv.replay === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'idempotency_key_violation requires a replay clause' });
+  }
+  if (inv.bugKind === 'money_math_precision' && inv.injectInputs === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'money_math_precision requires an injectInputs clause' });
+  }
+  const needsAfter = inv.bugKind !== 'idempotency_key_violation';
+  if (needsAfter && inv.after === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${inv.bugKind} requires an after clause` });
+  }
+});
+
+const DataIntegrityConfigSchema = z.object({
+  invariants: z.array(DataIntegrityInvariantSchema),
+  enabled: z.boolean().optional(),
+});
+
 export const ConfigSchema = z.object({
   projectName: z.string().min(1),
   surfaceMcpUrl: z.string().url(),
@@ -226,6 +305,8 @@ export const ConfigSchema = z.object({
     resetCommandsBetweenCommits: z.array(z.string()).optional(),
     appPortRange: z.string().optional(),
   }).optional(),
+  // v0.42 data-integrity invariants
+  dataIntegrity: DataIntegrityConfigSchema.optional(),
   // v0.49 browser transport config
   browserTransport: z.enum(['mcp-http', 'mcp-stdio', 'http-legacy']).default('mcp-http'),
   browserMcpAuthKey: z.string().min(1).optional(),

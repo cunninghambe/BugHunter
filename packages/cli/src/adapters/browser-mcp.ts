@@ -107,6 +107,12 @@ export type TabScope = {
   applyNetworkFault?(fault: NetworkFaultSpec): Promise<ApplyNetworkFaultResult>;
   /** v0.20: remove any network fault. Idempotent. Always succeeds (or throws transport). */
   clearNetworkFault?(): Promise<void>;
+  /** v0.38: emulate a CSS media feature (e.g. prefers-color-scheme, forced-colors). Optional. */
+  emulateMedia?(options: { media?: 'print' | 'screen' | null; features?: Array<{ name: string; value: string }> }): Promise<void>;
+  /** v0.38: set browser zoom factor. Optional. */
+  setZoom?(factor: number): Promise<void>;
+  /** v0.38: dispatch a synthetic DOM event and return observed state. Optional. */
+  dispatchSyntheticEvent?(selector: string, eventType: string, eventInit?: Record<string, unknown>): Promise<{ dispatched: boolean; defaultPrevented: boolean }>;
 };
 
 export interface BrowserMcpAdapter {

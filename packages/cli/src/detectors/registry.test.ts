@@ -8,22 +8,31 @@ describe('DETECTOR_REGISTRY', () => {
     expect(unique.size).toBe(kinds.length);
   });
 
-  it('has 80 entries covering all BugKinds', () => {
-    expect(DETECTOR_REGISTRY.length).toBe(80);
+  it('has 121 entries covering all BugKinds', () => {
+    expect(DETECTOR_REGISTRY.length).toBe(121);
   });
 
-  it('has exactly 1 deferred entry', () => {
+  it('has exactly 10 deferred entries', () => {
     const deferred = DETECTOR_REGISTRY.filter(e => e.status === 'deferred');
-    expect(deferred).toHaveLength(1);
+    expect(deferred).toHaveLength(10);
     const deferredKinds = deferred.map(e => e.kind).sort();
     expect(deferredKinds).toEqual([
+      'animation_state_corruption',
+      'autofill_state_desync',
+      'dark_mode_layout_break',
+      'drag_drop_failure',
+      'forced_colors_failure',
+      'paste_handler_failure',
+      'print_stylesheet_broken',
+      'reduced_motion_violation',
       'xss_stored',
+      'zoom_layout_break',
     ]);
   });
 
-  it('has 79 wired entries', () => {
+  it('has 111 wired entries', () => {
     const wired = DETECTOR_REGISTRY.filter(e => e.status === 'wired');
-    expect(wired).toHaveLength(79);
+    expect(wired).toHaveLength(111);
   });
 
   it('has 0 dead entries', () => {
@@ -66,9 +75,19 @@ describe('DETECTOR_REGISTRY', () => {
       expect(entry?.status).toBe('wired');
     });
 
+    it('finds xss_stored as deferred', () => {
+      const entry = lookupDetector('xss_stored');
+      expect(entry?.status).toBe('deferred');
+    });
+
     it('finds seo_robots_blocking_crawl as wired', () => {
       const entry = lookupDetector('seo_robots_blocking_crawl');
       expect(entry?.status).toBe('wired');
+    });
+
+    it('finds drag_drop_failure as deferred', () => {
+      const entry = lookupDetector('drag_drop_failure');
+      expect(entry?.status).toBe('deferred');
     });
   });
 });

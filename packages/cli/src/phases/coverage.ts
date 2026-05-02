@@ -48,7 +48,9 @@ type InputFamily =
   | 'browser-platform'
   | 'agent'
   | 'i18n'
-  | 'multi-context';
+  | 'multi-context'
+  | 'interaction'
+  | 'data-integrity';
 
 /** Canonical kind → input family mapping (spec §4.2). */
 const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
@@ -162,6 +164,23 @@ const KIND_INPUT_FAMILY: Readonly<Record<BugKind, InputFamily>> = {
   multi_context_state_divergence: 'multi-context',
   visibility_change_state_loss: 'multi-context',
   multi_user_inconsistent_snapshot: 'multi-context',
+  // v0.38 interaction-palette kinds
+  drag_drop_failure: 'interaction',
+  paste_handler_failure: 'interaction',
+  autofill_state_desync: 'interaction',
+  animation_state_corruption: 'interaction',
+  print_stylesheet_broken: 'interaction',
+  reduced_motion_violation: 'interaction',
+  forced_colors_failure: 'interaction',
+  dark_mode_layout_break: 'interaction',
+  zoom_layout_break: 'interaction',
+  // v0.42 data-integrity invariant kinds
+  data_integrity_orphan: 'data-integrity',
+  money_math_precision: 'data-integrity',
+  cache_staleness: 'data-integrity',
+  idempotency_key_violation: 'data-integrity',
+  audit_log_missing_for_mutation: 'data-integrity',
+  soft_delete_consistency: 'data-integrity',
 };
 
 type CounterSnapshot = {
@@ -238,6 +257,8 @@ function inputObservedForFamily(
     case 'agent': return isAgentObserved(runState);
     case 'i18n': return isI18nObserved(runState);
     case 'multi-context': return isMultiContextObserved(counters);
+    case 'interaction': return runState.config.interactionPalette?.enabled === true;
+    case 'data-integrity': return runState.config.dataIntegrity?.enabled !== false && (runState.config.dataIntegrity?.invariants.length ?? 0) > 0;
   }
 }
 
