@@ -376,6 +376,81 @@ export const ConfigSchema = z.object({
     hoverOnlyScan: z.boolean().optional(),
     userAgent: z.string().min(1).optional(),
   }).optional(),
+  // v0.19 race-condition interleaving tests
+  raceConditions: z.object({
+    enabled: z.boolean().optional(),
+    variants: z.array(z.enum(['double_submit', 'click_then_navigate', 'optimistic_revert', 'interleaved_mutations', 'cross_tab'])).optional(),
+    maxTests: z.number().int().positive().optional(),
+    idempotentToolIds: z.array(z.string()).optional(),
+    aggressiveRaceTargets: z.array(z.string()).optional(),
+    doubleSubmitGapMs: z.number().int().positive().optional(),
+    optimisticRevertForcedStatus: z.number().int().positive().optional(),
+    consensusRuns: z.number().int().positive().optional(),
+    skipResetBetweenRaceTests: z.boolean().optional(),
+    raceConcurrency: z.number().int().positive().optional(),
+    pairedToolIds: z.array(z.tuple([z.string(), z.string()])).optional(),
+    strict: z.boolean().optional(),
+  }).optional(),
+  // v0.40 multi-context coordination tests
+  multiContext: z.object({
+    enabled: z.boolean().optional(),
+    n: z.number().int().min(2).max(8).optional(),
+    variants: z.array(z.enum(['state_divergence', 'lifecycle_state_loss', 'inconsistent_snapshot'])).optional(),
+    lifecycleEvents: z.array(z.enum(['visibilitychange', 'pageshow', 'pagehide', 'freeze', 'resume'])).optional(),
+    maxTotalDurationMs: z.number().int().positive().optional(),
+    maxTestsPerVariant: z.record(z.number().int().positive()).optional(),
+    perTestTimeoutMs: z.number().int().positive().optional(),
+    consensusRunsByVariant: z.record(z.number().int().positive()).optional(),
+    consensusVotesRequiredByVariant: z.record(z.number().int().positive()).optional(),
+    aggressiveMultiContextTargets: z.array(z.string()).optional(),
+    nonCommutativeFieldsByTool: z.record(z.array(z.string())).optional(),
+    multiContextConcurrency: z.number().int().positive().optional(),
+    snapshotPairs: z.array(z.object({ writer: z.string(), reader: z.string() })).optional(),
+  }).optional(),
+  // v0.20 network-fault injection palette
+  networkFaults: z.object({
+    enabled: z.boolean().optional(),
+    variants: z.array(z.union([
+      z.object({ kind: z.literal('offline') }),
+      z.object({ kind: z.literal('slow_3g') }),
+      z.object({ kind: z.literal('high_latency'), latencyMs: z.number().int().positive() }),
+      z.object({ kind: z.literal('timeout_at_request') }),
+      z.object({ kind: z.literal('timeout_at_response') }),
+      z.object({ kind: z.literal('intermittent'), dropEveryN: z.number().int().positive() }),
+      z.object({ kind: z.literal('server_5xx'), status: z.union([z.literal(500), z.literal(502), z.literal(503)]) }),
+      z.object({ kind: z.literal('malformed_response'), mode: z.enum(['truncated_json', 'wrong_content_type']) }),
+    ])).optional(),
+    toolDenylist: z.array(z.string()).optional(),
+    maxFaultTests: z.number().int().positive().optional(),
+    retryStormThresholdRps: z.number().positive().optional(),
+    perTestMaxMs: z.number().int().positive().optional(),
+    includeNavigation: z.boolean().optional(),
+  }).optional(),
+  // v0.45 read-only / staging-safe mode
+  readOnly: z.boolean().optional(),
+  // v0.37 locale-stress post-discovery phase
+  localeStress: z.boolean().optional(),
+  // v0.38 interaction-palette planner
+  interactionPalette: z.object({
+    enabled: z.boolean(),
+    maxTests: z.number().int().positive().optional(),
+    visionThreshold: z.number().min(0).max(1).optional(),
+    printStylesheetRequired: z.boolean().optional(),
+  }).optional(),
+  // auth-probe checks (no-rate-limit-on-login)
+  authProbe: z.object({
+    enabled: z.boolean().optional(),
+    maxAttempts: z.number().int().positive().optional(),
+    sacrificialEndpoint: z.string().optional(),
+    testAccountUsername: z.string().optional(),
+  }).optional(),
+  // cross-user IDOR probe config
+  crossUser: z.object({
+    crossRoleProbeEnabled: z.boolean().optional(),
+    anonymousProbeEnabled: z.boolean().optional(),
+    maxReplays: z.number().int().positive().optional(),
+    adminRoleHints: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {
