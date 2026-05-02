@@ -1,0 +1,107 @@
+.root {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tabList {
+  display: flex;
+  border-bottom: 2px solid var(--color-border);
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.tabTrigger {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+}
+
+.tabTrigger[data-state="active"] {
+  color: var(--color-accent, #3b82f6);
+  border-bottom-color: var(--color-accent, #3b82f6);
+}
+
+.tabTrigger:focus {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+.tabContent {
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.overviewDl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.overviewDl dt {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.fileList,
+.hintList {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.fileList li,
+.hintList li {
+  margin-bottom: 0.25rem;
+}
+
+.occurrences {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.noContext {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.contextSection {
+  font-size: 0.875rem;
+}
+
+.contextNote {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.raw {
+  font-size: 0.8125rem;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--color-bg-secondary);
+  padding: 0.75rem;
+  border-radius: 4px;
+  overflow-y: auto;
+  max-height: 100%;
+  outline: none;
+}
+
+.raw:focus {
+  outline: 2px solid var(--color-focus-ring);
+}

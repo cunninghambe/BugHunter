@@ -1,0 +1,25 @@
+.root {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.heading {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+  text-align: left;
+  max-width: 20rem;
+  margin: 0 auto;
+}
+
+.meta dt {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
