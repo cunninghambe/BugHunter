@@ -55,7 +55,13 @@ type NegativeExpectation = {
   reason: string;
 };
 
-type GoldenLine = PositiveExpectation | NegativeExpectation;
+type DetectorSilentExpectation = {
+  expect: 'detector_silent';
+  kind: BugKind;
+  reason: string;
+};
+
+type GoldenLine = PositiveExpectation | NegativeExpectation | DetectorSilentExpectation;
 
 // ---------------------------------------------------------------------------
 // Manifest type (reuse-manifest.json)
@@ -155,9 +161,14 @@ export function assertLockstep(manifest: ReuseManifest, goldenLines: GoldenLine[
       .filter((l): l is PositiveExpectation => !('expect' in l))
       .map(l => l.kind),
   );
+  const goldenSilentKinds = new Set(
+    goldenLines
+      .filter((l): l is DetectorSilentExpectation => 'expect' in l && l.expect === 'detector_silent')
+      .map(l => l.kind),
+  );
   const goldenNegativeKinds = new Set(
     goldenLines
-      .filter((l): l is NegativeExpectation => 'expect' in l)
+      .filter((l): l is NegativeExpectation => 'expect' in l && l.expect === 'absent')
       .map(l => l.kind),
   );
   const manifestDeferred = new Set(manifest.deferred);
@@ -168,8 +179,8 @@ export function assertLockstep(manifest: ReuseManifest, goldenLines: GoldenLine[
     if (!manifestKinds.has(kind)) {
       errors.push(`Wired kind "${kind}" is missing from reuse-manifest.json.kinds`);
     }
-    if (!goldenPositiveKinds.has(kind)) {
-      errors.push(`Wired kind "${kind}" has no positive expectation in golden-bugs.jsonl`);
+    if (!goldenPositiveKinds.has(kind) && !goldenSilentKinds.has(kind)) {
+      errors.push(`Wired kind "${kind}" has no positive expectation or detector_silent entry in golden-bugs.jsonl`);
     }
   }
 
@@ -200,8 +211,14 @@ export function evaluateExpectations(
   const positiveExpectations = goldenLines.filter(
     (l): l is PositiveExpectation => !('expect' in l),
   );
+  // Both 'absent' and 'detector_silent' lines assert the kind must NOT appear in results.
   const negativeExpectations = goldenLines.filter(
-    (l): l is NegativeExpectation => 'expect' in l,
+    (l): l is NegativeExpectation => 'expect' in l && l.expect === 'absent',
+  );
+  const silentKinds = new Set(
+    goldenLines
+      .filter((l): l is DetectorSilentExpectation => 'expect' in l && l.expect === 'detector_silent')
+      .map(l => l.kind),
   );
 
   const goldenKinds = new Set(positiveExpectations.map(e => e.kind));
@@ -245,10 +262,10 @@ export function evaluateExpectations(
     }
   }
 
-  // Unexpected: wired clusters not in golden positive expectations
+  // Unexpected: wired clusters not in golden positive or detector_silent expectations
   const observedKinds = new Set(clusters.map(c => c.kind));
   for (const kind of observedKinds) {
-    if (wiredKinds.has(kind) && !goldenKinds.has(kind)) {
+    if (wiredKinds.has(kind) && !goldenKinds.has(kind) && !silentKinds.has(kind)) {
       unexpectedKinds.push(kind);
     }
   }

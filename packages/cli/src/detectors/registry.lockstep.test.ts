@@ -32,7 +32,8 @@ type ReuseManifest = { kinds: Record<string, ManifestKindEntry>; deferred: strin
 
 type PositiveLine = { kind: string; signaturePrefix: string; fixture: string; specReference: string; acceptableMisses?: number };
 type NegativeLine = { expect: 'absent'; kind: string; reason: string };
-type GoldenLine = PositiveLine | NegativeLine;
+type DetectorSilentLine = { expect: 'detector_silent'; kind: string; reason: string; specReference?: string };
+type GoldenLine = PositiveLine | NegativeLine | DetectorSilentLine;
 
 function loadManifest(): ReuseManifest {
   const raw = fs.readFileSync(MANIFEST_PATH, 'utf-8');
@@ -66,15 +67,23 @@ describe('DETECTOR_REGISTRY lockstep', () => {
     expect(missing, `Wired kinds missing from reuse-manifest.json.kinds: ${missing.join(', ')}`).toHaveLength(0);
   });
 
-  it('every wired kind has at least one positive expectation in golden-bugs.jsonl', () => {
+  it('every wired kind has at least one positive expectation or detector_silent entry in golden-bugs.jsonl', () => {
     const golden = loadGolden();
     const wiredKinds = DETECTOR_REGISTRY.filter(e => e.status === 'wired').map(e => e.kind);
     const goldenPositiveKinds = new Set(
       golden.filter((l): l is PositiveLine => !('expect' in l)).map(l => l.kind),
     );
+    const goldenSilentKinds = new Set(
+      golden
+        .filter((l): l is DetectorSilentLine => 'expect' in l && l.expect === 'detector_silent')
+        .map(l => l.kind),
+    );
 
-    const missing = wiredKinds.filter(k => !goldenPositiveKinds.has(k));
-    expect(missing, `Wired kinds with no positive expectation in golden-bugs.jsonl: ${missing.join(', ')}`).toHaveLength(0);
+    const missing = wiredKinds.filter(k => !goldenPositiveKinds.has(k) && !goldenSilentKinds.has(k));
+    expect(
+      missing,
+      `Wired kinds with no positive expectation or detector_silent entry in golden-bugs.jsonl: ${missing.join(', ')}`,
+    ).toHaveLength(0);
   });
 
   it('every deferred kind has an absent expectation or manifest.deferred entry', () => {
@@ -109,7 +118,7 @@ describe('DETECTOR_REGISTRY lockstep', () => {
     expect(unknown, `golden-bugs.jsonl positive lines reference unknown kinds: ${unknown.join(', ')}`).toHaveLength(0);
   });
 
-  it('golden negative lines reference only deferred or dead kinds', () => {
+  it('golden absent lines reference only deferred or dead kinds', () => {
     const golden = loadGolden();
     const deferredOrDead = new Set(
       DETECTOR_REGISTRY.filter(e => e.status !== 'wired').map(e => e.kind),
@@ -118,7 +127,20 @@ describe('DETECTOR_REGISTRY lockstep', () => {
     const invalid = negatives.filter(l => !deferredOrDead.has(l.kind as never)).map(l => l.kind);
     expect(
       invalid,
-      `golden-bugs.jsonl absent lines reference wired kinds (should be positive expectation): ${invalid.join(', ')}`,
+      `golden-bugs.jsonl absent lines reference wired kinds (should be positive expectation or detector_silent): ${invalid.join(', ')}`,
+    ).toHaveLength(0);
+  });
+
+  it('golden detector_silent lines reference only wired kinds', () => {
+    const golden = loadGolden();
+    const wiredKinds = new Set(DETECTOR_REGISTRY.filter(e => e.status === 'wired').map(e => e.kind));
+    const silentLines = golden.filter(
+      (l): l is DetectorSilentLine => 'expect' in l && l.expect === 'detector_silent',
+    );
+    const invalid = silentLines.filter(l => !wiredKinds.has(l.kind as never)).map(l => l.kind);
+    expect(
+      invalid,
+      `golden-bugs.jsonl detector_silent lines reference non-wired kinds: ${invalid.join(', ')}`,
     ).toHaveLength(0);
   });
 
@@ -141,5 +163,36 @@ describe('DETECTOR_REGISTRY lockstep', () => {
     expect(wiredCount).toBeGreaterThan(0);
     // Sanity: we know from V33 the registry has 72 wired kinds; assert ≥ 60 to be resilient.
     expect(wiredCount).toBeGreaterThanOrEqual(60);
+  });
+
+  it('every wired entry detectorSite actually references the kind name in source', () => {
+    // Catches the "registry-says-wired-but-not-actually-wired" pattern statically.
+    // If the detectorSite file does not contain the kind name string, the detection
+    // is never emitted and the entry should be marked deferred instead.
+    // We check detectorSite (where the BugDetection literal is constructed) rather than
+    // runnerSite (which calls classify functions that internally reference the kind).
+    const errors: string[] = [];
+
+    for (const entry of DETECTOR_REGISTRY) {
+      if (entry.status !== 'wired') continue;
+      if (!entry.detectorSite) continue; // no detectorSite declared, skip
+
+      const detectorFile = path.resolve(REPO_ROOT, entry.detectorSite.split(':')[0]);
+      if (!fs.existsSync(detectorFile)) {
+        errors.push(`${entry.kind}: detectorSite '${entry.detectorSite}' does not exist on disk`);
+        continue;
+      }
+      const contents = fs.readFileSync(detectorFile, 'utf-8');
+      if (!contents.includes(entry.kind)) {
+        errors.push(
+          `${entry.kind}: detectorSite '${detectorFile}' contains no reference to kind name — likely dead detector; mark as deferred`,
+        );
+      }
+    }
+
+    expect(
+      errors,
+      `Wired detectors with no kind-name reference in their detectorSite:\n${errors.join('\n')}`,
+    ).toHaveLength(0);
   });
 });
