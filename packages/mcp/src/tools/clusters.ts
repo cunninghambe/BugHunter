@@ -41,6 +41,14 @@ type ClusterSummary = {
   verdict?: BugCluster['verdict'];
 };
 
+function suspectedFilePath(f: unknown): string {
+  if (typeof f === 'string') return f;
+  if (typeof f === 'object' && f !== null && 'path' in f && typeof (f as { path: unknown }).path === 'string') {
+    return (f as { path: string }).path;
+  }
+  return '';
+}
+
 function toSummary(cluster: BugClusterWithSeverity): ClusterSummary {
   return {
     id: cluster.id,
@@ -48,7 +56,7 @@ function toSummary(cluster: BugClusterWithSeverity): ClusterSummary {
     severity: cluster.severity,
     clusterSize: cluster.clusterSize,
     rootCause: cluster.rootCause,
-    suspectedFiles: cluster.suspectedFiles,
+    suspectedFiles: cluster.suspectedFiles.map(suspectedFilePath).filter(s => s !== ''),
     verdict: cluster.verdict,
   };
 }
