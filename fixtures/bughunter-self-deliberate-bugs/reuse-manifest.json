@@ -381,11 +381,6 @@
       "port": 5793,
       "route": "/shadow-bad-contrast"
     },
-    "permission_denied_unhandled": {
-      "fixture": "browser-platform-bad",
-      "port": 5793,
-      "route": "/perm-denied"
-    },
     "webrtc_ice_failure": {
       "fixture": "browser-platform-bad",
       "port": 5793,
@@ -406,24 +401,154 @@
       "port": 5793,
       "route": "/trusted-types-violate"
     },
-    "i18n_rtl_layout_break":             { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
-    "i18n_long_string_overflow":         { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
-    "i18n_date_format_ambiguous":        { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
-    "i18n_hardcoded_string":             { "fixture": "i18n-bad",          "port": null, "route": "/" },
-    "i18n_pluralization_broken":         { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
-    "i18n_currency_format_broken":       { "fixture": "i18n-bad",          "port": 5792, "route": "/" },
-    "i18n_timezone_display_wrong":       { "fixture": "i18n-bad",          "port": 5792, "route": "/" }
+    "i18n_rtl_layout_break": {
+      "fixture": "i18n-bad",
+      "port": 5792,
+      "route": "/"
+    },
+    "i18n_long_string_overflow": {
+      "fixture": "i18n-bad",
+      "port": 5792,
+      "route": "/"
+    },
+    "i18n_date_format_ambiguous": {
+      "fixture": "i18n-bad",
+      "port": 5792,
+      "route": "/"
+    },
+    "i18n_hardcoded_string": {
+      "fixture": "i18n-bad",
+      "port": null,
+      "route": "/"
+    },
+    "i18n_pluralization_broken": {
+      "fixture": "i18n-bad",
+      "port": 5792,
+      "route": "/"
+    },
+    "i18n_currency_format_broken": {
+      "fixture": "i18n-bad",
+      "port": 5792,
+      "route": "/"
+    },
+    "i18n_timezone_display_wrong": {
+      "fixture": "i18n-bad",
+      "port": 5792,
+      "route": "/"
+    },
+    "audit_log_missing_for_mutation": {
+      "fixture": "production",
+      "port": null,
+      "route": "/api"
+    },
+    "cache_staleness": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "data_integrity_orphan": {
+      "fixture": "production",
+      "port": null,
+      "route": "/api"
+    },
+    "money_math_precision": {
+      "fixture": "production",
+      "port": null,
+      "route": "/api"
+    },
+    "soft_delete_consistency": {
+      "fixture": "production",
+      "port": null,
+      "route": "/api"
+    },
+    "clock_dst_corruption": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "clock_leap_day_failure": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "clock_overflow": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "clock_skew_token_invalid": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "clock_timezone_display": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "multi_context_state_divergence": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "multi_user_inconsistent_snapshot": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "visibility_change_state_loss": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "network_fault_optimistic_no_revert": {
+      "fixture": "v24-deferred-bugs",
+      "port": 5780,
+      "route": "/"
+    },
+    "network_fault_unhandled": {
+      "fixture": "v24-deferred-bugs",
+      "port": 5780,
+      "route": "/"
+    },
+    "prompt_injection_executed": {
+      "fixture": "pen-bad",
+      "port": 5786,
+      "route": "/"
+    },
+    "hover_only_affordance": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    },
+    "touch_target_too_small": {
+      "fixture": "production",
+      "port": null,
+      "route": "/"
+    }
   },
   "deferred": [
-    "xss_stored",
-    "drag_drop_failure",
-    "paste_handler_failure",
-    "autofill_state_desync",
+    "agent_action_timeout",
+    "agent_cost_per_turn_high",
+    "agent_response_hallucinated",
     "animation_state_corruption",
-    "print_stylesheet_broken",
-    "reduced_motion_violation",
-    "forced_colors_failure",
+    "autofill_state_desync",
     "dark_mode_layout_break",
+    "drag_drop_failure",
+    "forced_colors_failure",
+    "idempotency_key_violation",
+    "infinite_loading",
+    "orientation_change_layout_break",
+    "paste_handler_failure",
+    "permission_denied_unhandled",
+    "print_stylesheet_broken",
+    "pull_to_refresh_conflict",
+    "reduced_motion_violation",
+    "soft_keyboard_occlusion",
+    "streaming_response_truncated",
+    "tool_call_failure_unhandled",
+    "viewport_100vh_break",
+    "xss_stored",
     "zoom_layout_break"
   ]
 }

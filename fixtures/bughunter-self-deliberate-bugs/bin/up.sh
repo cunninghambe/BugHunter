@@ -27,7 +27,7 @@ wait_for_port() {
   local port="$1"
   local name="$2"
   local retries=30
-  while ! nc -z 127.0.0.1 "$port" &>/dev/null; do
+  while ! nc -z 127.0.0.1 "$port" &>/dev/null && ! nc -z ::1 "$port" &>/dev/null; do
     retries=$((retries - 1))
     if [ "$retries" -eq 0 ]; then
       log "ERROR: $name (port $port) did not come up in time."
