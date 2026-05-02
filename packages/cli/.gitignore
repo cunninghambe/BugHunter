@@ -1,0 +1,9 @@
+# Stale tsc artifacts that occasionally land in src/ when tsc is run with --rootDir
+# changed or no outDir. The vendored web-vitals UMD and the xss-app server are
+# intentional and matched by their explicit paths.
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
+!src/perf/web-vitals-vendored/web-vitals.umd.js
+!test/fixtures/xss-app/server.js
