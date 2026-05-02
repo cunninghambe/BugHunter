@@ -80,3 +80,10 @@
 {"kind": "subresource_integrity_violation", "signaturePrefix": "subresource_integrity_violation", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}
 {"kind": "coop_coep_violation", "signaturePrefix": "coop_coep_violation", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}
 {"kind": "trusted_types_violation", "signaturePrefix": "trusted_types_violation", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}
+{"kind":"i18n_rtl_layout_break","signaturePrefix":"i18n_rtl_layout_break","minClusterSize":1,"fixture":"i18n-bad","specReference":"SPEC_V37_I18N_STRESS.md"}
+{"kind":"i18n_long_string_overflow","signaturePrefix":"i18n_long_string_overflow","minClusterSize":1,"fixture":"i18n-bad","specReference":"SPEC_V37_I18N_STRESS.md"}
+{"kind":"i18n_date_format_ambiguous","signaturePrefix":"i18n_date_format_ambiguous","minClusterSize":1,"fixture":"i18n-bad","specReference":"SPEC_V37_I18N_STRESS.md"}
+{"kind":"i18n_hardcoded_string","signaturePrefix":"i18n_hardcoded_string","minClusterSize":1,"fixture":"i18n-bad","specReference":"SPEC_V37_I18N_STRESS.md"}
+{"kind":"i18n_pluralization_broken","signaturePrefix":"i18n_pluralization_broken","minClusterSize":1,"fixture":"i18n-bad","specReference":"SPEC_V37_I18N_STRESS.md"}
+{"kind":"i18n_currency_format_broken","signaturePrefix":"i18n_currency_format_broken","minClusterSize":1,"fixture":"i18n-bad","specReference":"SPEC_V37_I18N_STRESS.md"}
+{"kind":"i18n_timezone_display_wrong","signaturePrefix":"i18n_timezone_display_wrong","minClusterSize":1,"fixture":"i18n-bad","specReference":"SPEC_V37_I18N_STRESS.md"}

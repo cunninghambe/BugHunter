@@ -156,6 +156,8 @@ export type RunOptions = {
   networkFaults?: boolean;
   /** --no-network-faults: force-disable even if config has it on. */
   noNetworkFaults?: boolean;
+  /** --locale-stress: enable i18n locale-stress post-discovery phase. */
+  localeStress?: boolean;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -332,6 +334,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     ...(clockTestingConfig !== undefined ? { clockTesting: clockTestingConfig } : {}),
     // v0.45 read-only
     ...(readOnly ? { readOnly } : {}),
+    // v0.37 locale-stress
+    ...(opts.localeStress === true ? { localeStress: true } : {}),
   });
 
   // v0.45 Tier 1: force-disable mutating subsystems when readOnly === true.

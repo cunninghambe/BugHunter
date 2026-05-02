@@ -8,26 +8,22 @@ describe('DETECTOR_REGISTRY', () => {
     expect(unique.size).toBe(kinds.length);
   });
 
-  it('has 62 entries covering all BugKinds', () => {
-    expect(DETECTOR_REGISTRY.length).toBe(62);
+  it('has 80 entries covering all BugKinds', () => {
+    expect(DETECTOR_REGISTRY.length).toBe(80);
   });
 
-  it('has exactly 5 deferred entries', () => {
+  it('has exactly 1 deferred entry', () => {
     const deferred = DETECTOR_REGISTRY.filter(e => e.status === 'deferred');
-    expect(deferred).toHaveLength(5);
+    expect(deferred).toHaveLength(1);
     const deferredKinds = deferred.map(e => e.kind).sort();
     expect(deferredKinds).toEqual([
-      'csrf_missing_on_mutating_route',
-      'hallucinated_route',
-      'optimistic_update_divergence',
-      'race_double_submit',
       'xss_stored',
     ]);
   });
 
-  it('has 57 wired entries', () => {
+  it('has 79 wired entries', () => {
     const wired = DETECTOR_REGISTRY.filter(e => e.status === 'wired');
-    expect(wired).toHaveLength(57);
+    expect(wired).toHaveLength(79);
   });
 
   it('has 0 dead entries', () => {
@@ -65,9 +61,9 @@ describe('DETECTOR_REGISTRY', () => {
       expect(entry?.detectorSite).toBe('packages/cli/src/classify/console.ts:24');
     });
 
-    it('finds csrf_missing_on_mutating_route as deferred', () => {
+    it('finds csrf_missing_on_mutating_route as wired', () => {
       const entry = lookupDetector('csrf_missing_on_mutating_route');
-      expect(entry?.status).toBe('deferred');
+      expect(entry?.status).toBe('wired');
     });
 
     it('finds seo_robots_blocking_crawl as wired', () => {
