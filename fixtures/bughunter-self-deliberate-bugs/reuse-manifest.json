@@ -1,78 +1,411 @@
 {
   "comment": "DO NOT EDIT WITHOUT UPDATING golden-bugs.jsonl. One entry per wired kind in DETECTOR_REGISTRY.",
   "kinds": {
-    "race_condition_double_submit":      { "fixture": "race-bad",          "port": 9994, "route": "/double-submit" },
-    "race_condition_click_navigate":     { "fixture": "race-bad",          "port": 9994, "route": "/click-then-nav" },
-    "race_condition_optimistic_revert":  { "fixture": "race-bad",          "port": 9994, "route": "/optimistic" },
-    "race_condition_interleaved_mutations": { "fixture": "race-bad",       "port": 9994, "route": "/counter" },
-    "race_condition_cross_tab":          { "fixture": "race-bad",          "port": 9994, "route": "/vote" },
-    "idor_horizontal":                   { "fixture": "idor-bad",          "port": 4090, "route": "/api/orders/:id" },
-    "idor_vertical_role_escalate":       { "fixture": "idor-bad",          "port": 4090, "route": "/api/admin/reports" },
-    "idor_horizontal_read":              { "fixture": "idor-bad",          "port": 4090, "route": "/api/orders/:id" },
-    "idor_horizontal_mutate":            { "fixture": "idor-bad",          "port": 4090, "route": "/api/orders/:id" },
-    "idor_vertical_suspicious":          { "fixture": "idor-bad",          "port": 4090, "route": "/api/admin/reports" },
-    "auth_bypass_via_unauthed_route":    { "fixture": "idor-bad",          "port": 4090, "route": "/api/admin/reports" },
-    "no_rate_limit_on_login":            { "fixture": "idor-bad",          "port": 4090, "route": "/api/login" },
-    "unbounded_list_render":             { "fixture": "v24-deferred-bugs", "port": 5780, "route": "/long-list" },
-    "request_cancellation_missing":      { "fixture": "v24-deferred-bugs", "port": 5780, "route": "/cancel" },
-    "dom_error_text":                    { "fixture": "v24-deferred-bugs", "port": 5780, "route": "/error-toast" },
-    "hydration_mismatch":                { "fixture": "v24-deferred-bugs", "port": 5780, "route": "/hydration" },
-    "accessibility_critical":            { "fixture": "v24-deferred-bugs", "port": 5780, "route": "/a11y" },
-    "axe_color_contrast_strong":         { "fixture": "a11y-bad",          "port": 5781, "route": "/contrast" },
-    "keyboard_trap":                     { "fixture": "a11y-bad",          "port": 5781, "route": "/trap" },
-    "focus_lost_after_action":           { "fixture": "a11y-bad",          "port": 5781, "route": "/focus-lost" },
-    "image_missing_alt":                 { "fixture": "a11y-bad",          "port": 5781, "route": "/no-alt" },
-    "form_input_unlabeled":              { "fixture": "a11y-bad",          "port": 5781, "route": "/no-label" },
-    "seo_title_missing":                 { "fixture": "seo-bad",           "port": 5782, "route": "/no-title" },
-    "seo_title_duplicate_across_routes": { "fixture": "seo-bad",           "port": 5782, "route": "/duplicate-titles" },
-    "seo_meta_description_missing":      { "fixture": "seo-bad",           "port": 5782, "route": "/no-meta-description" },
-    "seo_canonical_missing":             { "fixture": "seo-bad",           "port": 5782, "route": "/no-canonical" },
-    "seo_h1_missing_or_multiple":        { "fixture": "seo-bad",           "port": 5782, "route": "/h1-issues" },
-    "seo_robots_blocking_crawl":         { "fixture": "seo-bad",           "port": 5782, "route": "/robots-block" },
-    "sql_injection":                     { "fixture": "pen-bad",           "port": 4091, "route": "/api/search" },
-    "command_injection":                 { "fixture": "pen-bad",           "port": 4091, "route": "/api/ping" },
-    "path_traversal":                    { "fixture": "pen-bad",           "port": 4091, "route": "/api/file" },
-    "jwt_weak_alg":                      { "fixture": "pen-bad",           "port": 4091, "route": "/api/login" },
-    "memory_leak_suspected":             { "fixture": "self",              "port": 5790, "route": "/memory-leak" },
-    "memory_leak_attributed":            { "fixture": "self",              "port": 5790, "route": "/memory-leak" },
-    "visual_anomaly":                    { "fixture": "self",              "port": 5790, "route": "/visual-anomaly" },
-    "console_error":                     { "fixture": "self",              "port": 5790, "route": "/console-error" },
-    "react_error":                       { "fixture": "self",              "port": 5790, "route": "/react-error" },
-    "unhandled_exception":               { "fixture": "self",              "port": 5790, "route": "/unhandled" },
-    "missing_state_change":              { "fixture": "self",              "port": 5790, "route": "/no-state-change" },
-    "interactive_element_missing_accessible_name": { "fixture": "self",   "port": 5790, "route": "/click-no-name" },
-    "network_5xx":                       { "fixture": "self",              "port": 5791, "route": "/api/boom" },
-    "network_4xx_unexpected":            { "fixture": "self",              "port": 5791, "route": "/api/teapot" },
-    "404_for_linked_route":              { "fixture": "self",              "port": 5790, "route": "/dead-link" },
-    "surface_call_failed":               { "fixture": "self",              "port": 5791, "route": "/api/refuse" },
-    "xss_reflected":                     { "fixture": "self",              "port": 5791, "route": "/api/echo" },
-    "xss_dom":                           { "fixture": "self",              "port": 5790, "route": "/xss-dom" },
-    "auth_session_fixation":             { "fixture": "self",              "port": 5791, "route": "/api/login-fixation" },
-    "password_reset_token_reuse":        { "fixture": "self",              "port": 5791, "route": "/api/reset" },
-    "missing_csp_header":                { "fixture": "self",              "port": 5791, "route": "/headers/no-csp" },
-    "permissive_cors":                   { "fixture": "self",              "port": 5791, "route": "/headers/wide-cors" },
-    "cookie_security_flags":             { "fixture": "self",              "port": 5791, "route": "/headers/bad-cookie" },
-    "open_redirect":                     { "fixture": "self",              "port": 5791, "route": "/redirect" },
-    "sensitive_data_in_url":             { "fixture": "self",              "port": 5791, "route": "/api/transfer" },
-    "stack_trace_leak_in_response":      { "fixture": "self",              "port": 5791, "route": "/api/throw" },
-    "vulnerable_dependency_high":        { "fixture": "self",              "port": null,  "route": "package.json" },
-    "hardcoded_credentials_in_source":   { "fixture": "self",              "port": null,  "route": "src/leaked.ts" },
-    "swallowed_error_empty_catch":       { "fixture": "self",              "port": null,  "route": "src/swallow.ts" },
-    "slow_lcp":                          { "fixture": "self",              "port": 5790, "route": "/slow-lcp" },
-    "slow_inp":                          { "fixture": "self",              "port": 5790, "route": "/slow-inp" },
-    "high_cls":                          { "fixture": "self",              "port": 5790, "route": "/cls" },
-    "n_plus_one_api_calls":              { "fixture": "self",              "port": 5790, "route": "/n-plus-one" },
-    "request_dedup_missing":             { "fixture": "self",              "port": 5790, "route": "/dedup" },
-    "main_thread_blocked":               { "fixture": "self",              "port": 5790, "route": "/long-task" },
-    "oversized_bundle":                  { "fixture": "self",              "port": 5790, "route": "/" },
-    "excessive_re_renders":              { "fixture": "self",              "port": 5790, "route": "/rerender" },
-    "csrf_missing_on_mutating_route":    { "fixture": "self",              "port": 5791, "route": "/api/csrf-mutate" },
-    "hallucinated_route":                { "fixture": "self",              "port": 5790, "route": "/hallucinated" },
-    "nav_state_corruption":              { "fixture": "self",              "port": 5790, "route": "/nav-corruption" },
-    "nav_resubmit_on_back":              { "fixture": "self",              "port": 5790, "route": "/nav-resubmit" },
-    "nav_refresh_double_mutation":       { "fixture": "self",              "port": 5790, "route": "/nav-refresh" },
-    "nav_form_state_lost":               { "fixture": "self",              "port": 5790, "route": "/nav-form-lost" },
-    "nav_form_state_stale":              { "fixture": "self",              "port": 5790, "route": "/nav-form-stale" }
+    "race_condition_double_submit": {
+      "fixture": "race-bad",
+      "port": 9994,
+      "route": "/double-submit"
+    },
+    "race_condition_click_navigate": {
+      "fixture": "race-bad",
+      "port": 9994,
+      "route": "/click-then-nav"
+    },
+    "race_condition_optimistic_revert": {
+      "fixture": "race-bad",
+      "port": 9994,
+      "route": "/optimistic"
+    },
+    "race_condition_interleaved_mutations": {
+      "fixture": "race-bad",
+      "port": 9994,
+      "route": "/counter"
+    },
+    "race_condition_cross_tab": {
+      "fixture": "race-bad",
+      "port": 9994,
+      "route": "/vote"
+    },
+    "idor_horizontal": {
+      "fixture": "idor-bad",
+      "port": 4090,
+      "route": "/api/orders/:id"
+    },
+    "idor_vertical_role_escalate": {
+      "fixture": "idor-bad",
+      "port": 4090,
+      "route": "/api/admin/reports"
+    },
+    "idor_horizontal_read": {
+      "fixture": "idor-bad",
+      "port": 4090,
+      "route": "/api/orders/:id"
+    },
+    "idor_horizontal_mutate": {
+      "fixture": "idor-bad",
+      "port": 4090,
+      "route": "/api/orders/:id"
+    },
+    "idor_vertical_suspicious": {
+      "fixture": "idor-bad",
+      "port": 4090,
+      "route": "/api/admin/reports"
+    },
+    "auth_bypass_via_unauthed_route": {
+      "fixture": "idor-bad",
+      "port": 4090,
+      "route": "/api/admin/reports"
+    },
+    "no_rate_limit_on_login": {
+      "fixture": "idor-bad",
+      "port": 4090,
+      "route": "/api/login"
+    },
+    "unbounded_list_render": {
+      "fixture": "v24-deferred-bugs",
+      "port": 5780,
+      "route": "/long-list"
+    },
+    "request_cancellation_missing": {
+      "fixture": "v24-deferred-bugs",
+      "port": 5780,
+      "route": "/cancel"
+    },
+    "dom_error_text": {
+      "fixture": "v24-deferred-bugs",
+      "port": 5780,
+      "route": "/error-toast"
+    },
+    "hydration_mismatch": {
+      "fixture": "v24-deferred-bugs",
+      "port": 5780,
+      "route": "/hydration"
+    },
+    "accessibility_critical": {
+      "fixture": "v24-deferred-bugs",
+      "port": 5780,
+      "route": "/a11y"
+    },
+    "axe_color_contrast_strong": {
+      "fixture": "a11y-bad",
+      "port": 5781,
+      "route": "/contrast"
+    },
+    "keyboard_trap": {
+      "fixture": "a11y-bad",
+      "port": 5781,
+      "route": "/trap"
+    },
+    "focus_lost_after_action": {
+      "fixture": "a11y-bad",
+      "port": 5781,
+      "route": "/focus-lost"
+    },
+    "image_missing_alt": {
+      "fixture": "a11y-bad",
+      "port": 5781,
+      "route": "/no-alt"
+    },
+    "form_input_unlabeled": {
+      "fixture": "a11y-bad",
+      "port": 5781,
+      "route": "/no-label"
+    },
+    "seo_title_missing": {
+      "fixture": "seo-bad",
+      "port": 5782,
+      "route": "/no-title"
+    },
+    "seo_title_duplicate_across_routes": {
+      "fixture": "seo-bad",
+      "port": 5782,
+      "route": "/duplicate-titles"
+    },
+    "seo_meta_description_missing": {
+      "fixture": "seo-bad",
+      "port": 5782,
+      "route": "/no-meta-description"
+    },
+    "seo_canonical_missing": {
+      "fixture": "seo-bad",
+      "port": 5782,
+      "route": "/no-canonical"
+    },
+    "seo_h1_missing_or_multiple": {
+      "fixture": "seo-bad",
+      "port": 5782,
+      "route": "/h1-issues"
+    },
+    "seo_robots_blocking_crawl": {
+      "fixture": "seo-bad",
+      "port": 5782,
+      "route": "/robots-block"
+    },
+    "sql_injection": {
+      "fixture": "pen-bad",
+      "port": 4091,
+      "route": "/api/search"
+    },
+    "command_injection": {
+      "fixture": "pen-bad",
+      "port": 4091,
+      "route": "/api/ping"
+    },
+    "path_traversal": {
+      "fixture": "pen-bad",
+      "port": 4091,
+      "route": "/api/file"
+    },
+    "jwt_weak_alg": {
+      "fixture": "pen-bad",
+      "port": 4091,
+      "route": "/api/login"
+    },
+    "memory_leak_suspected": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/memory-leak"
+    },
+    "memory_leak_attributed": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/memory-leak"
+    },
+    "visual_anomaly": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/visual-anomaly"
+    },
+    "console_error": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/console-error"
+    },
+    "react_error": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/react-error"
+    },
+    "unhandled_exception": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/unhandled"
+    },
+    "missing_state_change": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/no-state-change"
+    },
+    "interactive_element_missing_accessible_name": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/click-no-name"
+    },
+    "network_5xx": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/api/boom"
+    },
+    "network_4xx_unexpected": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/api/teapot"
+    },
+    "404_for_linked_route": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/dead-link"
+    },
+    "surface_call_failed": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/api/refuse"
+    },
+    "xss_reflected": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/api/echo"
+    },
+    "xss_dom": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/xss-dom"
+    },
+    "auth_session_fixation": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/api/login-fixation"
+    },
+    "password_reset_token_reuse": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/api/reset"
+    },
+    "missing_csp_header": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/headers/no-csp"
+    },
+    "permissive_cors": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/headers/wide-cors"
+    },
+    "cookie_security_flags": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/headers/bad-cookie"
+    },
+    "open_redirect": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/redirect"
+    },
+    "sensitive_data_in_url": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/api/transfer"
+    },
+    "stack_trace_leak_in_response": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/api/throw"
+    },
+    "vulnerable_dependency_high": {
+      "fixture": "self",
+      "port": null,
+      "route": "package.json"
+    },
+    "hardcoded_credentials_in_source": {
+      "fixture": "self",
+      "port": null,
+      "route": "src/leaked.ts"
+    },
+    "swallowed_error_empty_catch": {
+      "fixture": "self",
+      "port": null,
+      "route": "src/swallow.ts"
+    },
+    "slow_lcp": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/slow-lcp"
+    },
+    "slow_inp": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/slow-inp"
+    },
+    "high_cls": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/cls"
+    },
+    "n_plus_one_api_calls": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/n-plus-one"
+    },
+    "request_dedup_missing": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/dedup"
+    },
+    "main_thread_blocked": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/long-task"
+    },
+    "oversized_bundle": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/"
+    },
+    "excessive_re_renders": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/rerender"
+    },
+    "csrf_missing_on_mutating_route": {
+      "fixture": "self",
+      "port": 5791,
+      "route": "/api/csrf-mutate"
+    },
+    "hallucinated_route": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/hallucinated"
+    },
+    "nav_state_corruption": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/nav-corruption"
+    },
+    "nav_resubmit_on_back": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/nav-resubmit"
+    },
+    "nav_refresh_double_mutation": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/nav-refresh"
+    },
+    "nav_form_state_lost": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/nav-form-lost"
+    },
+    "nav_form_state_stale": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/nav-form-stale"
+    },
+    "service_worker_stale": {
+      "fixture": "browser-platform-bad",
+      "port": 5793,
+      "route": "/sw-stale"
+    },
+    "web_worker_error": {
+      "fixture": "browser-platform-bad",
+      "port": 5793,
+      "route": "/worker-error"
+    },
+    "iframe_postmessage_unguarded": {
+      "fixture": "browser-platform-bad",
+      "port": 5793,
+      "route": "/iframe-unguarded"
+    },
+    "shadow_dom_a11y_violation": {
+      "fixture": "browser-platform-bad",
+      "port": 5793,
+      "route": "/shadow-bad-contrast"
+    },
+    "permission_denied_unhandled": {
+      "fixture": "browser-platform-bad",
+      "port": 5793,
+      "route": "/perm-denied"
+    },
+    "webrtc_ice_failure": {
+      "fixture": "browser-platform-bad",
+      "port": 5793,
+      "route": "/webrtc-fail"
+    },
+    "subresource_integrity_violation": {
+      "fixture": "browser-platform-bad",
+      "port": 5793,
+      "route": "/sri-block"
+    },
+    "coop_coep_violation": {
+      "fixture": "browser-platform-bad",
+      "port": 5793,
+      "route": "/coop-coep-bad"
+    },
+    "trusted_types_violation": {
+      "fixture": "browser-platform-bad",
+      "port": 5793,
+      "route": "/trusted-types-violate"
+    }
   },
   "deferred": [
     "xss_stored"

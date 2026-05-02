@@ -71,3 +71,12 @@
 {"kind":"nav_form_state_lost","signaturePrefix":"nav_form_state_lost","minClusterSize":1,"fixture":"self","specReference":"SPEC_V22_NAV_STATE.md"}
 {"kind":"nav_form_state_stale","signaturePrefix":"nav_form_state_stale","minClusterSize":1,"fixture":"self","specReference":"SPEC_V22_NAV_STATE.md"}
 {"expect":"absent","kind":"xss_stored","reason":"Placeholder kind; v0.8 deliverable, registry status=deferred"}
+{"kind": "service_worker_stale", "signaturePrefix": "service_worker_stale", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}
+{"kind": "web_worker_error", "signaturePrefix": "web_worker_error", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md"}
+{"kind": "iframe_postmessage_unguarded", "signaturePrefix": "iframe_postmessage_unguarded", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md"}
+{"kind": "shadow_dom_a11y_violation", "signaturePrefix": "shadow_dom_a11y_violation", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}
+{"kind": "permission_denied_unhandled", "signaturePrefix": "permission_denied_unhandled", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}
+{"kind": "webrtc_ice_failure", "signaturePrefix": "webrtc_ice_failure", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}
+{"kind": "subresource_integrity_violation", "signaturePrefix": "subresource_integrity_violation", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}
+{"kind": "coop_coep_violation", "signaturePrefix": "coop_coep_violation", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}
+{"kind": "trusted_types_violation", "signaturePrefix": "trusted_types_violation", "minClusterSize": 1, "fixture": "browser-platform-bad", "specReference": "SPEC_V36_BROWSER_PLATFORM.md", "acceptableMisses": 1}

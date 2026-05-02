@@ -128,6 +128,12 @@ Accessibility / SEO:
   --keyboard-trap-max <n>     Max Tab presses during keyboard trap probe (default 20)
   --form-reachability-timeout <ms>  Max wait for form to appear in probe/execute (default from config)
 
+Browser-platform probe (v0.36):
+  --browser-platform              Enable browser-platform probe (default: on)
+  --no-browser-platform           Disable browser-platform probe
+  --browser-platform-force-deny   Opt-in to forced-permission-deny path (changes browser state)
+  --browser-platform-sw-stale-ms <ms>  Override SW staleness threshold (default 60000)
+
 Performance / heap:
   --enable-perf               Enable web vitals + long task + heap sampling
   --enable-bundle-probe       Enable bundle size probe
@@ -330,6 +336,13 @@ async function main(): Promise<void> {
           allowNetworkMiss: flags['allow-network-miss'] === true,
           // v0.45 read-only mode
           readOnly: flags['read-only'] === true,
+          // v0.36 browser-platform flags
+          browserPlatform: flags['browser-platform'] === true,
+          noBrowserPlatform: flags['no-browser-platform'] === true,
+          browserPlatformForceDeny: flags['browser-platform-force-deny'] === true,
+          browserPlatformSwStaleMs: typeof flags['browser-platform-sw-stale-ms'] === 'string'
+            ? parseInt(flags['browser-platform-sw-stale-ms'], 10)
+            : undefined,
         });
         break;
       }

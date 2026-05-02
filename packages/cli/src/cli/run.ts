@@ -42,6 +42,7 @@ import { runAnalyze } from '../phases/analyze.js';
 import { runSeedHooksAt } from '../seed/runner.js';
 import type { RunSummary, SeedHookExecution, BugCluster, FuzzConfig, FuzzTelemetry } from '../types.js';
 import { applySuppressions } from '../suppress/apply.js';
+import type { BrowserPlatformProbeOpts } from '../discovery/browser-platform-probe.js';
 
 function aggregateDiscoverySkips(skipList: SkippedItem[]): Array<{ reason: string; count: number }> {
   const counts = new Map<string, number>();
@@ -141,6 +142,15 @@ export type RunOptions = {
   clockConditions?: string;
   /** v0.45: --read-only mode. Disables all mutating subsystems and actions. */
   readOnly?: boolean;
+  // v0.36 browser-platform flags
+  /** --browser-platform: enable browser-platform probe (overrides config). */
+  browserPlatform?: boolean;
+  /** --no-browser-platform: disable browser-platform probe (overrides config). */
+  noBrowserPlatform?: boolean;
+  /** --browser-platform-force-deny: opt-in to forced-permission-deny path. */
+  browserPlatformForceDeny?: boolean;
+  /** --browser-platform-sw-stale-ms <ms>: override SW staleness threshold. */
+  browserPlatformSwStaleMs?: number;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -232,6 +242,21 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const seoEnabled = opts.seoEnabled === true || (config.seoEnabled ?? false);
   const seoSuppressDuplicateTitles = opts.noSeoDuplicateTitles === true || (config.seoSuppressDuplicateTitles ?? false);
   const keyboardTrapMaxPresses = opts.keyboardTrapMax ?? config.keyboardTrapMaxPresses ?? 20;
+
+  // v0.36: resolve browser-platform probe options from flags + config file
+  const browserPlatformEnabled =
+    opts.noBrowserPlatform === true ? false :
+    opts.browserPlatform === true ? true :
+    (config.browserPlatform?.enabled ?? true);
+  const browserPlatformOpts: BrowserPlatformProbeOpts | undefined =
+    browserPlatformEnabled ? {
+      pageRoute: '',  // overridden per-page inside onPageBaseline
+      swStaleThresholdMs: opts.browserPlatformSwStaleMs ?? config.browserPlatform?.swStaleThresholdMs ?? 60_000,
+      observationWindowMs: config.browserPlatform?.observationWindowMs ?? 1500,
+      permissions: config.browserPlatform?.permissions ?? ['geolocation', 'clipboard-read', 'notifications'],
+      enableShadowA11y: config.browserPlatform?.enableShadowA11y ?? true,
+      enableForcedPermissionDeny: opts.browserPlatformForceDeny === true || (config.browserPlatform?.enableForcedPermissionDeny ?? false),
+    } : undefined;
 
   // v0.19: resolve race-condition config from flags + config file
   const raceConditionsConfig = buildRaceConditionsConfig(opts, config.raceConditions);
@@ -527,7 +552,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     }
 
     // Phase 3: execute
-    const { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts, a11yBaselineDetections, seoDetections } = await runExecute({
+    const { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts, a11yBaselineDetections, seoDetections, browserPlatformDetections, browserPlatformTelemetry } = await runExecute({
       testCases,
       runState,
       browser,
@@ -555,6 +580,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       asyncMaxWaitMs: opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs,
       discoveryPages: discovery.pages,
       fixtureUnresolvableRoutes: new Set(discovery.fixtureUnresolvableRoutes ?? []),
+      browserPlatformOpts,
     });
 
     // Close CDP session after execute completes
@@ -681,6 +707,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(seoDetections ?? []),
       ...penTestingDetections,
       ...clockTestingDetections,
+      ...(browserPlatformDetections ?? []),
     ];
     const { staticTestCases, staticResults } = synthesiseFakeDetectionCases(runId, staticDetectionList);
 
@@ -873,6 +900,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(raceConditionsTelemetry !== undefined ? { raceConditions: raceConditionsTelemetry } : {}),
       ...(fuzzTelemetry !== undefined ? { fuzz: fuzzTelemetry } : {}),
       ...(crossUserResult.idorTelemetry !== undefined ? { idor: crossUserResult.idorTelemetry } : {}),
+      ...(browserPlatformTelemetry !== undefined ? { browserPlatform: browserPlatformTelemetry } : {}),
       suppressedClusters: suppressedCount,
       ...(suppressedSamples.length > 0 ? { suppressedSamples } : {}),
       ...(deterministicBlock !== undefined ? { deterministic: deterministicBlock } : {}),

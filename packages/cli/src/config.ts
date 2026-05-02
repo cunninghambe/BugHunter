@@ -252,6 +252,14 @@ export const ConfigSchema = z.object({
     serverClockSource: z.string().url().optional(),
     userProfileTimezone: z.string().optional(),
   }).optional(),
+  browserPlatform: z.object({
+    enabled: z.boolean().optional(),
+    swStaleThresholdMs: z.number().int().positive().optional(),
+    observationWindowMs: z.number().int().positive().min(100).max(10_000).optional(),
+    permissions: z.array(z.enum(['geolocation', 'clipboard-read', 'notifications'])).optional(),
+    enableShadowA11y: z.boolean().optional(),
+    enableForcedPermissionDeny: z.boolean().optional(),
+  }).strict().optional(),
 });
 
 export function loadConfig(projectDir: string): BugHunterConfig {

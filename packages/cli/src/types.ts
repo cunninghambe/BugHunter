@@ -115,7 +115,17 @@ export type BugKind =
   | 'seo_meta_description_missing'
   | 'seo_canonical_missing'
   | 'seo_h1_missing_or_multiple'
-  | 'seo_robots_blocking_crawl';
+  | 'seo_robots_blocking_crawl'
+  // v0.36 browser-platform surface kinds
+  | 'service_worker_stale'
+  | 'web_worker_error'
+  | 'iframe_postmessage_unguarded'
+  | 'shadow_dom_a11y_violation'
+  | 'permission_denied_unhandled'
+  | 'webrtc_ice_failure'
+  | 'subresource_integrity_violation'
+  | 'coop_coep_violation'
+  | 'trusted_types_violation';
 
 /**
  * v0.19 back-compat alias: old v0.5 JSONL records used these kinds.
@@ -417,6 +427,8 @@ export type Element = {
   href?: string;
   formId?: string;
   text?: string;
+  /** v0.36: set for elements discovered inside an open shadow root; value is the host element's selector. */
+  shadowHost?: string;
 };
 
 export type FormField = {
@@ -956,6 +968,8 @@ export type BugDetection = {
   };
   /** v0.23: populated for clock-injection findings. */
   clockContext?: ClockContext;
+  /** v0.36: populated for browser-platform surface findings. */
+  browserPlatformContext?: BrowserPlatformContext;
 };
 
 /** v0.23: clock-injection proof context attached to clock-related BugDetections. */
@@ -1402,6 +1416,8 @@ export type BugHunterConfig = {
    * Env: BUGHUNTER_READ_ONLY=1. Precedence: CLI > env > config.
    */
   readOnly?: boolean;
+  /** v0.36: browser-platform surface probe config. Default: disabled. */
+  browserPlatform?: BrowserPlatformConfig;
 };
 
 /** v0.23: configuration for the clock-injection palette. */
@@ -1613,6 +1629,8 @@ export type RunSummary = {
     blockedAtRuntime: number;
     banner: string;
   };
+  /** v0.36: browser-platform probe telemetry — present when browserPlatform.enabled = true. */
+  browserPlatform?: BrowserPlatformTelemetry;
 };
 
 // --- v0.19 race-condition types ---
@@ -1827,4 +1845,36 @@ export type BisectRunSummary = {
   durationMs: number;
   bisectLogPath: string;
   actionLogPath: string;
+};
+
+// --- v0.36 browser-platform surface types ---
+
+export type BrowserPlatformContext =
+  | { kind: 'sw'; scope: string; ageMs: number; hasInstalling: boolean; hasWaiting: boolean }
+  | { kind: 'worker'; scriptUrl: string; eventKind: 'error' | 'messageerror'; errorMsg: string }
+  | { kind: 'iframe'; listenerCount: number; handlerFingerprints: string[] }
+  | { kind: 'shadow_a11y'; hostSelector: string; axeRuleId: string; severity: 'critical' | 'serious' }
+  | { kind: 'permission'; permission: string; mode: 'passive' | 'forced'; uiErrorVisible: boolean; consoleErrorCount: number }
+  | { kind: 'webrtc'; connectionId: string; finalState: string; hadHandler: boolean }
+  | { kind: 'sri'; blockedUrl: string; hasIntegrityAttr: number; uiErrorVisible: boolean }
+  | { kind: 'coop_coep'; crossOriginIsolated: boolean; sabReferenced: boolean; sabInstantiated: boolean }
+  | { kind: 'trusted_types'; sample: string; blockedURI: string; source: 'dynamic' | 'static_innerhtml' };
+
+export type BrowserPlatformConfig = {
+  enabled?: boolean;
+  swStaleThresholdMs?: number;
+  observationWindowMs?: number;
+  permissions?: Array<'geolocation' | 'clipboard-read' | 'notifications'>;
+  enableShadowA11y?: boolean;
+  enableForcedPermissionDeny?: boolean;
+};
+
+export type BrowserPlatformTelemetry = {
+  pagesProbed: number;
+  detectionsByKind: Record<string, number>;
+  shadowHostsDiscovered: number;
+  workersInstrumented: number;
+  rtcConnectionsObserved: number;
+  permissionsForceDenied: number;
+  bootstrapInstallFailures: number;
 };

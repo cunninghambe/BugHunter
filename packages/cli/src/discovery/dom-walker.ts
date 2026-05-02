@@ -31,23 +31,34 @@ const COLLECT_ELEMENTS_SCRIPT = `
     return el.tagName.toLowerCase() + ':nth-of-type(' + (Array.from(el.parentElement?.children ?? []).indexOf(el) + 1) + ')';
   }
 
-  const selectors = ['button', 'a[href]', 'input', 'select', 'textarea', '[role="button"]', '[role="link"]', '[onclick]', '[contenteditable]'];
-  const els = [];
-  for (const sel of selectors) {
-    document.querySelectorAll(sel).forEach(el => {
-      els.push({
-        tag: el.tagName.toLowerCase(),
-        roleAttr: el.getAttribute('role') || undefined,
-        typeAttr: el.getAttribute('type') || undefined,
-        testId: el.getAttribute('data-testid') || undefined,
-        ancestorStack: ancestorStack(el, 3),
-        selector: bestSelector(el),
-        disabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
-        href: el.getAttribute('href') || undefined,
-        text: (el.textContent || '').trim().slice(0, 80),
-      });
+  function walkRoots(root, fn) {
+    fn(root);
+    root.querySelectorAll('*').forEach(function(host) {
+      if (host.shadowRoot && host.shadowRoot.mode === 'open') walkRoots(host.shadowRoot, fn);
     });
   }
+
+  const selectors = ['button', 'a[href]', 'input', 'select', 'textarea', '[role="button"]', '[role="link"]', '[onclick]', '[contenteditable]'];
+  const els = [];
+  walkRoots(document, function(root) {
+    var shadowHostSelector = (root instanceof ShadowRoot) ? bestSelector(root.host) : undefined;
+    for (const sel of selectors) {
+      root.querySelectorAll(sel).forEach(el => {
+        els.push({
+          tag: el.tagName.toLowerCase(),
+          roleAttr: el.getAttribute('role') || undefined,
+          typeAttr: el.getAttribute('type') || undefined,
+          testId: el.getAttribute('data-testid') || undefined,
+          ancestorStack: ancestorStack(el, 3),
+          selector: shadowHostSelector ? shadowHostSelector + ' >>> ' + bestSelector(el) : bestSelector(el),
+          disabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
+          href: el.getAttribute('href') || undefined,
+          text: (el.textContent || '').trim().slice(0, 80),
+          shadowHost: shadowHostSelector,
+        });
+      });
+    }
+  });
 
   // Forms
   const forms = [];
@@ -92,6 +103,7 @@ type RawEvalResult = {
     disabled: boolean;
     href?: string;
     text?: string;
+    shadowHost?: string;
   }>;
   forms: Array<{
     formSelector: string;
@@ -115,6 +127,7 @@ function shapeFromEvalResult(evalResult: { value: unknown }): DomWalkResult {
     disabled: e.disabled,
     href: e.href,
     text: e.text,
+    shadowHost: e.shadowHost,
   }));
 
   const forms: DiscoveredForm[] = raw.forms.map(f => ({

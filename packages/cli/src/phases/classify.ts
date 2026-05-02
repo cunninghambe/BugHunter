@@ -23,6 +23,11 @@ const KIND_PRIORITY: BugKind[] = [
   'race_condition_interleaved_mutations',
   'race_condition_cross_tab',
   'race_condition_click_navigate',
+  // v0.36 browser-platform security-critical kinds (below race, above network errors)
+  'trusted_types_violation',
+  'web_worker_error',
+  'iframe_postmessage_unguarded',
+  'service_worker_stale',
   'network_5xx',
   'react_error',
   'hydration_mismatch',
@@ -65,6 +70,11 @@ const KIND_PRIORITY: BugKind[] = [
   'no_rate_limit_on_login',
   'hallucinated_route',
   'swallowed_error_empty_catch',
+  // v0.36 browser-platform infrastructure/policy kinds
+  'permission_denied_unhandled',
+  'webrtc_ice_failure',
+  'coop_coep_violation',
+  'subresource_integrity_violation',
   // v0.22 nav-state catch-all (§4.1)
   'nav_state_corruption',
   // v0.22 form stale (§4.1)
@@ -77,6 +87,7 @@ const KIND_PRIORITY: BugKind[] = [
   'console_error',
   'accessibility_critical',
   // v0.6 a11y baseline kinds (same tier as accessibility_critical)
+  'shadow_dom_a11y_violation',
   'axe_color_contrast_strong',
   'keyboard_trap',
   'focus_lost_after_action',
