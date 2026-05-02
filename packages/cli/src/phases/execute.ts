@@ -74,7 +74,7 @@ import type { BrowserPlatformProbeOpts } from '../discovery/browser-platform-pro
 import { detectNetworkFaultUnhandled } from '../classify/network-fault-unhandled.js';
 import { detectOptimisticNoRevert } from '../classify/network-fault-optimistic-revert.js';
 import type { OptimisticSnapshot } from '../classify/network-fault-optimistic-revert.js';
-import { detectInfiniteLoading } from '../classify/infinite-loading.js';
+import { detectInfiniteLoading, CHECK_LOADING_SCRIPT } from '../classify/infinite-loading.js';
 import { filterInvariants } from '../dataIntegrity/filter.js';
 import { snapshotInvariantsBefore, evaluateInvariantsAfter } from '../dataIntegrity/evaluator.js';
 import type { ActionResult } from '../dataIntegrity/evaluator.js';
@@ -901,6 +901,18 @@ async function executeUiTestInner(
     throw new Error(`Browser action failed: ${String(err)}`);
   }
 
+  // v0.20: capture optimistic snapshot ~200ms post-action for detectOptimisticNoRevert.
+  // Only for fault-injected cases; the 200ms window is the standard optimistic-UI settle time.
+  if (tc.faultInjected !== undefined) {
+    await new Promise<void>(r => { setTimeout(r, 200); });
+    const optSnap = await scope.snapshot().catch(() => null);
+    if (optSnap?.snapshot !== undefined && optSnap.snapshot !== '') {
+      Object.assign(tc, {
+        __v20OptimisticSnapshot: { snapshot: optSnap.snapshot, capturedAtOffsetMs: 200 },
+      });
+    }
+  }
+
   // Focus-after-action probe: emit if focus landed on body/null after successful action.
   if (focusAfterThisAction !== undefined) {
     bugs.push(...classifyA11yBaseline({
@@ -1287,6 +1299,12 @@ async function executeUiTest(
         }
       }
 
+      // v0.20: capture pre-action spinner state before the inner executor fires the action.
+      const preSpinnerEval = tc.faultInjected !== undefined
+        ? await scope.evaluate(CHECK_LOADING_SCRIPT).catch(() => null)
+        : null;
+      const preHadSpinner = preSpinnerEval?.value === true;
+
       let innerResult: TestResult;
       try {
         innerResult = await executeUiTestInner(scope, tc, runId, occurrenceId, start, appBaseUrl, paths, actionLog, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, extras, clock);
@@ -1310,26 +1328,26 @@ async function executeUiTest(
         );
         if (unhandled !== null) innerResult.bugs.push({ ...unhandled, triggeringAction: tc.action, pageRoute: tc.page });
 
-        // Optimistic revert: we don't have a real intermediate snapshot here since it
-        // would require capturing DOM 200ms after action fire inside executeUiTestInner.
-        // For v0.20, pass null (no intermediate snapshot available from this path).
+        // v0.20: read the optimistic snapshot stashed on tc by executeUiTestInner.
+        const optimisticSnapshot = (tc as unknown as Record<string, unknown>).__v20OptimisticSnapshot as OptimisticSnapshot | undefined ?? null;
         const noRevert = detectOptimisticNoRevert(
           innerResult.preState,
           innerResult.postState,
           tc.faultInjected,
-          null as OptimisticSnapshot | null,
+          optimisticSnapshot,
           retryStormThresholdRps,
         );
         if (noRevert !== null) innerResult.bugs.push({ ...noRevert, triggeringAction: tc.action, pageRoute: tc.page });
 
-        // Infinite loading: check if a loading indicator appeared and persisted.
-        // preHadSpinner / postHasSpinner require DOM evaluation; conservative defaults.
+        // v0.20: capture post-action spinner state and pass real signals to detectInfiniteLoading.
+        const postSpinnerEval = await scope.evaluate(CHECK_LOADING_SCRIPT).catch(() => null);
+        const postHasSpinner = postSpinnerEval?.value === true;
         const infiniteLoad = detectInfiniteLoading(
           innerResult.preState,
           innerResult.postState,
           tc.faultInjected,
-          false, // preHadSpinner — we don't capture this yet; conservative default
-          false, // postHasSpinner — requires evaluate; not available in this path
+          preHadSpinner,
+          postHasSpinner,
         );
         if (infiniteLoad !== null) innerResult.bugs.push({ ...infiniteLoad, triggeringAction: tc.action, pageRoute: tc.page });
       }
