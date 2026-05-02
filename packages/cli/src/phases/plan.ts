@@ -4,7 +4,7 @@ import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type {
   BugHunterConfig, DiscoveredForm, DiscoveredPage, DiscoveryOutput, TestCase, ToolMeta,
   RaceConditionsConfig, InterleavingVariant,
-  Action, FuzzConfig, NetworkFaultSpec,
+  Action, FuzzConfig, NetworkFaultSpec, MultiContextConfig, MultiContextVariant,
 } from '../types.js';
 import { resolveFaultPalette, isToolDenylisted } from '../security/network-fault-palette.js';
 import type { FuzzOptions, FuzzStrategy } from '../mutation/fuzz.js';
@@ -20,6 +20,14 @@ import {
   makeInterleavedMutations,
   makeCrossTab,
 } from '../security/interleaving-palette.js';
+import {
+  plansForStateDivergence,
+  plansForLifecycleStateLoss,
+  plansForInconsistentSnapshot,
+  isSensitiveMultiContextTarget,
+  isCommutativeHint,
+  pairSnapshotReader,
+} from '../security/multi-context-variants.js';
 import { detectDateSensitiveReasons, classifyDateSensitiveBatch, ALL_CLOCK_CONDITION_NAMES } from '../security/clock-test-runner.js';
 import { defaultConditionsForReasons } from '../security/clock-conditions.js';
 import { formTestCases, apiTestCases, xssFormTestCases, xssApiTestCases } from '../mutation/apply.js';
@@ -278,6 +286,16 @@ export async function runPlan(
     }
   }
 
+  // v0.40: multi-context planner pass — runs after the primary pass
+  const multiContextSkipReasons = new Map<string, number>();
+  if (config.multiContext?.enabled === true) {
+    const toolMap = new Map<string, ToolMeta>(enrichedTools.map(t => [t.toolId, t]));
+    const allToolIds = enrichedTools.map(t => t.toolId);
+    const mcCases = planMultiContextTests(runId, testCases, toolMap, allToolIds, config.multiContext, multiContextSkipReasons);
+    testCases.push(...mcCases);
+    log.info(`multi-context: planned ${mcCases.length} coordination tests`);
+  }
+
   // v0.19: second pass — race-condition interleaving planner
   const raceSkipReasons = new Map<string, number>();
   if (config.raceConditions?.enabled === true) {
@@ -484,6 +502,11 @@ export async function runPlan(
 
   // Merge race skip reasons into the global skip reason map
   for (const [reason, count] of raceSkipReasons) {
+    skipReasonCounts.set(reason, (skipReasonCounts.get(reason) ?? 0) + count);
+  }
+
+  // Merge multi-context skip reasons
+  for (const [reason, count] of multiContextSkipReasons) {
     skipReasonCounts.set(reason, (skipReasonCounts.get(reason) ?? 0) + count);
   }
 
@@ -815,6 +838,104 @@ function makeRaceTestCase(runId: string, source: TestCase, variant: Interleaving
     formSignature: source.formSignature,
     stateContext: source.stateContext,
     race: { variant },
+  };
+}
+
+/**
+ * v0.40: Multi-context third planner pass.
+ * Extracts mutating-action happy-palette tuples (same as race pass) and emits
+ * one TestCase per enabled multi-context variant per tuple.
+ */
+export function planMultiContextTests(
+  runId: string,
+  existingCases: TestCase[],
+  toolMap: Map<string, ToolMeta>,
+  allToolIds: string[],
+  config: MultiContextConfig,
+  skipReasonCounts: Map<string, number>,
+): TestCase[] {
+  const enabledVariants = config.variants ?? ['state_divergence', 'lifecycle_state_loss', 'inconsistent_snapshot'];
+  const maxTests = config.maxTestsPerVariant;
+  const aggressiveTargets = config.aggressiveMultiContextTargets ?? [];
+
+  const tuples = extractMutatingActionTuples(existingCases, toolMap);
+  const mcCases: TestCase[] = [];
+
+  const countByVariant = new Map<string, number>();
+
+  for (const tuple of tuples) {
+    const { toolId, toolPath, testCase } = tuple;
+    const tool = toolMap.get(toolId);
+
+    for (const variantKind of enabledVariants) {
+      const cap = maxTests?.[variantKind] ?? (variantKind === 'lifecycle_state_loss' ? 50 : 30);
+      const seen = countByVariant.get(variantKind) ?? 0;
+      if (seen >= cap) continue;
+
+      if (variantKind === 'state_divergence') {
+        if (isSensitiveMultiContextTarget(toolId, aggressiveTargets)) {
+          skipReasonCounts.set('aggressive_target_not_opted_in', (skipReasonCounts.get('aggressive_target_not_opted_in') ?? 0) + 1);
+          continue;
+        }
+        if (tool !== undefined && isCommutativeHint(tool)) {
+          skipReasonCounts.set('commutative_by_hint', (skipReasonCounts.get('commutative_by_hint') ?? 0) + 1);
+          continue;
+        }
+        const variants = plansForStateDivergence(toolId, config.nonCommutativeFieldsByTool?.[toolId], config);
+        for (const variant of variants) {
+          if ((countByVariant.get(variantKind) ?? 0) >= cap) break;
+          mcCases.push(makeMultiContextTestCase(runId, testCase, variant));
+          countByVariant.set(variantKind, (countByVariant.get(variantKind) ?? 0) + 1);
+        }
+        continue;
+      }
+
+      if (variantKind === 'lifecycle_state_loss') {
+        if (isSensitiveMultiContextTarget(toolId, aggressiveTargets)) {
+          skipReasonCounts.set('aggressive_target_not_opted_in', (skipReasonCounts.get('aggressive_target_not_opted_in') ?? 0) + 1);
+          continue;
+        }
+        const variants = plansForLifecycleStateLoss(config);
+        for (const variant of variants) {
+          if ((countByVariant.get(variantKind) ?? 0) >= cap) break;
+          mcCases.push(makeMultiContextTestCase(runId, testCase, variant));
+          countByVariant.set(variantKind, (countByVariant.get(variantKind) ?? 0) + 1);
+        }
+        continue;
+      }
+
+      // variantKind === 'inconsistent_snapshot'
+      const readerEndpoint = pairSnapshotReader(toolId, allToolIds, config.snapshotPairs);
+      if (readerEndpoint === null) {
+        skipReasonCounts.set('no_reader_pairing', (skipReasonCounts.get('no_reader_pairing') ?? 0) + 1);
+        continue;
+      }
+      // Use toolPath as a heuristic resource id (last path segment)
+      const resourceId = toolPath.split('/').filter(Boolean).pop() ?? toolId;
+      const snapshotVariants = plansForInconsistentSnapshot(readerEndpoint, resourceId, config);
+      for (const variant of snapshotVariants) {
+        if ((countByVariant.get(variantKind) ?? 0) >= cap) break;
+        mcCases.push(makeMultiContextTestCase(runId, testCase, variant));
+        countByVariant.set(variantKind, (countByVariant.get(variantKind) ?? 0) + 1);
+      }
+    }
+  }
+
+  return mcCases;
+}
+
+function makeMultiContextTestCase(runId: string, source: TestCase, variant: MultiContextVariant): TestCase {
+  return {
+    id: createId(),
+    runId,
+    role: source.role,
+    page: source.page,
+    action: { ...source.action, palette: 'happy' },
+    expectedOutcome: 'success',
+    palette: 'happy',
+    formSignature: source.formSignature,
+    stateContext: source.stateContext,
+    multiContext: { variant },
   };
 }
 
