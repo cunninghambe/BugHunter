@@ -1,0 +1,24 @@
+{
+  "projectName": "bughunter-self-deliberate-bugs",
+  "surfaceMcpUrl": "http://localhost:3120/mcp",
+  "browserMcpUrl": "http://localhost:3121/mcp",
+  "appBaseUrl": "http://localhost:5790",
+  "crawl": {
+    "enabled": true,
+    "maxPages": 60,
+    "maxDepth": 3,
+    "stateSettleMs": 500
+  },
+  "a11y": true,
+  "a11yStrict": true,
+  "seoEnabled": true,
+  "enablePerf": true,
+  "enableBundleProbe": true,
+  "enableMemoryProfile": true,
+  "raceConditions": true,
+  "raceCrossTab": true,
+  "idor": { "enabled": true },
+  "penTesting": {
+    "enabled": true
+  }
+}
