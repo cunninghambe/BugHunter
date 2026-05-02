@@ -307,8 +307,8 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   let consecutiveInfraFailures = runState.consecutiveInfraFailures;
 
   // v0.42: resolve data-integrity config once
-  const diConfig = runState.config.dataIntegrity;
-  const diEnabled = diConfig?.enabled !== false && diConfig !== undefined && diConfig.invariants.length > 0;
+  const diConfig = runState.config.dataIntegrity ?? null;
+  const diEnabled = diConfig !== null && diConfig.enabled !== false && diConfig.invariants.length > 0;
   const diEvalCtx = {
     projectDir: runState.projectDir,
     appBaseUrl: appBaseUrl ?? '',
@@ -382,7 +382,9 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
 
       // v0.42: snapshot invariant before clauses for mutating actions
       const isMutating = isMutatingTestCase(tc, toolMap);
+      // diEnabled implies diConfig !== null (see declaration above)
       const matchingInvariants = (diEnabled && isMutating)
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- diEnabled is true only when diConfig !== null
         ? filterInvariants(diConfig!.invariants, tc)
         : [];
       const diPending = matchingInvariants.length > 0

@@ -21,7 +21,7 @@ function parsePath(path: string): Segment[] {
   const parts = path.split('.');
   for (const part of parts) {
     if (part === '') continue;
-    const bracketMatch = part.match(/^([^\[]*)\[(\d+|\*)\]$/);
+    const bracketMatch = part.match(/^([^[]*)\[(\d+|\*)\]$/);
     if (bracketMatch !== null) {
       const prefix = bracketMatch[1];
       const indexPart = bracketMatch[2];

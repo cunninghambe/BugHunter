@@ -263,8 +263,7 @@ function resolveQueryHook(
         ? Object.fromEntries(Object.entries(hook.headers).map(([k, v]) => [k, resolveTemplate(v, templateCtx)]))
         : undefined;
       return { ...hook, url, ...(headers !== undefined ? { headers } : {}) };
-    }
-    if (hook.kind === 'shell') {
+    } else {
       const command = resolveTemplate(hook.command, templateCtx);
       return { ...hook, command };
     }
@@ -377,7 +376,7 @@ function parseOutput(output: string, format: InvariantQuery['parse']): unknown {
     case 'json':
       try { return JSON.parse(output); } catch { return output; }
     case 'jsonl':
-      return output.split('\n').filter(l => l.trim() !== '').map(l => { try { return JSON.parse(l); } catch { return l; } });
+      return output.split('\n').filter(l => l.trim() !== '').map(l => { try { return JSON.parse(l) as unknown; } catch { return l; } });
     case 'integer':
       return parseInt(output.trim(), 10);
     case 'text':

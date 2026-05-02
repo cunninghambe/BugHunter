@@ -24,8 +24,9 @@ export function dataIntegrityCheckCommand(projectDir: string, opts: DataIntegrit
     process.stdout.write('WARN: dataIntegrity.enabled is false — invariants are disabled.\n');
   }
 
-  const filtered = opts.onlyInvariant !== undefined && opts.onlyInvariant.length > 0
-    ? invariants.filter(inv => opts.onlyInvariant!.includes(inv.name))
+  const onlyInvariant = opts.onlyInvariant;
+  const filtered = onlyInvariant !== undefined && onlyInvariant.length > 0
+    ? invariants.filter(inv => onlyInvariant.includes(inv.name))
     : invariants;
 
   const rows = filtered.map(inv => validateInvariant(inv));
@@ -71,7 +72,7 @@ function validateInvariant(inv: DataIntegrityInvariant): CheckRow {
   }
 
   const status = warnings.length > 0 ? 'WARN' : 'ok';
-  return { name: inv.name, bugKind: inv.bugKind, status, message: warnings.join('; ') || 'ok' };
+  return { name: inv.name, bugKind: inv.bugKind, status, message: warnings.length > 0 ? warnings.join('; ') : 'ok' };
 }
 
 function printTable(rows: CheckRow[]): void {

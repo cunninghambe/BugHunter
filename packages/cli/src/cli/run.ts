@@ -26,7 +26,7 @@ import { runCrossUser } from '../phases/cross-user.js';
 import { runAuthFlow } from '../phases/auth-flow.js';
 import { makeVisionBudget } from '../classify/vision-budget.js';
 import { resolveVisionConfig } from '../classify/vision.js';
-import type { BugDetection, ClockTestingConfig, ClockTestingTelemetry, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant, BugHunterConfig, MultiContextConfig } from '../types.js';
+import type { BugDetection, ClockTestingConfig, ClockTestingTelemetry, PerfArtifacts, PreState, PostState, SkippedItem, TestCase, TestResult, VisualBaselineEntry, PenTestingTelemetry, RaceConditionsConfig, InterleavingVariant, BugHunterConfig, MultiContextConfig, InteractionPaletteConfig } from '../types.js';
 import type { ClockConditionName } from '../security/clock-conditions.js';
 import { DEFAULT_VARIANTS } from '../security/interleaving-palette.js';
 import { runEmit } from '../phases/emit.js';
@@ -1311,8 +1311,8 @@ function buildMultiContextConfig(
 /** v0.38: resolve interaction-palette config from CLI flags + config file. */
 function buildInteractionPaletteConfig(
   opts: RunOptions,
-  configFilePalette: import('../types.js').InteractionPaletteConfig | undefined,
-): import('../types.js').InteractionPaletteConfig | undefined {
+  configFilePalette: InteractionPaletteConfig | undefined,
+): InteractionPaletteConfig | undefined {
   if (opts.noInteractionPalette === true) {
     return { ...(configFilePalette ?? { enabled: false }), enabled: false };
   }
