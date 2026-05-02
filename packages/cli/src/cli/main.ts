@@ -95,6 +95,17 @@ Run options:
   --resume <runId>            Continue from saved state
   --force-resume              Resume even if SurfaceMCP revision differs
   --include-external          Allow external side-effect API calls
+  --read-only                 Disable all mutating actions. No POST/PATCH/PUT/DELETE
+                              against the target. Disables: race-conditions, pen-testing,
+                              synthetic, auth-flow, auth-probe, XSS canaries, V42
+                              data-integrity, V20 network-fault on mutating endpoints.
+                              Narrows: cross-user IDOR to read-only replays.
+                              Always-fire: SEO, a11y, perf vitals, vision, static analysis,
+                              naturally-occurring 5xx/4xx, render-only visual anomalies.
+                              Browser-login POST is the one sanctioned exception
+                              (use --no-browser-login to suppress).
+                              Recommended for staging audits. Env: BUGHUNTER_READ_ONLY=1.
+                              Mutually exclusive with --reset.
 
 Deterministic mode (v0.32):
   --seed <n>                  Seed (32-bit non-negative integer) for all id generation.
@@ -317,6 +328,8 @@ async function main(): Promise<void> {
           frozenNetwork: typeof flags['frozen-network'] === 'string' ? flags['frozen-network'] : undefined,
           recordNetwork: typeof flags['record-network'] === 'string' ? flags['record-network'] : undefined,
           allowNetworkMiss: flags['allow-network-miss'] === true,
+          // v0.45 read-only mode
+          readOnly: flags['read-only'] === true,
         });
         break;
       }

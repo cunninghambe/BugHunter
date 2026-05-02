@@ -26,6 +26,7 @@ import { formCollapseSignature } from '../discovery/element-collapse.js';
 import { log } from '../log.js';
 import { createId } from '@paralleldrive/cuid2';
 import { probeKey as buildProbeKey, type ProbeKey, type ProbeResult } from './form-reachability-probe.js';
+import { isReadOnlyTool } from '../util/read-only.js';
 
 export type PlanResult = {
   testCases: TestCase[];
@@ -48,6 +49,12 @@ export async function runPlan(
 
   // Pre-plan schema enrichment: probe unknown-confidence tools
   const enrichedTools = await enrichToolSchemas(discovery.apiTools, roles[0] ?? 'anonymous', surface, upgradedToolIds);
+
+  // v0.45 Tier 2: build the read-only tool allow-set (GET/HEAD/OPTIONS AND safe).
+  const readOnlyEnabled = config.readOnly === true;
+  const readOnlyToolIds = readOnlyEnabled
+    ? new Set(enrichedTools.filter(t => isReadOnlyTool(t)).map(t => t.toolId))
+    : undefined;
 
   const testCases: TestCase[] = [];
   const seenFormSigs = new Set<string>(); // per-role, across pages
@@ -88,6 +95,12 @@ export async function runPlan(
         if (el.tag === 'button' || el.roleAttr === 'button') {
           if (!elSigs.has(el.selector)) {
             elSigs.add(el.selector);
+            // v0.45: conservative skip — button tool IDs are not resolved at plan time,
+            // so we cannot prove any button click is read-only.
+            if (readOnlyToolIds !== undefined) {
+              skipReasonCounts.set('read_only_skipped_unknown_button', (skipReasonCounts.get('read_only_skipped_unknown_button') ?? 0) + 1);
+              continue;
+            }
             testCases.push(clickTestCase(runId, role, page.route, el.selector, pageStateCtx));
           }
         }
@@ -102,6 +115,18 @@ export async function runPlan(
         );
         if (!seenFormSigs.has(sig)) {
           seenFormSigs.add(sig);
+
+          // v0.45: skip forms whose tools include any mutating tool.
+          if (readOnlyToolIds !== undefined) {
+            const formToolIds = form.apiToolIds ?? [];
+            const hasMutatingTool = formToolIds.length === 0 || formToolIds.some(tid => !readOnlyToolIds.has(tid));
+            if (hasMutatingTool) {
+              skipReasonCounts.set('read_only_skipped_mutating_form', (skipReasonCounts.get('read_only_skipped_mutating_form') ?? 0) + 1);
+              log.debug('plan: read-only skipping form (mutating tools)', { role, page: page.route, form: form.formSelector });
+              continue;
+            }
+          }
+
           const { emit, skipReason } = shouldEmitSubmitTest(role, page, form, probes);
           if (!emit) {
             const reason = skipReason ?? 'form_unreachable_for_role';
@@ -113,7 +138,7 @@ export async function runPlan(
           testCases.push(...cases);
 
           // XSS canary injection for this form
-          if (xssEnabled && xssCount < xssMaxTestCases) {
+          if (xssEnabled && xssCount < xssMaxTestCases && readOnlyToolIds === undefined) {
             const xssCases = xssFormTestCases(runId, role, page.route, form, xssDepth, pageStateCtx);
             const allowed = Math.min(xssCases.length, xssMaxTestCases - xssCount);
             testCases.push(...xssCases.slice(0, allowed));
@@ -213,6 +238,12 @@ export async function runPlan(
     for (const tool of enrichedTools) {
       if (tool.isServerAction) continue;
 
+      // v0.45 Tier 2: skip mutating tools in read-only mode.
+      if (readOnlyToolIds !== undefined && !readOnlyToolIds.has(tool.toolId)) {
+        skipReasonCounts.set('read_only_skipped_mutating_tool', (skipReasonCounts.get('read_only_skipped_mutating_tool') ?? 0) + 1);
+        continue;
+      }
+
       const samples = await surface.surface_sample_inputs({ toolId: tool.toolId })
         .then(r => r.samples.map(s => s.input))
         .catch(() => []);
@@ -226,8 +257,8 @@ export async function runPlan(
       const cases = apiTestCases(runId, role, tool, samples, config.domainHints, bodyFixture, fuzzOpts);
       testCases.push(...cases);
 
-      // XSS canary injection for this API tool
-      if (xssEnabled && xssCount < xssMaxTestCases) {
+      // XSS canary injection for this API tool (skipped in read-only: POST/PUT bodies required)
+      if (xssEnabled && xssCount < xssMaxTestCases && readOnlyToolIds === undefined) {
         const xssCases = xssApiTestCases(runId, role, tool, xssDepth, xssMutateJsonBodies);
         const allowed = Math.min(xssCases.length, xssMaxTestCases - xssCount);
         testCases.push(...xssCases.slice(0, allowed));
@@ -237,7 +268,12 @@ export async function runPlan(
   }
 
   if (xssEnabled) {
-    log.info(`xss: planned ${xssCount} canary tests${xssCount >= xssMaxTestCases ? `, capped at ${xssMaxTestCases}` : ''}`);
+    if (readOnlyToolIds !== undefined) {
+      skipReasonCounts.set('read_only_skipped_xss_disabled', xssCount === 0 ? 1 : 0);
+      log.info('xss: canary tests disabled in read-only mode');
+    } else {
+      log.info(`xss: planned ${xssCount} canary tests${xssCount >= xssMaxTestCases ? `, capped at ${xssMaxTestCases}` : ''}`);
+    }
   }
 
   // v0.19: second pass — race-condition interleaving planner
