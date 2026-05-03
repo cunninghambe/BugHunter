@@ -114,6 +114,12 @@ http.createServer((req, res) => {
 " &>"$FIXTURE_ROOT/.seo-bad.log") &
 echo "seo-bad $!" >> "$PID_FILE"
 
+# ---- browser-platform-bad (port 5793) ----
+check_port_free 5793
+log "Starting browser-platform-bad on port 5793..."
+PORT=5793 node "$FIXTURES_DIR/browser-platform-bad/server.js" &>"$FIXTURE_ROOT/.browser-platform-bad.log" &
+echo "browser-platform-bad $!" >> "$PID_FILE"
+
 # ---- pen-bad (port 4091) ----
 check_port_free 4091
 log "Starting pen-bad on port 4091..."
@@ -138,6 +144,7 @@ wait_for_port 4090 "idor-bad"
 wait_for_port 5780 "v24-deferred-bugs"
 wait_for_port 5781 "a11y-bad"
 wait_for_port 5782 "seo-bad"
+wait_for_port 5793 "browser-platform-bad"
 wait_for_port 4091 "pen-bad"
 wait_for_port 5790 "self-spa"
 wait_for_port 5791 "self-api"
