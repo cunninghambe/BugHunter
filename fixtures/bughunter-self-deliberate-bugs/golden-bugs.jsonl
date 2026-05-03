@@ -90,13 +90,13 @@
 {"expect": "detector_silent", "kind": "data_integrity_orphan", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V42_DATA_INTEGRITY.md"}
 {"expect": "detector_silent", "kind": "money_math_precision", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V42_DATA_INTEGRITY.md"}
 {"expect": "detector_silent", "kind": "soft_delete_consistency", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V42_DATA_INTEGRITY.md"}
-{"expect": "detector_silent", "kind": "clock_dst_corruption", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V23_TIME_CLOCK.md"}
-{"expect": "detector_silent", "kind": "clock_leap_day_failure", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V23_TIME_CLOCK.md"}
-{"expect": "detector_silent", "kind": "clock_overflow", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V23_TIME_CLOCK.md"}
-{"expect": "detector_silent", "kind": "clock_skew_token_invalid", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V23_TIME_CLOCK.md"}
-{"expect": "detector_silent", "kind": "clock_timezone_display", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V23_TIME_CLOCK.md"}
+{"expect": "absent", "kind": "clock_dst_corruption", "reason": "deferred: clock-test-runner requires JWT issuance; all fixtures use auth.kind=none. See SWEEP_AUDIT_2026-05-03.md."}
+{"expect": "absent", "kind": "clock_leap_day_failure", "reason": "deferred: clock-test-runner requires JWT issuance; all fixtures use auth.kind=none. See SWEEP_AUDIT_2026-05-03.md."}
+{"expect": "absent", "kind": "clock_overflow", "reason": "deferred: clock-test-runner requires JWT issuance; all fixtures use auth.kind=none. See SWEEP_AUDIT_2026-05-03.md."}
+{"expect": "absent", "kind": "clock_skew_token_invalid", "reason": "deferred: clock-test-runner requires JWT issuance; all fixtures use auth.kind=none. See SWEEP_AUDIT_2026-05-03.md."}
+{"expect": "absent", "kind": "clock_timezone_display", "reason": "deferred: clock-test-runner requires JWT issuance; all fixtures use auth.kind=none. See SWEEP_AUDIT_2026-05-03.md."}
 {"expect": "detector_silent", "kind": "multi_context_state_divergence", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V40_MULTI_CONTEXT.md"}
-{"expect": "detector_silent", "kind": "multi_user_inconsistent_snapshot", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V40_MULTI_CONTEXT.md"}
+{"expect": "absent", "kind": "multi_user_inconsistent_snapshot", "reason": "deferred: requires ≥2 authenticated sessions; no fixture configures multi-role auth. See SWEEP_AUDIT_2026-05-03.md."}
 {"expect": "detector_silent", "kind": "visibility_change_state_loss", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V40_MULTI_CONTEXT.md"}
 {"expect": "detector_silent", "kind": "network_fault_optimistic_no_revert", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V20_NETWORK_FAULTS.md"}
 {"expect": "detector_silent", "kind": "network_fault_unhandled", "reason": "no deliberate-bug fixture for this kind yet; detector is wired, fixture pending", "specReference": "SPEC_V20_NETWORK_FAULTS.md"}
