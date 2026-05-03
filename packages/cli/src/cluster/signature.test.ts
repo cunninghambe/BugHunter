@@ -1,7 +1,7 @@
 // Tests for cluster signature derivation — v0.5 new BugKinds.
 
 import { describe, it, expect } from 'vitest';
-import { clusterSignature } from './signature.js';
+import { clusterSignature, SURFACE_AGNOSTIC_KINDS } from './signature.js';
 import type { BugDetection } from '../types.js';
 
 function make(kind: BugDetection['kind'], overrides: Partial<BugDetection> = {}): BugDetection {
@@ -83,7 +83,8 @@ describe('clusterSignature — v0.5 security kinds', () => {
   it('hydration_mismatch uses message+stack like react_error', () => {
     const a = make('hydration_mismatch', { rootCause: 'Hydration failed' });
     const sig = clusterSignature(a);
-    expect(sig.startsWith('hydration_mismatch|')).toBe(true);
+    // v0.43+: unknown| prefix because no surface is set on the detection
+    expect(sig.startsWith('unknown|hydration_mismatch|')).toBe(true);
   });
 
   it('all new kinds return a non-empty string', () => {
@@ -119,7 +120,7 @@ describe('clusterSignature — v0.7 XSS kinds', () => {
     });
     // Same route+field → same signature despite different nonces
     expect(clusterSignature(a)).toBe(clusterSignature(b));
-    expect(clusterSignature(a)).toBe('xss_reflected|/login|next');
+    expect(clusterSignature(a)).toBe('unknown|xss_reflected|/login|next');
   });
 
   it('xss_reflected differs by field name', () => {
@@ -144,7 +145,7 @@ describe('clusterSignature — v0.7 XSS kinds', () => {
       xssContext: { variant: 'svg_onload', injectionPoint: 'form_field', fieldName: 'comment', sink: 'dom_inserted', nonce: 'bbb222bbb222bbb2' },
     });
     expect(clusterSignature(a)).toBe(clusterSignature(b));
-    expect(clusterSignature(a)).toBe('xss_dom|/dashboard|comment|dom_inserted');
+    expect(clusterSignature(a)).toBe('unknown|xss_dom|/dashboard|comment|dom_inserted');
   });
 
   it('xss_stored returns a stable placeholder signature', () => {
@@ -152,7 +153,7 @@ describe('clusterSignature — v0.7 XSS kinds', () => {
       endpoint: '/api/comments',
       xssContext: { variant: 'script_tag_basic', injectionPoint: 'json_body', fieldName: 'body', sink: 'reflected_html', nonce: 'aaa111aaa111aaa1' },
     }));
-    expect(sig).toBe('xss_stored|/api/comments|body');
+    expect(sig).toBe('unknown|xss_stored|/api/comments|body');
   });
 
   it('all XSS kinds return non-empty strings with pipes', () => {
@@ -173,7 +174,7 @@ describe('clusterSignature — v0.7 auth-flow kinds', () => {
       authFlowContext: { invariant: 'session_id_rotates', cookieName: 'tj_sess', preValuePrefix: 'xyzxyzxy', postValuePrefix: 'xyzxyzxy' },
     });
     expect(clusterSignature(a)).toBe(clusterSignature(b));
-    expect(clusterSignature(a)).toBe('auth_session_fixation|tj_sess');
+    expect(clusterSignature(a)).toBe('unknown|auth_session_fixation|tj_sess');
   });
 
   it('password_reset_token_reuse collapses by endpoint', () => {
@@ -186,7 +187,7 @@ describe('clusterSignature — v0.7 auth-flow kinds', () => {
       authFlowContext: { invariant: 'reset_token_single_use', reuseCount: 2 },
     });
     expect(clusterSignature(a)).toBe(clusterSignature(b));
-    expect(clusterSignature(a)).toBe('password_reset_token_reuse|/auth/reset');
+    expect(clusterSignature(a)).toBe('unknown|password_reset_token_reuse|/auth/reset');
   });
 
   it('all auth-flow kinds return non-empty strings', () => {
@@ -287,7 +288,7 @@ describe('clusterSignature — v0.22 nav-state kinds', () => {
       navStateContext: { transitionKind: 'back', mismatchKind: 'dom', seedActionKind: 'click' },
     });
     expect(clusterSignature(a)).toBe(clusterSignature(b));
-    expect(clusterSignature(a)).toBe('nav_state_corruption|/orders|back|dom|click');
+    expect(clusterSignature(a)).toBe('unknown|nav_state_corruption|/orders|back|dom|click');
   });
 
   it('nav_state_corruption: different transitionKind → different cluster', () => {
@@ -312,7 +313,7 @@ describe('clusterSignature — v0.22 nav-state kinds', () => {
       navStateContext: { transitionKind: 'back', endpoint: 'POST /api/orders' },
     });
     expect(clusterSignature(a)).toBe(clusterSignature(b));
-    expect(clusterSignature(a)).toBe('nav_resubmit_on_back|/orders|POST /api/orders');
+    expect(clusterSignature(a)).toBe('unknown|nav_resubmit_on_back|/orders|POST /api/orders');
   });
 
   it('nav_resubmit_on_back: two detections with same endpoint collapse to one cluster', () => {
@@ -340,7 +341,7 @@ describe('clusterSignature — v0.22 nav-state kinds', () => {
       navStateContext: { transitionKind: 'refresh', endpoint: 'POST /api/pay' },
     });
     expect(clusterSignature(a)).toBe(clusterSignature(b));
-    expect(clusterSignature(a)).toBe('nav_refresh_double_mutation|/payment|POST /api/pay');
+    expect(clusterSignature(a)).toBe('unknown|nav_refresh_double_mutation|/payment|POST /api/pay');
   });
 
   it('nav_form_state_lost clusters by pageRoute + formSignature', () => {
@@ -353,7 +354,7 @@ describe('clusterSignature — v0.22 nav-state kinds', () => {
       navStateContext: { transitionKind: 'back', formSignature: 'name:text|email:email' },
     });
     expect(clusterSignature(a)).toBe(clusterSignature(b));
-    expect(clusterSignature(a)).toBe('nav_form_state_lost|/profile|name:text|email:email');
+    expect(clusterSignature(a)).toBe('unknown|nav_form_state_lost|/profile|name:text|email:email');
   });
 
   it('nav_form_state_stale clusters by pageRoute + formSignature + staleField', () => {
@@ -366,7 +367,7 @@ describe('clusterSignature — v0.22 nav-state kinds', () => {
       navStateContext: { transitionKind: 'back', formSignature: 'name:text', staleField: 'name' },
     });
     expect(clusterSignature(a)).toBe(clusterSignature(b));
-    expect(clusterSignature(a)).toBe('nav_form_state_stale|/profile|name:text|name');
+    expect(clusterSignature(a)).toBe('unknown|nav_form_state_stale|/profile|name:text|name');
   });
 
   it('nav_form_state_stale: different staleField produces different cluster', () => {
@@ -461,5 +462,60 @@ describe('clusterSignature — v0.39 fuzz stability', () => {
       },
     });
     expect(clusterSignature(a)).toBe(clusterSignature(b));
+  });
+});
+
+// v0.43 — surface prefix tests per spec § 5.
+
+describe('clusterSignature — v0.43 surface prefix', () => {
+  it('react_error includes surface prefix', () => {
+    const d = make('react_error', { surface: 'self-spa', rootCause: 'TypeError: x is undefined' });
+    const sig = clusterSignature(d);
+    expect(sig.startsWith('self-spa|react_error|')).toBe(true);
+  });
+
+  it('sql_injection includes surface prefix', () => {
+    const d = make('sql_injection', {
+      surface: 'self-api',
+      endpoint: '/api/users',
+      injectionContext: { paramName: 'id', variant: 'tautology', proof: "1'=1", nonce: 'aabbccdd11223344', evidence: 'SQL error' },
+    });
+    const sig = clusterSignature(d);
+    expect(sig.startsWith('self-api|sql_injection|')).toBe(true);
+  });
+
+  it('same react_error on two surfaces produces two distinct cluster keys', () => {
+    const shared = { rootCause: 'Cannot read properties of null', stackTrace: 'at App.render' };
+    const onSpa = make('react_error', { ...shared, surface: 'self-spa' });
+    const onDeferred = make('react_error', { ...shared, surface: 'v24-deferred-bugs' });
+    expect(clusterSignature(onSpa)).not.toBe(clusterSignature(onDeferred));
+  });
+
+  it('detection with no surface uses unknown prefix', () => {
+    const d = make('console_error', { rootCause: 'Error in component' });
+    expect(clusterSignature(d).startsWith('unknown|')).toBe(true);
+  });
+
+  it('oversized_bundle does NOT include surface prefix (surface-agnostic)', () => {
+    const d = make('oversized_bundle', {
+      surface: 'self-spa',
+      evidence: { kind: 'js' },
+    });
+    const sig = clusterSignature(d);
+    expect(sig.startsWith('oversized_bundle:')).toBe(true);
+    expect(sig).not.toContain('self-spa');
+  });
+
+  it('memory_leak_suspected does NOT include surface prefix (surface-agnostic)', () => {
+    const d = make('memory_leak_suspected', { surface: 'self-spa' });
+    const sig = clusterSignature(d);
+    expect(sig).toBe('memory_leak_suspected:run');
+    expect(sig).not.toContain('self-spa');
+  });
+
+  it('SURFACE_AGNOSTIC_KINDS contains exactly oversized_bundle and memory_leak_suspected', () => {
+    expect(SURFACE_AGNOSTIC_KINDS).toContain('oversized_bundle');
+    expect(SURFACE_AGNOSTIC_KINDS).toContain('memory_leak_suspected');
+    expect(SURFACE_AGNOSTIC_KINDS.length).toBe(2);
   });
 });

@@ -1302,6 +1302,8 @@ export type BugDetection = {
   interactionContext?: InteractionContext;
   /** v0.42: populated for data-integrity invariant violations. */
   dataIntegrityContext?: DataIntegrityExtra;
+  /** v0.43+: surface that produced this detection. Always set in v0.43+ runs. Optional for back-compat with pre-v0.43 replays. */
+  surface?: string;
 };
 
 /** v0.23: clock-injection proof context attached to clock-related BugDetections. */
@@ -1591,8 +1593,21 @@ export type BugHunterConfig = {
   surfaceMcpUrl: string;
   browserMcpUrl?: string;
   roles?: string[];
-  /** Top-level auth hint. When kind is 'none', browser login is skipped entirely. */
+  /** Top-level auth hint. When kind is 'none', browser login is skipped entirely. Default fall-through for surfaces without their own auth. */
   auth?: { kind: 'none' };
+  /**
+   * v0.43+: per-surface overrides. When a surface name appears here, its `auth` and `roles` win
+   * over the top-level `config.auth` and `config.roles`. Surfaces NOT listed inherit top-level.
+   * Single-surface configs do not need to populate this.
+   */
+  surfaces?: Record<string, {
+    auth?: { kind: 'none' };
+    roles?: string[];
+    concurrency?: number;
+    apiConcurrency?: number;
+    budgetMs?: number;
+    excludedRoutes?: string[];
+  }>;
   resetCommand?: string;
   resetPolicy?: ResetPolicy;
   paletteOverridePath?: string;

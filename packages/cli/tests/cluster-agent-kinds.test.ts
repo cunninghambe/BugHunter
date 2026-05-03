@@ -34,7 +34,8 @@ describe('clusterSignature — v0.43 agentic kinds', () => {
       endpoint: 'POST /api/chat',
       agentContext: { turnId: 'turn-2', latencyMs: 35000 },
     };
-    expect(clusterSignature(d)).toBe('agent_action_timeout|POST /api/chat');
+    // v0.43+: unknown| prefix since no surface is set on this detection
+    expect(clusterSignature(d)).toBe('unknown|agent_action_timeout|POST /api/chat');
   });
 
   it('prompt_injection_executed: deterministic signature per endpoint + param + variant', () => {
