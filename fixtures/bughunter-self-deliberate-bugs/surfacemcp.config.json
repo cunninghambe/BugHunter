@@ -54,12 +54,12 @@
       "launchDevCommand": "node server.js",
       "watchPaths": [],
       "watchIgnore": [],
-      "auth": { "kind": "none" },
+      "auth": { "kind": "bearer" },
       "roles": [
         { "name": "anonymous", "credentials": {} },
-        { "name": "alice", "credentials": { "userId": "alice" } },
-        { "name": "bob", "credentials": { "userId": "bob" } },
-        { "name": "admin", "credentials": { "userId": "admin" } }
+        { "name": "alice", "credentials": { "token": "alice-token" } },
+        { "name": "bob", "credentials": { "token": "bob-token" } },
+        { "name": "admin", "credentials": { "token": "admin-token" } }
       ],
       "excludedRoutes": []
     },
