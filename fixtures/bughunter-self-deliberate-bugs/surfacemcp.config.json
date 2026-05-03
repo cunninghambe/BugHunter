@@ -92,6 +92,51 @@
         { "name": "anonymous", "credentials": {} }
       ],
       "excludedRoutes": []
+    },
+    {
+      "name": "a11y-bad",
+      "stack": "openapi",
+      "root": "../a11y-bad",
+      "baseUrl": "http://localhost:5781",
+      "port": 3140,
+      "launchDevCommand": "node -e \"require('./serve.js')\"",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [
+        { "name": "anonymous", "credentials": {} }
+      ],
+      "excludedRoutes": []
+    },
+    {
+      "name": "seo-bad",
+      "stack": "openapi",
+      "root": "../seo-bad",
+      "baseUrl": "http://localhost:5782",
+      "port": 3140,
+      "launchDevCommand": "node -e \"require('./serve.js')\"",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [
+        { "name": "anonymous", "credentials": {} }
+      ],
+      "excludedRoutes": []
+    },
+    {
+      "name": "browser-platform-bad",
+      "stack": "openapi",
+      "root": "../browser-platform-bad",
+      "baseUrl": "http://localhost:5793",
+      "port": 3140,
+      "launchDevCommand": "node server.js",
+      "watchPaths": [],
+      "watchIgnore": [],
+      "auth": { "kind": "none" },
+      "roles": [
+        { "name": "anonymous", "credentials": {} }
+      ],
+      "excludedRoutes": []
     }
   ]
 }
