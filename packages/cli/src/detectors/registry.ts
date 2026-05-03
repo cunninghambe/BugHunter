@@ -1,4 +1,4 @@
-import type { BugKind } from '../types.js';
+import type { BugKind, Severity } from '../types.js';
 
 export type DetectorStatus = 'wired' | 'deferred' | 'dead';
 
@@ -32,6 +32,8 @@ export type DetectorRegistryEntry = {
    * Human-readable note. Required for non-'wired' entries to explain why.
    */
   note?: string;
+  /** v0.29: per-kind severity default used when no detection-level severity is set. */
+  defaultSeverity?: Severity;
 };
 
 export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
@@ -43,6 +45,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'react_error',
@@ -51,6 +54,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'hydration_mismatch',
@@ -59,6 +63,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'network_5xx',
@@ -67,6 +72,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'network_4xx_unexpected',
@@ -75,6 +81,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: '404_for_linked_route',
@@ -83,6 +90,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'missing_state_change',
@@ -91,6 +99,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'unhandled_exception',
@@ -99,6 +108,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'accessibility_critical',
@@ -107,6 +117,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'dom_error_text',
@@ -115,6 +126,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'surface_call_failed',
@@ -123,6 +135,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'visual_anomaly',
@@ -131,6 +144,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/discover.ts',
     inputSource: 'production',
     specReference: 'SPEC.md',
+    defaultSeverity: 'major',
   },
   // — § v0.5 security / hygiene (wired) —
   {
@@ -140,6 +154,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/header-probe.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'permissive_cors',
@@ -148,6 +163,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/header-probe.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'cookie_security_flags',
@@ -156,6 +172,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/header-probe.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'open_redirect',
@@ -164,6 +181,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/header-probe.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'sensitive_data_in_url',
@@ -172,6 +190,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/header-probe.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'stack_trace_leak_in_response',
@@ -180,6 +199,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/header-probe.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'vulnerable_dependency_high',
@@ -187,6 +207,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     detectorSite: 'packages/cli/src/static/tools/npm-audit.ts:31',
     inputSource: 'production',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'hardcoded_credentials_in_source',
@@ -194,6 +215,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     detectorSite: 'packages/cli/src/static/tools/gitleaks.ts:30',
     inputSource: 'production',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'swallowed_error_empty_catch',
@@ -201,6 +223,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     detectorSite: 'packages/cli/src/static/tools/eslint-no-empty.ts:36',
     inputSource: 'production',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'idor_horizontal',
@@ -209,6 +232,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/cross-user.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'idor_vertical_role_escalate',
@@ -217,6 +241,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/cross-user.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'critical',
   },
   // — § v0.21 IDOR rewire kinds (wired) —
   {
@@ -226,6 +251,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/cross-user.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V21_IDOR.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'idor_horizontal_mutate',
@@ -234,6 +260,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/cross-user.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V21_IDOR.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'idor_vertical_suspicious',
@@ -242,6 +269,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/cross-user.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V21_IDOR.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'auth_bypass_via_unauthed_route',
@@ -250,6 +278,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/cross-user.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'no_rate_limit_on_login',
@@ -258,6 +287,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/auth-probes.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
+    defaultSeverity: 'major',
   },
   // — § v0.25 wired (promoted from deferred) —
   {
@@ -267,6 +297,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V25_DETECTOR_LESS_KINDS.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'hallucinated_route',
@@ -275,6 +306,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V25_DETECTOR_LESS_KINDS.md',
+    defaultSeverity: 'major',
   },
   // — § v0.19 race-condition kinds (wired) —
   {
@@ -284,6 +316,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/race-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'race_condition_click_navigate',
@@ -292,6 +325,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/race-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'race_condition_optimistic_revert',
@@ -300,6 +334,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/race-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'race_condition_interleaved_mutations',
@@ -308,6 +343,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/race-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'race_condition_cross_tab',
@@ -316,6 +352,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/race-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
+    defaultSeverity: 'major',
   },
   // — § v0.23 clock-injection kinds (wired via clock-test-runner) —
   {
@@ -325,6 +362,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V23_TIME_CLOCK.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'clock_overflow',
@@ -333,6 +371,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V23_TIME_CLOCK.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'clock_dst_corruption',
@@ -341,6 +380,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V23_TIME_CLOCK.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'clock_leap_day_failure',
@@ -349,6 +389,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V23_TIME_CLOCK.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'clock_timezone_display',
@@ -357,6 +398,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/clock-test-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V23_TIME_CLOCK.md',
+    defaultSeverity: 'minor',
   },
   // — § v0.16 active pen-testing (wired) —
   {
@@ -366,6 +408,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/pen-detectors.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V16_PEN_TESTING.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'command_injection',
@@ -374,6 +417,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/pen-detectors.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V16_PEN_TESTING.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'path_traversal',
@@ -382,6 +426,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/pen-detectors.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V16_PEN_TESTING.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'jwt_weak_alg',
@@ -390,6 +435,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/pen-detectors.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V16_PEN_TESTING.md',
+    defaultSeverity: 'major',
   },
   // — § v0.7 XSS kinds —
   {
@@ -399,6 +445,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V07_XSS.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'xss_dom',
@@ -407,6 +454,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V07_XSS.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'xss_stored',
@@ -414,6 +462,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'unknown',
     specReference: 'SPEC_V07_XSS.md',
     note: 'Placeholder; v0.8 deliverable.',
+    defaultSeverity: 'critical',
   },
   // — § v0.7 auth-flow kinds (wired) —
   {
@@ -423,6 +472,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/auth-flow.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V07_AUTH_FLOWS.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'password_reset_token_reuse',
@@ -431,6 +481,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/auth-flow.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V07_AUTH_FLOWS.md',
+    defaultSeverity: 'major',
   },
   // — § v0.6 performance kinds (wired) —
   {
@@ -440,6 +491,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'slow_inp',
@@ -448,6 +500,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'high_cls',
@@ -456,6 +509,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'unbounded_list_render',
@@ -464,6 +518,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'n_plus_one_api_calls',
@@ -472,6 +527,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'request_dedup_missing',
@@ -480,6 +536,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'request_cancellation_missing',
@@ -488,6 +545,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'main_thread_blocked',
@@ -496,6 +554,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'oversized_bundle',
@@ -504,6 +563,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/bundle-probe.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'excessive_re_renders',
@@ -512,6 +572,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'memory_leak_suspected',
@@ -520,6 +581,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V08_MEMORY_LEAK.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'memory_leak_attributed',
@@ -528,6 +590,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/analyze.ts',
     inputSource: 'production',
     specReference: 'SPEC_V08_MEMORY_LEAK.md',
+    defaultSeverity: 'major',
   },
   // — § v0.6 a11y baseline kinds (wired) —
   {
@@ -537,6 +600,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'keyboard_trap',
@@ -545,6 +609,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'focus_lost_after_action',
@@ -553,6 +618,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'image_missing_alt',
@@ -561,6 +627,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'form_input_unlabeled',
@@ -569,6 +636,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'minor',
   },
   // — § v0.12 click-evaluate kinds (wired) —
   {
@@ -578,6 +646,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V12_CLICK_ACCESSIBLE_NAME.md',
+    defaultSeverity: 'minor',
   },
   // — § v0.6 SEO hygiene kinds (wired) —
   {
@@ -587,6 +656,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'seo_title_duplicate_across_routes',
@@ -595,6 +665,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'seo_meta_description_missing',
@@ -603,6 +674,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'seo_canonical_missing',
@@ -611,6 +683,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'seo_h1_missing_or_multiple',
@@ -619,6 +692,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'seo_robots_blocking_crawl',
@@ -627,6 +701,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
+    defaultSeverity: 'minor',
   },
   // — § v0.40 multi-context kinds (wired) —
   {
@@ -636,6 +711,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/multi-context-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V40_MULTI_CONTEXT.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'visibility_change_state_loss',
@@ -644,6 +720,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/multi-context-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V40_MULTI_CONTEXT.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'multi_user_inconsistent_snapshot',
@@ -652,6 +729,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/multi-context-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V40_MULTI_CONTEXT.md',
+    defaultSeverity: 'major',
   },
   // — § v0.22 nav-state kinds (wired) —
   {
@@ -661,6 +739,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'nav_resubmit_on_back',
@@ -669,6 +748,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'nav_refresh_double_mutation',
@@ -677,6 +757,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'nav_form_state_lost',
@@ -685,6 +766,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'nav_form_state_stale',
@@ -693,6 +775,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
+    defaultSeverity: 'minor',
   },
 
 
@@ -705,6 +788,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'SW waiting/installing on second visit; skipWaiting not called.',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'web_worker_error',
@@ -714,6 +798,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'Unhandled error/messageerror event on a Web Worker.',
+    defaultSeverity: 'major',
   },
   {
     kind: 'iframe_postmessage_unguarded',
@@ -723,6 +808,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'postMessage listener missing event.origin guard.',
+    defaultSeverity: 'major',
   },
   {
     kind: 'shadow_dom_a11y_violation',
@@ -732,6 +818,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'axe-core critical/serious violation inside an open shadow root.',
+    defaultSeverity: 'major',
   },
   {
     kind: 'permission_denied_unhandled',
@@ -739,6 +826,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'deferred until runner wired in v0.50 — runner integration pending — V36.x',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'webrtc_ice_failure',
@@ -748,6 +836,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'RTCPeerConnection reaches failed/disconnected state without onfailure handler.',
+    defaultSeverity: 'major',
   },
   {
     kind: 'subresource_integrity_violation',
@@ -757,6 +846,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'Script/style loaded without integrity= attribute from a cross-origin URL.',
+    defaultSeverity: 'major',
   },
   {
     kind: 'coop_coep_violation',
@@ -766,6 +856,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'SharedArrayBuffer used but crossOriginIsolated is false (missing COOP/COEP headers).',
+    defaultSeverity: 'major',
   },
   {
     kind: 'trusted_types_violation',
@@ -775,6 +866,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'Trusted Types CSP violation — unsafe DOM sink usage detected.',
+    defaultSeverity: 'major',
   },
 
   // — § v0.20 network-fault kinds (wired) —
@@ -785,6 +877,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V20_NETWORK_FAULTS.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'network_fault_optimistic_no_revert',
@@ -793,6 +886,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/execute.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V20_NETWORK_FAULTS.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'infinite_loading',
@@ -800,6 +894,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V20_NETWORK_FAULTS.md',
     note: 'deferred until runner wired in v0.50 — preHadSpinner/postHasSpinner hardcoded false in execute.ts:1331-1332',
+    defaultSeverity: 'major',
   },
 
   // — § v0.43 agentic-app detection kinds —
@@ -809,6 +904,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
     note: 'deferred until runner wired in v0.50 — runner integration pending — V43.x',
+    defaultSeverity: 'major',
   },
   {
     kind: 'agent_action_timeout',
@@ -816,6 +912,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
     note: 'deferred until runner wired in v0.50 — runner integration pending — V43.x',
+    defaultSeverity: 'major',
   },
   {
     kind: 'prompt_injection_executed',
@@ -824,6 +921,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/security/pen-test-runner.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'streaming_response_truncated',
@@ -831,6 +929,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
     note: 'deferred until runner wired in v0.50 — runner integration pending — V43.x',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'tool_call_failure_unhandled',
@@ -838,6 +937,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
     note: 'deferred until runner wired in v0.50 — no production caller in execute.ts despite detectorSite claim — V43.x',
+    defaultSeverity: 'major',
   },
   {
     kind: 'agent_cost_per_turn_high',
@@ -845,6 +945,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V43_AGENTIC_DETECTION.md',
     note: 'deferred until runner wired in v0.50 — runner integration pending — V43.x',
+    defaultSeverity: 'info',
   },
 
   // — § v0.37 i18n / locale stress kinds (wired) —
@@ -855,6 +956,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/locale-stress.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
+    defaultSeverity: 'major',
   },
   {
     kind: 'i18n_long_string_overflow',
@@ -863,6 +965,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/locale-stress.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'i18n_date_format_ambiguous',
@@ -871,6 +974,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/locale-stress.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'i18n_hardcoded_string',
@@ -878,6 +982,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     detectorSite: 'packages/cli/src/static/tools/hardcoded-strings.ts:138',
     inputSource: 'production',
     specReference: 'SPEC_V37_I18N_STRESS.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'i18n_pluralization_broken',
@@ -886,6 +991,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/locale-stress.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'i18n_currency_format_broken',
@@ -894,6 +1000,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/locale-stress.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'i18n_timezone_display_wrong',
@@ -902,6 +1009,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     runnerSite: 'packages/cli/src/phases/locale-stress.ts',
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
+    defaultSeverity: 'minor',
   },
 
   // — § v0.38 interaction-palette kinds (deferred — runner integration pending — V38.x) —
@@ -911,6 +1019,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V38_INTERACTION_PALETTE.md',
     note: 'deferred until runner wired in v0.50',
+    defaultSeverity: 'major',
   },
   {
     kind: 'paste_handler_failure',
@@ -918,6 +1027,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V38_INTERACTION_PALETTE.md',
     note: 'deferred until runner wired in v0.50',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'autofill_state_desync',
@@ -925,6 +1035,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V38_INTERACTION_PALETTE.md',
     note: 'deferred until runner wired in v0.50',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'animation_state_corruption',
@@ -932,6 +1043,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V38_INTERACTION_PALETTE.md',
     note: 'deferred until runner wired in v0.50',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'print_stylesheet_broken',
@@ -939,6 +1051,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V38_INTERACTION_PALETTE.md',
     note: 'deferred until runner wired in v0.50',
+    defaultSeverity: 'info',
   },
   {
     kind: 'reduced_motion_violation',
@@ -946,6 +1059,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V38_INTERACTION_PALETTE.md',
     note: 'deferred until runner wired in v0.50',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'forced_colors_failure',
@@ -953,6 +1067,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V38_INTERACTION_PALETTE.md',
     note: 'deferred until runner wired in v0.50',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'dark_mode_layout_break',
@@ -960,6 +1075,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V38_INTERACTION_PALETTE.md',
     note: 'deferred until runner wired in v0.50',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'zoom_layout_break',
@@ -967,6 +1083,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V38_INTERACTION_PALETTE.md',
     note: 'deferred until runner wired in v0.50',
+    defaultSeverity: 'minor',
   },
 
   // — § v0.42 data-integrity invariant kinds (wired) —
@@ -978,6 +1095,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Orphaned records detected after mutation (e.g. child records with deleted parent).',
+    defaultSeverity: 'major',
   },
   {
     kind: 'money_math_precision',
@@ -987,6 +1105,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Floating-point precision loss in monetary calculation.',
+    defaultSeverity: 'critical',
   },
   {
     kind: 'cache_staleness',
@@ -996,6 +1115,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Cached value diverges from source-of-truth after mutation.',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'idempotency_key_violation',
@@ -1003,6 +1123,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'deferred until runner wired in v0.50 — replay clause requires idempotencyKey header on actionResult; no fixture currently supplies it',
+    defaultSeverity: 'major',
   },
   {
     kind: 'audit_log_missing_for_mutation',
@@ -1012,6 +1133,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Mutating action produced no audit log entry.',
+    defaultSeverity: 'major',
   },
   {
     kind: 'soft_delete_consistency',
@@ -1021,6 +1143,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Soft-deleted record still visible via read query.',
+    defaultSeverity: 'major',
   },
 
   // — § v0.41 mobile / responsive kinds (wired) —
@@ -1032,6 +1155,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
     note: 'Interactive element bounding rect below 44×44 CSS px on mobile viewport.',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'hover_only_affordance',
@@ -1040,6 +1164,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
     note: 'CSS :hover-only interactive affordance with no touch/focus equivalent.',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'viewport_100vh_break',
@@ -1047,6 +1172,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
     note: 'deferred until runner wired in v0.50 — runner integration pending — V41.x',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'soft_keyboard_occlusion',
@@ -1054,6 +1180,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
     note: 'deferred until runner wired in v0.50 — runner integration pending — V41.x',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'orientation_change_layout_break',
@@ -1061,6 +1188,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
     note: 'deferred until runner wired in v0.50 — runner integration pending — V41.x',
+    defaultSeverity: 'minor',
   },
   {
     kind: 'pull_to_refresh_conflict',
@@ -1068,6 +1196,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
     note: 'deferred until runner wired in v0.50 — runner integration pending — V41.x',
+    defaultSeverity: 'minor',
   },
 ];
 
@@ -1084,7 +1213,7 @@ export function lookupDetector(kind: BugKind): DetectorRegistryEntry | undefined
 }
 
 // v0.29: severity / CWE / exploitability metadata for export emitters.
-import type { Severity, ExploitabilityModel } from '../types.js';
+import type { ExploitabilityModel } from '../types.js';
 
 export type DetectorMetadata = {
   kind: BugKind;
@@ -1098,13 +1227,13 @@ export type DetectorMetadata = {
 
 /**
  * v0.29: Record-keyed view of DETECTOR_REGISTRY for O(1) lookups by kind.
- * Provides DetectorMetadata shape; severity defaults to 'info' until per-kind
- * calibration is complete.
+ * Provides DetectorMetadata shape; severity is taken from the registry's
+ * per-kind defaultSeverity (calibrated in v0.29 fix for #147).
  */
 export const DETECTOR_REGISTRY_MAP: Record<string, DetectorMetadata | undefined> = Object.fromEntries(
   DETECTOR_REGISTRY.map(e => [e.kind, {
     kind: e.kind,
-    severity: 'info' as Severity,
+    severity: e.defaultSeverity ?? 'info',
     displayName: e.kind,
     description: e.note ?? '',
   } satisfies DetectorMetadata]),
