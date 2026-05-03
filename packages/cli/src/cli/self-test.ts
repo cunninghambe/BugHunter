@@ -86,25 +86,81 @@ type ReuseManifest = {
 };
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Fixture resolver (V54.9)
 // ---------------------------------------------------------------------------
 
-function fixtureRootFor(selfProjectDir: string): string {
-  // Locate the fixture relative to the package root.
-  // When invoked from the BugHunter repo, selfProjectDir is process.cwd().
-  // We search upward from the CLI package for a known marker.
-  const candidates = [
+/**
+ * Environment variable that overrides the self-test fixture directory.
+ * Set to the path of a checked-out BugHunter-bench comprehensive-bench app
+ * (the directory that contains gold-standard.jsonl).
+ * Example: BUGHUNTER_BENCH_PATH=/tmp/bench-current/apps/comprehensive-bench
+ */
+export const FIXTURE_ENV_VAR = 'BUGHUNTER_BENCH_PATH';
+
+/**
+ * Resolve the fixture root for self-test in priority order:
+ *
+ * 1. $BUGHUNTER_BENCH_PATH (env var override — highest priority)
+ * 2. /tmp/bench-current/apps/comprehensive-bench (local bench default)
+ * 3. fixtures/bughunter-self-deliberate-bugs/ relative to selfProjectDir
+ *    (old fixture fallback — for repo-only runs without the bench checkout)
+ *
+ * Comprehensive-bench fixtures are identified by a gold-standard.jsonl marker.
+ * Old fixtures are identified by a reuse-manifest.json marker.
+ */
+export function resolveFixtureRoot(selfProjectDir: string): string {
+  // 1. Env-var override
+  const envPath = process.env[FIXTURE_ENV_VAR];
+  if (envPath !== undefined && envPath.length > 0) {
+    const abs = path.resolve(envPath);
+    if (!fs.existsSync(abs)) {
+      throw new SelfTestSetupError(
+        `${FIXTURE_ENV_VAR}="${envPath}" does not exist. ` +
+        'Clone BugHunter-bench and set the env var to apps/comprehensive-bench/.',
+      );
+    }
+    const goldFile = path.join(abs, 'gold-standard.jsonl');
+    if (!fs.existsSync(goldFile)) {
+      throw new SelfTestSetupError(
+        `gold-standard.jsonl not found in ${FIXTURE_ENV_VAR} directory "${abs}". ` +
+        'Ensure the path points at apps/comprehensive-bench/ (not the bench repo root).',
+      );
+    }
+    return abs;
+  }
+
+  // 2. Local bench default: /tmp/bench-current/apps/comprehensive-bench
+  const localBench = '/tmp/bench-current/apps/comprehensive-bench';
+  if (fs.existsSync(path.join(localBench, 'gold-standard.jsonl'))) {
+    return localBench;
+  }
+
+  // 3. Old fixture fallback — supports repo-local self-test without bench checkout
+  const oldCandidates = [
     path.join(selfProjectDir, 'fixtures', 'bughunter-self-deliberate-bugs'),
     path.join(selfProjectDir, '..', 'fixtures', 'bughunter-self-deliberate-bugs'),
     path.join(selfProjectDir, '..', '..', 'fixtures', 'bughunter-self-deliberate-bugs'),
   ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'reuse-manifest.json'))) return candidate;
+  for (const candidate of oldCandidates) {
+    if (fs.existsSync(path.join(candidate, 'reuse-manifest.json'))) {
+      return path.resolve(candidate);
+    }
   }
+
   throw new SelfTestSetupError(
-    `Cannot locate fixtures/bughunter-self-deliberate-bugs/ relative to "${selfProjectDir}". ` +
-    'bughunter self-test must be run from a BugHunter repo checkout.',
+    `Cannot locate comprehensive-bench or bughunter-self-deliberate-bugs fixture. ` +
+    `Set ${FIXTURE_ENV_VAR}=/path/to/BugHunter-bench/apps/comprehensive-bench, ` +
+    `or clone the bench repo to /tmp/bench-current, ` +
+    `or run from a BugHunter repo checkout (for the old fixture fallback).`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function fixtureRootFor(selfProjectDir: string): string {
+  return resolveFixtureRoot(selfProjectDir);
 }
 
 function readManifest(fixtureRoot: string): ReuseManifest {
