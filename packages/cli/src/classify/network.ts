@@ -20,8 +20,26 @@ const MUTATOR_SYNTHETIC_PATTERNS = [
   'synthetic-test-id',
 ] as const;
 
+/**
+ * Dev-server URL patterns that should never fire network_5xx — these are
+ * Vite/Next.js HMR and build-artifact paths with no production equivalent
+ * (fixes false-positive class #145; 70/126 FPs on Aspectv3 smoke run).
+ */
+const DEV_SERVER_URL_PATTERNS: RegExp[] = [
+  /^\/@vite\//,
+  /^\/@fs\//,
+  /^\/node_modules\/\.vite\//,
+  /^\/__vite_ping/,
+  /^\/__nuxt\//,
+  /^\/_next\/static\/development\//,
+];
+
 export function isMutatorSyntheticPath(path: string): boolean {
   return MUTATOR_SYNTHETIC_PATTERNS.some(p => path.includes(p));
+}
+
+export function isDevServerPath(path: string): boolean {
+  return DEV_SERVER_URL_PATTERNS.some(re => re.test(path));
 }
 
 export function classifyNetworkRequests(
@@ -34,7 +52,7 @@ export function classifyNetworkRequests(
   for (const req of requests) {
     // Status 0 is the canonical signal for "request never completed" (network
     // failure, CORS rejection, abort). Classify as a connectivity failure bug.
-    if (req.status === 0) {
+    if (req.status === 0 && !isDevServerPath(req.path)) {
       bugs.push({
         kind: 'network_5xx',
         rootCause: `Connectivity failure (status 0) from ${req.method} ${req.path}`,
@@ -45,7 +63,7 @@ export function classifyNetworkRequests(
       continue;
     }
 
-    if (req.status >= 500) {
+    if (req.status >= 500 && !isDevServerPath(req.path)) {
       bugs.push({
         kind: 'network_5xx',
         rootCause: `HTTP ${req.status} from ${req.method} ${req.path}`,
