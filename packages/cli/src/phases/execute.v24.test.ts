@@ -120,6 +120,7 @@ function makePerfCollector(perf: Partial<PerfArtifacts> = {}, har: HarLog = { lo
   return {
     observe: vi.fn().mockResolvedValue(undefined),
     tick: vi.fn(),
+    captureVitals: vi.fn().mockResolvedValue(undefined),
     drain: vi.fn().mockResolvedValue({ perf: fullPerf, har }),
   } as PerfCollector;
 }

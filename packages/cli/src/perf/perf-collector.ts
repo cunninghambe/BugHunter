@@ -1,20 +1,29 @@
-// PerfCollector — orchestrates the CDP session to collect performance artifacts
-// per action window. Writes PerfArtifacts to runs/<runId>/perf/<occurrenceId>.json.
+// PerfCollector — collects performance artifacts per action window.
+// Web Vitals are injected into the main crawl tab (same tab BrowserMCP uses),
+// eliminating the race condition caused by opening a separate CDP tab (#146).
+// Writes PerfArtifacts to runs/<runId>/perf/<occurrenceId>.json.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { PerfArtifacts, HeapSample } from '../types.js';
-import type { CdpSession, CdpTabScope } from '../adapters/cdp-session.js';
+import type { PerfArtifacts, WebVitalSample, LongTaskSample, RenderEvent } from '../types.js';
+import type { CdpSession } from '../adapters/cdp-session.js';
 import { eventsToHar } from '../adapters/har-writer.js';
 import type { HarLog } from '../adapters/har-writer.js';
 import { getInjectionScript } from './web-vitals-injector.js';
 import { log } from '../log.js';
 
+/** Minimal interface for a page that can evaluate JS expressions. */
+export type PageEvaluator = {
+  evaluate(script: string): Promise<{ value: unknown }>;
+};
+
 export type PerfCollector = {
-  /** Called when the browser navigates to a new URL; mirrors with CDP session. */
-  observe(url: string): Promise<void>;
+  /** Inject Web Vitals into the already-open main crawl tab (no separate CDP tab). */
+  observe(scope: PageEvaluator, url: string): Promise<void>;
   /** Called after each action with a window id for tagging. */
   tick(actionWindowId: string): void;
+  /** Read Web Vitals from the open scope into memory before the tab closes. */
+  captureVitals(): Promise<void>;
   /** Drains collected data, writes artifact file, returns PerfArtifacts + HAR. */
   drain(occurrenceId: string): Promise<{ perf: PerfArtifacts; har: HarLog }>;
 };
@@ -26,31 +35,63 @@ export type PerfCollectorOptions = {
   heapSampling?: boolean;
 };
 
+type CapturedVitals = {
+  webVitals: WebVitalSample[];
+  longTasks: LongTaskSample[];
+  renderEvents: RenderEvent[];
+};
+
+function emptyVitals(): CapturedVitals {
+  return { webVitals: [], longTasks: [], renderEvents: [] };
+}
+
+async function readVitalsFromScope(scope: PageEvaluator): Promise<CapturedVitals> {
+  let webVitals: WebVitalSample[] = [];
+  let longTasks: LongTaskSample[] = [];
+  let renderEvents: RenderEvent[] = [];
+
+  try {
+    const r = await scope.evaluate('window.__bughunter_vitals__ || []');
+    if (Array.isArray(r.value)) webVitals = r.value as WebVitalSample[];
+  } catch (err) {
+    log.warn('perf-collector: failed to read web vitals from scope', { err: String(err) });
+  }
+
+  try {
+    const r = await scope.evaluate('window.__bughunter_long_tasks__ || []');
+    if (Array.isArray(r.value)) longTasks = r.value as LongTaskSample[];
+  } catch (err) {
+    log.warn('perf-collector: failed to read long tasks from scope', { err: String(err) });
+  }
+
+  try {
+    const r = await scope.evaluate('window.__bughunter_render_events__ || []');
+    if (Array.isArray(r.value)) renderEvents = r.value as RenderEvent[];
+  } catch (err) {
+    log.warn('perf-collector: failed to read render events from scope', { err: String(err) });
+  }
+
+  return { webVitals, longTasks, renderEvents };
+}
+
 export function createPerfCollector(opts: PerfCollectorOptions): PerfCollector {
-  const { cdpSession, perfDir, networkDir, heapSampling = false } = opts;
+  const { cdpSession, perfDir, networkDir } = opts;
   fs.mkdirSync(perfDir, { recursive: true });
   fs.mkdirSync(networkDir, { recursive: true });
 
-  let currentTab: CdpTabScope | null = null;
   let currentUrl = '';
-  const heapSamples: HeapSample[] = [];
-  let injectionFailed = false;
+  let currentScope: PageEvaluator | null = null;
+  let captured: CapturedVitals = emptyVitals();
 
   return {
-    async observe(url: string): Promise<void> {
+    async observe(scope: PageEvaluator, url: string): Promise<void> {
       currentUrl = url;
+      currentScope = scope;
+      captured = emptyVitals();
       try {
-        currentTab = await cdpSession.newTab(url);
-        // Inject the web-vitals script into the page
-        try {
-          await currentTab.evaluate(getInjectionScript());
-        } catch (err) {
-          injectionFailed = true;
-          log.warn('perf-collector: web-vitals injection failed', { err: String(err), url });
-        }
+        await scope.evaluate(getInjectionScript());
       } catch (err) {
-        log.warn('perf-collector: newTab failed', { err: String(err), url });
-        currentTab = null;
+        log.warn('perf-collector: web-vitals injection failed', { err: String(err), url });
       }
     },
 
@@ -58,36 +99,30 @@ export function createPerfCollector(opts: PerfCollectorOptions): PerfCollector {
       cdpSession.setActionWindowId(actionWindowId);
     },
 
+    async captureVitals(): Promise<void> {
+      if (currentScope === null) return;
+      captured = await readVitalsFromScope(currentScope);
+      currentScope = null;
+    },
+
     async drain(occurrenceId: string): Promise<{ perf: PerfArtifacts; har: HarLog }> {
       const drained = await cdpSession.drain();
 
-      // Optionally sample heap after action
-      if (heapSampling && currentTab !== null) {
-        try {
-          const sample = await currentTab.sampleHeap();
-          heapSamples.push(sample);
-        } catch (err) {
-          log.warn('perf-collector: heap sample failed', { err: String(err) });
-        }
-      }
-
       const perf: PerfArtifacts = {
         occurrenceId,
-        webVitals: injectionFailed ? [] : drained.webVitals,
-        longTasks: injectionFailed ? [] : drained.longTasks,
-        heapSamples: heapSampling ? [...heapSamples] : [],
-        renderEvents: injectionFailed ? [] : drained.renderEvents,
-        navigationEvents: [...drained.navigationEvents],  // V24: surface for classifyCancelMissing
+        webVitals: captured.webVitals,
+        longTasks: captured.longTasks,
+        heapSamples: [],
+        renderEvents: captured.renderEvents,
+        navigationEvents: [...drained.navigationEvents],
         cdpConsoleErrors: drained.consoleErrors,
       };
 
       const har = eventsToHar(drained.networkEvents);
 
-      // Write perf artifact
       const perfFile = path.join(perfDir, `${occurrenceId}.json`);
       fs.writeFileSync(perfFile, JSON.stringify(perf, null, 2));
 
-      // Write HAR artifact
       const harFile = path.join(networkDir, `${occurrenceId}.har`);
       fs.writeFileSync(harFile, JSON.stringify(har, null, 2));
 
@@ -99,6 +134,7 @@ export function createPerfCollector(opts: PerfCollectorOptions): PerfCollector {
         pageRoute: currentUrl,
       });
 
+      captured = emptyVitals();
       return { perf, har };
     },
   };
