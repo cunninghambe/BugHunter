@@ -247,7 +247,15 @@ export function evaluateExpectations(
     const matched = clusters.filter(c => {
       if (c.kind !== exp.kind) return false;
       const sig = c.signatureKey ?? '';
-      if (!sig.startsWith(exp.signaturePrefix)) return false;
+      // V53.1: signatures may be <surface>|<kind>|... where surface names contain hyphens
+      // (e.g. "self-spa", "race-bad") or are "unknown". Strip the surface segment before
+      // comparing with exp.signaturePrefix (which encodes only the kind+context part).
+      // Surface-agnostic sigs use ':' not '|', so the first segment check never applies.
+      const firstBar = sig.indexOf('|');
+      const firstSegment = firstBar !== -1 ? sig.slice(0, firstBar) : sig;
+      const hasSurfacePrefix = firstBar !== -1 && (firstSegment === 'unknown' || firstSegment.includes('-'));
+      const sigKindPart = hasSurfacePrefix ? sig.slice(firstBar + 1) : sig;
+      if (!sigKindPart.startsWith(exp.signaturePrefix)) return false;
       if (exp.rootCauseSubstring !== undefined) {
         if (!c.rootCause.toLowerCase().includes(exp.rootCauseSubstring.toLowerCase())) return false;
       }

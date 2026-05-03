@@ -198,6 +198,103 @@ describe('runMultiSurfacePipeline', () => {
 });
 
 // ──────────────────────────────────────────────────
+// V53.1: detection.surface stamping (Bug 2)
+// ──────────────────────────────────────────────────
+
+describe('runMultiSurfacePipeline — V53.1 detection.surface stamping', () => {
+  it('callback receives surfaceName so caller can stamp detection.surface', async () => {
+    const topology: SurfaceListSurfacesResult = {
+      surfaceMcpVersion: '0.3.0',
+      surfaces: [
+        { name: 'self-spa', stack: 'vite', baseUrl: 'http://localhost:5790', state: { kind: 'ready' }, toolCount: 0, pageCount: 3, navigationCount: 2, toolRevision: 1, capabilities: { listPages: true, listNavigations: true, enumerateRoutesRuntime: true, crawlSeed: false } },
+        { name: 'self-api', stack: 'openapi', baseUrl: 'http://localhost:5791', state: { kind: 'ready' }, toolCount: 5, pageCount: 0, navigationCount: 0, toolRevision: 1, capabilities: { listPages: false, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+      ],
+    };
+
+    type FakeBug = { kind: string; rootCause: string; surface?: string };
+    const collectedBugs: FakeBug[] = [];
+    const adapter = makeHttpAdapter();
+
+    await runMultiSurfacePipeline(
+      adapter,
+      topology,
+      BASE_CONFIG,
+      async (_bound, _config, surfaceName) => {
+        // Simulate what runExecute returns (detections without surface set)
+        const detections: FakeBug[] = [
+          { kind: 'console_error', rootCause: `error on ${surfaceName}` },
+        ];
+        // Stamp surface — mirrors what runCommand does post-execute
+        detections.forEach(d => { if (d.surface === undefined) d.surface = surfaceName; });
+        collectedBugs.push(...detections);
+      },
+    );
+
+    expect(collectedBugs).toHaveLength(2);
+    expect(collectedBugs[0].surface).toBe('self-spa');
+    expect(collectedBugs[1].surface).toBe('self-api');
+  });
+
+  it('clusters from multi-surface run carry distinct surface origins', async () => {
+    const surfaces = ['self-spa', 'self-api', 'race-bad'];
+    const topology: SurfaceListSurfacesResult = {
+      surfaceMcpVersion: '0.3.0',
+      surfaces: surfaces.map(name => ({
+        name,
+        stack: name === 'self-spa' ? 'vite' as const : 'openapi' as const,
+        baseUrl: `http://localhost:${5000 + surfaces.indexOf(name)}`,
+        state: { kind: 'ready' as const },
+        toolCount: 1, pageCount: 0, navigationCount: 0, toolRevision: 1,
+        capabilities: { listPages: false, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false },
+      })),
+    };
+
+    const stampedSurfaces: string[] = [];
+    const adapter = makeHttpAdapter();
+
+    await runMultiSurfacePipeline(
+      adapter,
+      topology,
+      BASE_CONFIG,
+      async (_bound, _config, surfaceName) => {
+        stampedSurfaces.push(surfaceName);
+      },
+    );
+
+    // Each surface was visited and its name is available for stamping
+    expect(new Set(stampedSurfaces).size).toBe(3);
+    expect(stampedSurfaces).toContain('self-spa');
+    expect(stampedSurfaces).toContain('self-api');
+    expect(stampedSurfaces).toContain('race-bad');
+  });
+
+  it('BoundSurfaceMcpAdapter.getSurfaceName() returns the surface name used for stamping', async () => {
+    const topology: SurfaceListSurfacesResult = {
+      surfaceMcpVersion: '0.3.0',
+      surfaces: [
+        { name: 'self-spa', stack: 'vite', baseUrl: 'http://localhost:5790', state: { kind: 'ready' }, toolCount: 0, pageCount: 1, navigationCount: 0, toolRevision: 1, capabilities: { listPages: true, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+      ],
+    };
+
+    const adapter = makeHttpAdapter();
+    let capturedSurfaceName: string | undefined;
+
+    await runMultiSurfacePipeline(
+      adapter,
+      topology,
+      BASE_CONFIG,
+      async (bound, _config, surfaceName) => {
+        // getSurfaceName() must equal the surfaceName passed as 3rd arg
+        capturedSurfaceName = bound.getSurfaceName();
+        expect(capturedSurfaceName).toBe(surfaceName);
+      },
+    );
+
+    expect(capturedSurfaceName).toBe('self-spa');
+  });
+});
+
+// ──────────────────────────────────────────────────
 // Integration: 6-surface topology produces ≥3 distinct surface names
 // ──────────────────────────────────────────────────
 

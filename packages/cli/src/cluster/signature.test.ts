@@ -519,3 +519,53 @@ describe('clusterSignature — v0.43 surface prefix', () => {
     expect(SURFACE_AGNOSTIC_KINDS.length).toBe(2);
   });
 });
+
+// V53.1 — surface prefix after runPhaseForSurface stamps detection.surface.
+
+describe('clusterSignature — V53.1 post-execute surface stamping', () => {
+  it('surface: "self-spa" produces signature starting with "self-spa|"', () => {
+    const d = make('console_error', { surface: 'self-spa', rootCause: 'TypeError: null' });
+    expect(clusterSignature(d).startsWith('self-spa|')).toBe(true);
+  });
+
+  it('surface: "self-api" produces signature starting with "self-api|"', () => {
+    const d = make('network_5xx', { surface: 'self-api', endpoint: '/api/items', status: 500 });
+    expect(clusterSignature(d).startsWith('self-api|')).toBe(true);
+  });
+
+  it('surface: undefined produces signature starting with "unknown|"', () => {
+    const d = make('console_error', { rootCause: 'ReferenceError: x is not defined' });
+    expect(clusterSignature(d).startsWith('unknown|')).toBe(true);
+  });
+
+  it('same detection on two surfaces produces two distinct signatures', () => {
+    const base = { rootCause: 'Uncaught TypeError', endpoint: '/api/data', status: 500 };
+    const fromSpa = make('network_5xx', { ...base, surface: 'self-spa' });
+    const fromApi = make('network_5xx', { ...base, surface: 'self-api' });
+    expect(clusterSignature(fromSpa)).not.toBe(clusterSignature(fromApi));
+    expect(clusterSignature(fromSpa).startsWith('self-spa|')).toBe(true);
+    expect(clusterSignature(fromApi).startsWith('self-api|')).toBe(true);
+  });
+
+  it('oversized_bundle with surface set still produces surface-agnostic signature', () => {
+    const d = make('oversized_bundle', { surface: 'self-spa', evidence: { kind: 'js' } });
+    const sig = clusterSignature(d);
+    expect(sig.startsWith('oversized_bundle:')).toBe(true);
+    expect(sig).not.toContain('self-spa|');
+  });
+
+  it('memory_leak_suspected with surface set still produces surface-agnostic signature', () => {
+    const d = make('memory_leak_suspected', { surface: 'self-api' });
+    expect(clusterSignature(d)).toBe('memory_leak_suspected:run');
+  });
+
+  it('race_condition_double_submit from race-bad surface carries surface prefix', () => {
+    const d = make('race_condition_double_submit', {
+      surface: 'race-bad',
+      endpoint: 'POST /api/order',
+      raceContext: { variantKind: 'double_submit', gapMs: 5, proof: 'duplicate_state', evidence: 'same id returned' },
+    });
+    const sig = clusterSignature(d);
+    expect(sig.startsWith('race-bad|race_condition_double_submit|')).toBe(true);
+  });
+});
