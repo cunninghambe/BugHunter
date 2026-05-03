@@ -26,6 +26,8 @@ export type CrossUserOptions = {
   roles: string[];
   maxClusters: number;
   onClusterFound: (key: string) => number;
+  /** v0.47+: surface name to stamp onto every emitted detection. */
+  targetSurface?: string;
 };
 
 export type CrossUserResult = {
@@ -46,7 +48,7 @@ function isAdminRole(role: string, hints: string[]): boolean {
 }
 
 export async function runCrossUser(opts: CrossUserOptions): Promise<CrossUserResult> {
-  const { runState, surface, roles, maxClusters, onClusterFound } = opts;
+  const { runState, surface, roles, maxClusters, onClusterFound, targetSurface } = opts;
 
   const detections: Array<{ testId: string; detection: BugDetection }> = [];
   const testCases: TestCase[] = [];
@@ -82,6 +84,8 @@ export async function runCrossUser(opts: CrossUserOptions): Promise<CrossUserRes
 
   const clusterKeys = new Set<string>();
 
+  let result: CrossUserResult;
+
   if (discoveredIds === undefined || discoveredIds.size === 0) {
     // Anonymous-only fallback: replay safe tools as anonymous when no IDs are available.
     if (anonymousEnabled && config.resetPolicy !== undefined) {
@@ -101,10 +105,8 @@ export async function runCrossUser(opts: CrossUserOptions): Promise<CrossUserRes
       log.info('cross-user: anonymous sweep skipped (no resetPolicy)');
     }
     log.info(`cross-user: ${testCases.length} replays → ${detections.length} detections`);
-    return { detections, testCases };
-  }
-
-  if (idorEnabled) {
+    result = { detections, testCases };
+  } else if (idorEnabled) {
     // Anonymous sweep complements V21 — V21 detects horizontal/vertical IDOR via id-swap;
     // the anonymous sweep detects auth_bypass_via_unauthed_route on tools that should require
     // a session at all. Both are needed; enabling V21 must not silently disable the other path.
@@ -114,17 +116,25 @@ export async function runCrossUser(opts: CrossUserOptions): Promise<CrossUserRes
         detections, testCases, clusterKeys, onClusterFound, maxClusters,
       });
     }
-    return runV21IdorPass({
+    result = await runV21IdorPass({
       toolCatalog, surface, runState, roles, maxReplays, maxClusters, onClusterFound,
       discoveredIds, detections, testCases, clusterKeys, idorCfg: resolvedIdorCfg,
       adminHints, anonymousEnabled,
     });
+  } else {
+    result = await runLegacyCrossUser({
+      toolCatalog, surface, runState, roles, maxReplays, maxClusters, onClusterFound,
+      discoveredIds, detections, testCases, clusterKeys, adminHints, anonymousEnabled,
+    });
   }
 
-  return runLegacyCrossUser({
-    toolCatalog, surface, runState, roles, maxReplays, maxClusters, onClusterFound,
-    discoveredIds, detections, testCases, clusterKeys, adminHints, anonymousEnabled,
-  });
+  if (targetSurface !== undefined) {
+    for (const { detection } of result.detections) {
+      detection.surface ??= targetSurface;
+    }
+  }
+
+  return result;
 }
 
 // --- v0.21 IDOR pass ---

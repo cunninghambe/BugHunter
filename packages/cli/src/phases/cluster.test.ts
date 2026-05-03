@@ -178,3 +178,75 @@ describe('runCluster — replayKind and signatureKey tagging', () => {
     expect(clusters[0]?.signatureKey?.length).toBeGreaterThan(0);
   });
 });
+
+describe('runCluster — surface propagation (#139)', () => {
+  it('copies surface to cluster when all detections share the same surface', () => {
+    const opts: ClusterOptions = {
+      detections: [
+        { testId: 'a', detection: makeDetection({ kind: 'console_error', rootCause: 'err', surface: 'self-spa' }) },
+        { testId: 'b', detection: makeDetection({ kind: 'console_error', rootCause: 'err', surface: 'self-spa' }) },
+        { testId: 'c', detection: makeDetection({ kind: 'console_error', rootCause: 'err', surface: 'self-spa' }) },
+      ],
+      testCases: [
+        makeTestCase('a', 'owner'),
+        makeTestCase('b', 'owner'),
+        makeTestCase('c', 'owner'),
+      ],
+      runId: 'run-1',
+      projectDir: '/tmp',
+      actionLogsDir: '/tmp/action-logs',
+      screenshotsDir: '/tmp/screenshots',
+      domDir: '/tmp/dom',
+      consoleDir: '/tmp/console',
+      networkDir: '/tmp/network',
+      maxClusters: 50,
+      occurrenceIdByTestId: new Map([['a', 'occ-a'], ['b', 'occ-b'], ['c', 'occ-c']]),
+    };
+    const { clusters } = runCluster(opts);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.surface).toBe('self-spa');
+  });
+
+  it('leaves cluster.surface undefined when detections have no surface (legacy)', () => {
+    const opts: ClusterOptions = {
+      detections: [
+        { testId: 'a', detection: makeDetection({ kind: 'console_error', rootCause: 'err' }) },
+        { testId: 'b', detection: makeDetection({ kind: 'console_error', rootCause: 'err' }) },
+      ],
+      testCases: [makeTestCase('a', 'owner'), makeTestCase('b', 'owner')],
+      runId: 'run-1',
+      projectDir: '/tmp',
+      actionLogsDir: '/tmp/action-logs',
+      screenshotsDir: '/tmp/screenshots',
+      domDir: '/tmp/dom',
+      consoleDir: '/tmp/console',
+      networkDir: '/tmp/network',
+      maxClusters: 50,
+      occurrenceIdByTestId: new Map([['a', 'occ-a'], ['b', 'occ-b']]),
+    };
+    const { clusters } = runCluster(opts);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.surface).toBeUndefined();
+  });
+
+  it('leaves cluster.surface undefined for SURFACE_AGNOSTIC_KINDS even when detection has a surface', () => {
+    const opts: ClusterOptions = {
+      detections: [
+        { testId: 'a', detection: makeDetection({ kind: 'oversized_bundle', rootCause: 'bundle too big', surface: 'self-spa' }) },
+      ],
+      testCases: [makeTestCase('a', 'system')],
+      runId: 'run-1',
+      projectDir: '/tmp',
+      actionLogsDir: '/tmp/action-logs',
+      screenshotsDir: '/tmp/screenshots',
+      domDir: '/tmp/dom',
+      consoleDir: '/tmp/console',
+      networkDir: '/tmp/network',
+      maxClusters: 50,
+      occurrenceIdByTestId: new Map([['a', 'occ-a']]),
+    };
+    const { clusters } = runCluster(opts);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.surface).toBeUndefined();
+  });
+});

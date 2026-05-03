@@ -666,3 +666,50 @@ describe('runCrossUser — v0.21 IDOR pass', () => {
     expect(result.detections.some(d => d.detection.kind === 'idor_horizontal_read')).toBe(false);
   });
 });
+
+describe('runCrossUser — surface stamping (#139)', () => {
+  it('stamps detection.surface with targetSurface on all emitted detections', async () => {
+    const discoveredIds = new Map([
+      ['owner', new Map([['getTrade:id', new Set(['trade-1'])]])],
+    ]);
+
+    const opts: CrossUserOptions = {
+      runState: makeRunState({ discoveredIds }),
+      surface: makeSurface((_toolId, role) =>
+        role === 'customer' ? { status: 200, body: { id: 'trade-1', amount: 100 } } : { status: 403 }
+      ),
+      roles: ['owner', 'customer'],
+      maxClusters: 50,
+      onClusterFound: () => 0,
+      targetSurface: 'self-spa',
+    };
+
+    const result = await runCrossUser(opts);
+    expect(result.detections.length).toBeGreaterThan(0);
+    for (const { detection } of result.detections) {
+      expect(detection.surface).toBe('self-spa');
+    }
+  });
+
+  it('leaves detection.surface undefined when targetSurface is not provided', async () => {
+    const discoveredIds = new Map([
+      ['owner', new Map([['getTrade:id', new Set(['trade-1'])]])],
+    ]);
+
+    const opts: CrossUserOptions = {
+      runState: makeRunState({ discoveredIds }),
+      surface: makeSurface((_toolId, role) =>
+        role === 'customer' ? { status: 200, body: { id: 'trade-1', amount: 100 } } : { status: 403 }
+      ),
+      roles: ['owner', 'customer'],
+      maxClusters: 50,
+      onClusterFound: () => 0,
+    };
+
+    const result = await runCrossUser(opts);
+    expect(result.detections.length).toBeGreaterThan(0);
+    for (const { detection } of result.detections) {
+      expect(detection.surface).toBeUndefined();
+    }
+  });
+});

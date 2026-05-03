@@ -761,12 +761,14 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     if (idorFlagEnabled !== undefined) {
       resolved.idor = { ...(resolved.idor ?? {}), enabled: idorFlagEnabled };
     }
+    const singleSurfaceName = topology.surfaces.length === 1 ? topology.surfaces[0]?.name : undefined;
     const crossUserResult = await runCrossUser({
       runState,
       surface,
       roles: effectiveRoles,
       maxClusters: resolved.maxBugs,
       onClusterFound: () => runState.clusterCount,
+      targetSurface: singleSurfaceName,
     });
     const { detections: crossUserDetections, testCases: crossUserTestCases } = crossUserResult;
 
@@ -800,6 +802,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
           jwtPublicKeyPemPath: resolved.penTesting?.jwtPublicKeyPemPath,
           maxProbesPerEndpoint: resolved.penTesting?.maxProbesPerEndpoint ?? 25,
           booleanDeltaThreshold: resolved.penTesting?.booleanDeltaThreshold ?? 0.3,
+          surface: singleSurfaceName,
         },
         surface,
       );
