@@ -27,10 +27,14 @@ export type SelfTestOptions = {
 };
 
 export type SelfTestResult = {
+  /** true iff all positives met and all negatives passed — budget overrun does NOT affect this */
   passed: boolean;
   elapsedMs: number;
   budgetMs: number;
+  /** @deprecated use budgetExceeded */
   budgetOk: boolean;
+  /** true when wallclock exceeded the budget; emitted as a warning, never fails the verdict */
+  budgetExceeded: boolean;
   positives: Array<{ kind: BugKind; expected: number; matched: number; status: 'PASS' | 'MISS' | 'FLAKED' }>;
   negatives: Array<{ kind: BugKind; observed: number; status: 'PASS' | 'FALSE_POSITIVE' }>;
   unexpectedKinds: BugKind[];
@@ -220,7 +224,7 @@ export function evaluateExpectations(
   clusters: BugCluster[],
   goldenLines: GoldenLine[],
   opts: { failOnFlake: boolean },
-): Omit<SelfTestResult, 'elapsedMs' | 'budgetMs' | 'budgetOk' | 'passed'> {
+): Omit<SelfTestResult, 'elapsedMs' | 'budgetMs' | 'budgetOk' | 'budgetExceeded' | 'passed'> {
   const positiveExpectations = goldenLines.filter(
     (l): l is PositiveExpectation => !('expect' in l),
   );
@@ -316,7 +320,7 @@ function spawnScript(scriptPath: string): void {
 // ---------------------------------------------------------------------------
 
 function emitHumanResult(result: SelfTestResult): void {
-  const { positives, negatives, unexpectedKinds, elapsedMs, budgetMs, budgetOk } = result;
+  const { positives, negatives, unexpectedKinds, elapsedMs, budgetMs, budgetExceeded } = result;
 
   process.stdout.write('\n=== BugHunter Self-Test Results ===\n\n');
   process.stdout.write('Positive expectations:\n');
@@ -338,8 +342,11 @@ function emitHumanResult(result: SelfTestResult): void {
     }
   }
 
-  process.stdout.write(`\nWallclock: ${elapsedMs}ms / budget ${budgetMs}ms  [${budgetOk ? 'OK' : 'EXCEEDED'}]\n`);
-  process.stdout.write(`\nResult: ${result.passed ? 'PASSED' : 'FAILED'}\n\n`);
+  process.stdout.write(`\nWallclock: ${elapsedMs}ms / budget ${budgetMs}ms  [${budgetExceeded ? 'EXCEEDED (warning only)' : 'OK'}]\n`);
+  if (budgetExceeded) {
+    process.stdout.write('[WARN] Budget exceeded — detection results are still valid. Consider raising --budget.\n');
+  }
+  process.stdout.write(`\nResult: ${result.passed ? (budgetExceeded ? 'PASSED (budget warning)' : 'PASSED') : 'FAILED'}\n\n`);
 }
 
 function appendPerfHistory(fixtureRoot: string, elapsedMs: number): void {
@@ -357,12 +364,19 @@ function appendPerfHistory(fixtureRoot: string, elapsedMs: number): void {
 // Main command
 // ---------------------------------------------------------------------------
 
-export async function selfTestCommand(opts: SelfTestOptions): Promise<void> {
-  const budgetMs = opts.budgetMs ?? 1_800_000;
+/** Count unique surface fixtures in the manifest to scale the default budget.
+ *  Each surface gets 600s; minimum 600s for single-surface runs. (#140) */
+export function defaultBudgetMs(manifest: ReuseManifest): number {
+  const surfaceCount = new Set(Object.values(manifest.kinds).map(k => k.fixture)).size;
+  return Math.max(600_000, surfaceCount * 600_000);
+}
 
+export async function selfTestCommand(opts: SelfTestOptions): Promise<void> {
   const fixtureRoot = fixtureRootFor(opts.projectDir);
   const manifest = readManifest(fixtureRoot);
   const goldenLines = readGolden(fixtureRoot);
+
+  const budgetMs = opts.budgetMs ?? defaultBudgetMs(manifest);
 
   // Fail fast on drift before booting anything (exit code 2)
   try {
@@ -415,13 +429,15 @@ export async function selfTestCommand(opts: SelfTestOptions): Promise<void> {
       p => p.status === 'PASS' || p.status === 'FLAKED',
     );
     const allNegativesMet = evaluation.negatives.every(n => n.status === 'PASS');
-    const budgetOk = elapsedMs <= budgetMs;
+    const budgetExceeded = elapsedMs > budgetMs;
 
+    // Verdict is based solely on recall vs gold — budget overrun is a warning only (#140).
     result = {
-      passed: allPositivesMet && allNegativesMet && budgetOk,
+      passed: allPositivesMet && allNegativesMet,
       elapsedMs,
       budgetMs,
-      budgetOk,
+      budgetOk: !budgetExceeded,
+      budgetExceeded,
       ...evaluation,
     };
 
