@@ -373,8 +373,8 @@ export function defaultBudgetMs(manifest: ReuseManifest): number {
 }
 
 /** Returns the RunOptions that selfTestCommand passes to runCommand.
- *  Exported so tests can assert all required phase flags are present
- *  without executing an end-to-end fixture run. (Audit fix #2) */
+ *  Exported for unit tests that assert phase flags without a fixture run.
+ *  Audit fix #2 — SWEEP_AUDIT_2026-05-03. */
 export function buildSelfTestRunOpts(fixtureRoot: string, maxBugs: number, budgetMs: number): RunOptions {
   return {
     projectDir: fixtureRoot,
