@@ -1,8 +1,11 @@
-// Unit tests for self-test.ts — covers evaluateExpectations and assertLockstep.
+// Unit tests for self-test.ts — covers evaluateExpectations, assertLockstep, and latestRunId.
 // No fixture boot. No network. Pure logic tests.
 
-import { describe, it, expect } from 'vitest';
-import { evaluateExpectations, assertLockstep, LockstepError } from './self-test.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { describe, it, expect, afterEach } from 'vitest';
+import { evaluateExpectations, assertLockstep, LockstepError, latestRunId } from './self-test.js';
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import type { BugCluster } from '../types.js';
 
@@ -265,5 +268,64 @@ describe('assertLockstep', () => {
     ];
 
     expect(() => assertLockstep(manifest, golden)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// latestRunId
+// ---------------------------------------------------------------------------
+
+function makeRunDir(fixtureRoot: string, runId: string, startedAt: string): void {
+  const runDir = path.join(fixtureRoot, '.bughunter', 'runs', runId);
+  fs.mkdirSync(runDir, { recursive: true });
+  const state = { runId, projectDir: fixtureRoot, startedAt, phase: 'done', config: {}, clusterCount: 0, infraFailureCount: 0, consecutiveInfraFailures: 0, emitted: false, partialEmit: false };
+  fs.writeFileSync(path.join(runDir, 'state.json'), JSON.stringify(state));
+}
+
+describe('latestRunId', () => {
+  const temps: string[] = [];
+
+  afterEach(() => {
+    for (const t of temps) fs.rmSync(t, { recursive: true, force: true });
+    temps.length = 0;
+  });
+
+  it('returns the run with the latest startedAt even when it sorts earlier alphabetically', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-test-'));
+    temps.push(root);
+    makeRunDir(root, 'zzz-old', '2026-05-01T00:00:00.000Z');
+    makeRunDir(root, 'aaa-new', '2026-05-03T00:00:00.000Z');
+    expect(latestRunId(root)).toBe('aaa-new');
+  });
+
+  it('returns the run with the latest startedAt when it also sorts last alphabetically', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-test-'));
+    temps.push(root);
+    makeRunDir(root, 'aaa-old', '2026-05-01T00:00:00.000Z');
+    makeRunDir(root, 'zzz-new', '2026-05-03T00:00:00.000Z');
+    expect(latestRunId(root)).toBe('zzz-new');
+  });
+
+  it('returns undefined when the runs directory is empty', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-test-'));
+    temps.push(root);
+    fs.mkdirSync(path.join(root, '.bughunter', 'runs'), { recursive: true });
+    expect(latestRunId(root)).toBeUndefined();
+  });
+
+  it('falls back to mtime when state.json is corrupted', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-test-'));
+    temps.push(root);
+    // aaa-corrupt has a broken state.json but a newer mtime
+    const corruptDir = path.join(root, '.bughunter', 'runs', 'aaa-corrupt');
+    fs.mkdirSync(corruptDir, { recursive: true });
+    fs.writeFileSync(path.join(corruptDir, 'state.json'), 'not-json{{{');
+    // Set mtime to a far-future date to ensure it wins over bbb-old
+    const future = new Date('2030-01-01T00:00:00.000Z');
+    fs.utimesSync(corruptDir, future, future);
+
+    makeRunDir(root, 'bbb-old', '2026-05-01T00:00:00.000Z');
+
+    expect(latestRunId(root)).toBe('aaa-corrupt');
   });
 });
