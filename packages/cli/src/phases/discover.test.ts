@@ -3,8 +3,9 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
-import { runVisualBaseline } from './discover.js';
+import { runVisualBaseline, runBrowserLoginPhase } from './discover.js';
 import type { BrowserMcpAdapter, ClickByHintResult } from '../adapters/browser-mcp.js';
+import type { SurfaceMcpAdapter, DescribeAuthResult } from '../adapters/surface-mcp.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
 import type { BugHunterConfig, DiscoveredPage } from '../types.js';
@@ -391,4 +392,130 @@ describe('TV4: v0.17 byViewport telemetry in result', () => {
     expect(result.byViewport?.[375]?.uniqueScreenshots).toBe(1);
     expect(result.byViewport?.[1280]?.uniqueScreenshots).toBe(1);
   }, 15_000);
+});
+
+// ---------------------------------------------------------------------------
+// runBrowserLoginPhase — skip-guard unit tests (issue #116)
+// ---------------------------------------------------------------------------
+
+const SURFACE_MCP_URL = 'http://127.0.0.1:3199/mcp';
+const APP_BASE_URL = 'http://localhost:3002';
+
+function makeMinimalConfig(overrides?: Partial<BugHunterConfig>): BugHunterConfig {
+  return {
+    projectName: 'test',
+    surfaceMcpUrl: SURFACE_MCP_URL,
+    appBaseUrl: APP_BASE_URL,
+    roles: ['owner'],
+    ...overrides,
+  };
+}
+
+function makeMockSurface(authPlan?: DescribeAuthResult): SurfaceMcpAdapter {
+  const plan: DescribeAuthResult = authPlan ?? {
+    authKind: 'form',
+    uiLoginPath: '/login',
+    fields: { email: 'email', password: 'password' },
+    values: { email: 'user@test.com', password: 'secret' },
+    successCheck: { kind: 'cookie', name: 'session' },
+    cookieName: 'session',
+  };
+  return {
+    surface_describe_auth: vi.fn(async () => plan),
+    surface_list_tools: vi.fn(),
+    surface_describe_tool: vi.fn(),
+    surface_call: vi.fn(),
+    surface_probe: vi.fn(),
+    surface_sample_inputs: vi.fn(),
+    surface_login_status: vi.fn(),
+    surface_relogin: vi.fn(),
+    surface_routes_for_page: vi.fn(),
+    surface_list_pages: vi.fn(),
+    surface_describe_self: vi.fn(),
+  } as unknown as SurfaceMcpAdapter;
+}
+
+function makeMockBrowser(): BrowserMcpAdapter {
+  return {
+    navigate: vi.fn(async (url: string) => ({ url })),
+    click: vi.fn(async () => ({ clicked: true })),
+    type: vi.fn(async () => ({ typed: true })),
+    scroll: vi.fn(async () => ({ scrolled: true })),
+    snapshot: vi.fn(async () => ({ snapshot: '' })),
+    screenshot: vi.fn(async () => ({ path: '' })),
+    evaluate: vi.fn(async () => ({ value: null })),
+    listTabs: vi.fn(async () => ({ tabs: [] })),
+    closeTab: vi.fn(async () => ({ closed: true })),
+    openTab: vi.fn(async () => ({ tabId: 'tab1', finalUrl: '' })),
+    closeTabExplicit: vi.fn(async () => {}),
+    withTab: vi.fn(),
+    cookies: vi.fn(async () => ({ tabId: 'tab1', cookies: [] })),
+  } as unknown as BrowserMcpAdapter;
+}
+
+describe('runBrowserLoginPhase — skip guards (#116)', () => {
+  it('auth.kind=none → skipped, no navigate call', async () => {
+    const browser = makeMockBrowser();
+    const surface = makeMockSurface();
+    const config = makeMinimalConfig({ auth: { kind: 'none' } });
+
+    const result = await runBrowserLoginPhase(config, browser, surface, ['owner']);
+
+    expect(result.skipped).toBe(true);
+    if (!result.skipped) return;
+    expect(result.reason).toBe('auth.kind=none');
+    expect(browser.navigate).not.toHaveBeenCalled();
+    expect(surface.surface_describe_auth).not.toHaveBeenCalled();
+  });
+
+  it('browserLogin.enabled=false → skipped, no navigate call', async () => {
+    const browser = makeMockBrowser();
+    const surface = makeMockSurface();
+    const config = makeMinimalConfig({ browserLogin: { enabled: false } });
+
+    const result = await runBrowserLoginPhase(config, browser, surface, ['owner']);
+
+    expect(result.skipped).toBe(true);
+    if (!result.skipped) return;
+    expect(result.reason).toBe('browserLogin.enabled=false');
+    expect(browser.navigate).not.toHaveBeenCalled();
+  });
+
+  it('auth.kind=none takes precedence over browserLogin.enabled=true', async () => {
+    const browser = makeMockBrowser();
+    const surface = makeMockSurface();
+    const config = makeMinimalConfig({ auth: { kind: 'none' }, browserLogin: { enabled: true } });
+
+    const result = await runBrowserLoginPhase(config, browser, surface, ['owner']);
+
+    expect(result.skipped).toBe(true);
+    if (!result.skipped) return;
+    expect(result.reason).toBe('auth.kind=none');
+  });
+
+  it('no browser adapter → skipped', async () => {
+    const surface = makeMockSurface();
+    const config = makeMinimalConfig();
+
+    const result = await runBrowserLoginPhase(config, undefined, surface, ['owner']);
+
+    expect(result.skipped).toBe(true);
+    if (!result.skipped) return;
+    expect(result.reason).toContain('no browser adapter');
+  });
+
+  it('normal config + form auth → proceeds (not skipped)', async () => {
+    const browser = makeMockBrowser();
+    const surface = makeMockSurface();
+    const config = makeMinimalConfig();
+
+    // loginInBrowser will call surface_describe_auth; surface returns form plan
+    // browser.navigate will be called
+    const result = await runBrowserLoginPhase(config, browser, surface, ['owner']);
+
+    // The login will proceed (not skipped at phase level) even if it fails inside loginInBrowser
+    expect(result.skipped).toBe(false);
+    expect(surface.surface_describe_auth).toHaveBeenCalled();
+    expect(browser.navigate).toHaveBeenCalled();
+  });
 });

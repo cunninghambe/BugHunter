@@ -30,6 +30,63 @@ import { runHardcodedStringsScanner } from '../static/tools/hardcoded-strings.js
 
 const VISION_BASELINE_SETTLE_MS = 1500;
 
+export type BrowserLoginPhaseResult =
+  | { skipped: true; reason: string }
+  | { skipped: false; loginRole: string; skipItem?: SkippedItem };
+
+/**
+ * Run the browser-login sub-phase at the head of discovery.
+ * Exported for unit-testing — call this in isolation without the full runDiscover stack.
+ */
+export async function runBrowserLoginPhase(
+  config: BugHunterConfig,
+  browser: BrowserMcpAdapter | undefined,
+  surface: SurfaceMcpAdapter,
+  roles: string[],
+): Promise<BrowserLoginPhaseResult> {
+  const skipReason =
+    config.auth?.kind === 'none' ? 'auth.kind=none' :
+    config.browserLogin?.enabled === false ? 'browserLogin.enabled=false' :
+    null;
+
+  if (skipReason !== null) {
+    log.info(`browser_login: skipped (${skipReason})`);
+    return { skipped: true, reason: skipReason };
+  }
+
+  if (browser === undefined) {
+    log.info('browser_login: skipped (no browser adapter)');
+    return { skipped: true, reason: 'no browser adapter' };
+  }
+
+  const loginCfg = config.browserLogin;
+  const loginRole = loginCfg?.role ?? roles[0];
+  if (loginRole === '') {
+    log.info('browser_login: no roles configured; skipping');
+    return { skipped: true, reason: 'no roles configured' };
+  }
+
+  const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
+  const result = await loginInBrowser(browser, surface, {
+    role: loginRole,
+    baseUrl,
+    verifyTimeoutMs: loginCfg?.verifyTimeoutMs ?? 10_000,
+    verifyPollMs: loginCfg?.verifyPollMs ?? 500,
+  });
+
+  if (result.ok) {
+    log.info(`browser_login: success (role=${loginRole}, cookies=${result.cookies.length}, url=${result.finalUrl})`);
+    return { skipped: false, loginRole };
+  }
+
+  log.warn(`browser_login: skipped (role=${loginRole}, reason=${result.reason}): ${result.detail}`);
+  return {
+    skipped: false,
+    loginRole,
+    skipItem: { route: '<login>', reason: `browser_login_${result.reason}` },
+  };
+}
+
 export async function runDiscover(
   projectDir: string,
   config: BugHunterConfig,
@@ -43,31 +100,9 @@ export async function runDiscover(
 ): Promise<DiscoveryOutput> {
   const skipList: SkippedItem[] = [];
 
-  // Browser-side login — runs once per discover phase, before page discovery.
-  const loginCfg = config.browserLogin;
-  const browserLoginEnabled = (loginCfg?.enabled ?? true) && browser !== undefined;
-
-  if (browserLoginEnabled) {
-    const loginRole = loginCfg?.role ?? roles[0];
-    if (loginRole === '') {
-      log.info('browser_login: no roles configured; skipping');
-    } else {
-      const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
-      const result = await loginInBrowser(browser, surface, {
-        role: loginRole,
-        baseUrl,
-        verifyTimeoutMs: loginCfg?.verifyTimeoutMs ?? 10_000,
-        verifyPollMs: loginCfg?.verifyPollMs ?? 500,
-      });
-      if (result.ok) {
-        log.info(`browser_login: success (role=${loginRole}, cookies=${result.cookies.length}, url=${result.finalUrl})`);
-      } else {
-        log.warn(`browser_login: skipped (role=${loginRole}, reason=${result.reason}): ${result.detail}`);
-        skipList.push({ route: '<login>', reason: `browser_login_${result.reason}` });
-      }
-    }
-  } else if (browser === undefined) {
-    log.info('browser_login: skipped (no browser adapter)');
+  const loginPhase = await runBrowserLoginPhase(config, browser, surface, roles);
+  if (!loginPhase.skipped && loginPhase.skipItem !== undefined) {
+    skipList.push(loginPhase.skipItem);
   }
 
   // Source 1: SurfaceMCP catalog
