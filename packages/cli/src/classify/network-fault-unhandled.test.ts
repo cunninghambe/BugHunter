@@ -104,4 +104,33 @@ describe('detectNetworkFaultUnhandled', () => {
     );
     expect(result?.networkFaultContext?.retryStormDetected).toBe(false);
   });
+
+  it('excludes dev-server paths from affectedEndpoints (#149 follow-up)', () => {
+    const requests = [
+      { method: 'GET', path: '/@vite/client', status: 200, duration: 5 },
+      { method: 'GET', path: '/__vite_ping', status: 200, duration: 5 },
+      { method: 'POST', path: '/api/todos', status: 500, duration: 10 },
+    ];
+    const result = detectNetworkFaultUnhandled(
+      makePreState(),
+      makePostState({ networkRequests: requests }),
+      OFFLINE_FAULT, 10, 30000,
+    );
+    expect(result?.networkFaultContext?.affectedEndpoints).toEqual(['/api/todos']);
+  });
+
+  it('does not false-positive retry storm from high-frequency HMR pings (#149 follow-up)', () => {
+    const hmrPings = Array.from({ length: 100 }, () => ({
+      method: 'GET',
+      path: '/@vite/client',
+      status: 200,
+      duration: 5,
+    }));
+    const result = detectNetworkFaultUnhandled(
+      makePreState(),
+      makePostState({ networkRequests: hmrPings, mutationObserverWindowMs: 5000 }),
+      OFFLINE_FAULT, 10, 30000,
+    );
+    expect(result?.networkFaultContext?.retryStormDetected).toBe(false);
+  });
 });
