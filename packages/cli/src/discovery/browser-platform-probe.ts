@@ -357,8 +357,9 @@ export function classifyBrowserPlatform(
     }
   }
 
-  // 6. coop_coep_violation
-  if (!envelope.isolation.crossOriginIsolated && (envelope.isolation.sabReferenced || envelope.isolation.sabInstantiated)) {
+  // 6. coop_coep_violation — only fires when SAB is actually instantiated (new SharedArrayBuffer(...)),
+  // not merely referenced via typeof checks or polyfill feature-detection.
+  if (!envelope.isolation.crossOriginIsolated && envelope.isolation.sabInstantiated) {
     const ctx: BrowserPlatformContext = {
       kind: 'coop_coep',
       crossOriginIsolated: envelope.isolation.crossOriginIsolated,
@@ -367,7 +368,7 @@ export function classifyBrowserPlatform(
     };
     detections.push({
       kind: 'coop_coep_violation',
-      rootCause: `SharedArrayBuffer is referenced/used but window.crossOriginIsolated is false. Add COOP: same-origin and COEP: require-corp response headers.`,
+      rootCause: `SharedArrayBuffer was instantiated but window.crossOriginIsolated is false. Add COOP: same-origin and COEP: require-corp response headers.`,
       pageRoute: opts.pageRoute,
       browserPlatformContext: ctx,
     });
