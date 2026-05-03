@@ -4,6 +4,7 @@
 
 import { chromium } from 'playwright-core';
 import type { Browser, BrowserContext, Page, CDPSession as PlaywrightCdpSession, Cookie } from 'playwright-core';
+import type { Protocol } from 'playwright-core/types/protocol';
 import type { WebVitalSample, LongTaskSample, HeapSample, RenderEvent, ConsoleError, HeapSnapshotRaw } from '../types.js';
 import { log } from '../log.js';
 
@@ -127,6 +128,15 @@ class CdpTabScopeImpl implements CdpTabScope {
   }
 }
 
+// Named handler types for each CDP event so they can be removed explicitly on cleanup.
+type CdpHandlers = {
+  onConsoleMessage: (ev: Protocol.Console.messageAddedPayload) => void;
+  onRequestWillBeSent: (ev: Protocol.Network.requestWillBeSentPayload) => void;
+  onResponseReceived: (ev: Protocol.Network.responseReceivedPayload) => void;
+  onLoadingFinished: (ev: Protocol.Network.loadingFinishedPayload) => void;
+  onLoadingFailed: (ev: Protocol.Network.loadingFailedPayload) => void;
+};
+
 class CdpSessionImpl implements CdpSession {
   private readonly collected: CollectedData = {
     networkEvents: [],
@@ -137,6 +147,7 @@ class CdpSessionImpl implements CdpSession {
 
   private page: Page | null = null;
   private cdp: PlaywrightCdpSession | null = null;
+  private cdpHandlers: CdpHandlers | null = null;
   private closed = false;
 
   constructor(private readonly browser: Browser, private readonly context: BrowserContext) {}
@@ -147,7 +158,18 @@ class CdpSessionImpl implements CdpSession {
     }
   }
 
+  private detachCdpHandlers(): void {
+    if (this.cdp === null || this.cdpHandlers === null) return;
+    this.cdp.off('Console.messageAdded', this.cdpHandlers.onConsoleMessage);
+    this.cdp.off('Network.requestWillBeSent', this.cdpHandlers.onRequestWillBeSent);
+    this.cdp.off('Network.responseReceived', this.cdpHandlers.onResponseReceived);
+    this.cdp.off('Network.loadingFinished', this.cdpHandlers.onLoadingFinished);
+    this.cdp.off('Network.loadingFailed', this.cdpHandlers.onLoadingFailed);
+    this.cdpHandlers = null;
+  }
+
   async newTab(url: string): Promise<CdpTabScope> {
+    this.detachCdpHandlers();
     if (this.page !== null) {
       await this.page.close().catch(() => undefined);
     }
@@ -160,13 +182,13 @@ class CdpSessionImpl implements CdpSession {
     await cdp.send('Performance.enable', {});
     await cdp.send('Console.enable', {});
 
-    cdp.on('Console.messageAdded', (ev: { message: { level: string; text: string } }) => {
+    const onConsoleMessage: CdpHandlers['onConsoleMessage'] = (ev) => {
       if (ev.message.level === 'error') {
         this.collected.consoleErrors.push({ level: 'error', text: ev.message.text });
       }
-    });
+    };
 
-    cdp.on('Network.requestWillBeSent', (ev) => {
+    const onRequestWillBeSent: CdpHandlers['onRequestWillBeSent'] = (ev) => {
       this.collected.networkEvents.push({
         type: 'requestWillBeSent',
         event: {
@@ -181,9 +203,9 @@ class CdpSessionImpl implements CdpSession {
         },
         actionWindowId: this.collected.currentActionWindowId,
       });
-    });
+    };
 
-    cdp.on('Network.responseReceived', (ev) => {
+    const onResponseReceived: CdpHandlers['onResponseReceived'] = (ev) => {
       this.collected.networkEvents.push({
         type: 'responseReceived',
         event: {
@@ -203,9 +225,9 @@ class CdpSessionImpl implements CdpSession {
         },
         actionWindowId: this.collected.currentActionWindowId,
       });
-    });
+    };
 
-    cdp.on('Network.loadingFinished', (ev) => {
+    const onLoadingFinished: CdpHandlers['onLoadingFinished'] = (ev) => {
       this.collected.networkEvents.push({
         type: 'loadingFinished',
         event: {
@@ -215,9 +237,9 @@ class CdpSessionImpl implements CdpSession {
         },
         actionWindowId: this.collected.currentActionWindowId,
       });
-    });
+    };
 
-    cdp.on('Network.loadingFailed', (ev) => {
+    const onLoadingFailed: CdpHandlers['onLoadingFailed'] = (ev) => {
       this.collected.networkEvents.push({
         type: 'loadingFailed',
         event: {
@@ -228,7 +250,21 @@ class CdpSessionImpl implements CdpSession {
         },
         actionWindowId: this.collected.currentActionWindowId,
       });
-    });
+    };
+
+    cdp.on('Console.messageAdded', onConsoleMessage);
+    cdp.on('Network.requestWillBeSent', onRequestWillBeSent);
+    cdp.on('Network.responseReceived', onResponseReceived);
+    cdp.on('Network.loadingFinished', onLoadingFinished);
+    cdp.on('Network.loadingFailed', onLoadingFailed);
+
+    this.cdpHandlers = {
+      onConsoleMessage,
+      onRequestWillBeSent,
+      onResponseReceived,
+      onLoadingFinished,
+      onLoadingFailed,
+    };
 
     page.on('framenavigated', (frame) => {
       if (frame === page.mainFrame()) {
@@ -325,6 +361,7 @@ class CdpSessionImpl implements CdpSession {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.detachCdpHandlers();
     try {
       await this.page?.close();
       await this.context.close();
