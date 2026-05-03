@@ -900,13 +900,17 @@ function makeCookieBrowser(opts: {
   fetchStatus?: number;
   fetchOk?: boolean;
   evaluateThrows?: boolean;
+  navigateThrows?: boolean;
   cookieNames?: string[];
   cookies?: CookieEntry[];
 } = {}): BrowserMcpAdapter {
   const status = opts.fetchStatus ?? 200;
   const fetchOk = opts.fetchOk ?? (status >= 200 && status < 300);
   return {
-    navigate: vi.fn(async () => ({ url: '' })),
+    navigate: vi.fn(async () => {
+      if (opts.navigateThrows) throw new Error('navigate_failed');
+      return { url: '' };
+    }),
     click: vi.fn(async () => ({ clicked: true })),
     type: vi.fn(async () => ({ typed: true })),
     scroll: vi.fn(async () => ({ scrolled: true })),
@@ -981,6 +985,29 @@ describe('loginViaCookieEndpoint — V55.2', () => {
     expect(evalCall).toContain('application/json');
     expect(evalCall).toContain('admin@bench.local');
     expect(evalCall).toContain('Admin123!');
+  });
+
+  // #171: navigate must be called before evaluate so a browser tab exists when
+  // the in-browser fetch() runs. Without the navigate(), requireTab() throws
+  // "no_tab" and all 29 crawled pages appear unauthenticated.
+  it('calls navigate(baseUrl) before evaluate — no-tab guard (#171)', async () => {
+    const browser = makeCookieBrowser({ cookies: [SESSION_COOKIE_BENCH] });
+    await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL);
+    const navigateCalls = (browser.navigate as ReturnType<typeof vi.fn>).mock.invocationCallOrder;
+    const evaluateCalls = (browser.evaluate as ReturnType<typeof vi.fn>).mock.invocationCallOrder;
+    expect(navigateCalls[0]).toBeLessThan(evaluateCalls[0] ?? Infinity);
+    expect((browser.navigate as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toBe(BASE_URL);
+  });
+
+  it('returns login_page_load_failed when navigate to baseUrl fails (#171)', async () => {
+    const browser = makeCookieBrowser({ navigateThrows: true });
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('login_page_load_failed');
+      expect(result.detail).toContain('navigate to baseUrl failed');
+    }
+    expect(browser.evaluate).not.toHaveBeenCalled();
   });
 });
 

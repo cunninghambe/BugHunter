@@ -895,6 +895,14 @@ export async function loginViaCookieEndpoint(
     ? plan.loginEndpoint.url
     : new URL(plan.loginEndpoint.url, baseUrl).toString();
 
+  // Ensure an active browser tab exists before calling evaluate().
+  // loginViaCookieEndpoint uses fetch() in-browser context so a tab must be open.
+  try {
+    await browser.navigate(baseUrl);
+  } catch (err) {
+    return { ok: false, reason: 'login_page_load_failed', detail: `navigate to baseUrl failed: ${String(err)}` };
+  }
+
   const script = `(async function(){
     var resp = await fetch(${JSON.stringify(endpointUrl)}, {
       method: 'POST',
