@@ -295,6 +295,41 @@ describe('runMultiSurfacePipeline — V53.1 detection.surface stamping', () => {
 });
 
 // ──────────────────────────────────────────────────
+// audit fix #8: per-surface appBaseUrl from topology
+// ──────────────────────────────────────────────────
+
+describe('runMultiSurfacePipeline — audit fix #8: per-surface appBaseUrl', () => {
+  it('injects summary.baseUrl as appBaseUrl so race-runner dispatches to race-bad port (9994), not global appBaseUrl (5790)', async () => {
+    const topology: SurfaceListSurfacesResult = {
+      surfaceMcpVersion: '0.3.0',
+      surfaces: [
+        { name: 'self-spa', stack: 'vite', baseUrl: 'http://localhost:5790', state: { kind: 'ready' }, toolCount: 0, pageCount: 3, navigationCount: 0, toolRevision: 1, capabilities: { listPages: true, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+        { name: 'race-bad', stack: 'openapi', baseUrl: 'http://localhost:9994', state: { kind: 'ready' }, toolCount: 5, pageCount: 0, navigationCount: 0, toolRevision: 1, capabilities: { listPages: false, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+      ],
+    };
+
+    // Global config has the SPA's URL as appBaseUrl — the bug before fix #8
+    const config: BugHunterConfig = { ...BASE_CONFIG, appBaseUrl: 'http://localhost:5790' };
+    const seenBaseUrls: Record<string, string | undefined> = {};
+    const adapter = makeHttpAdapter();
+
+    await runMultiSurfacePipeline(
+      adapter,
+      topology,
+      config,
+      async (_bound, surfaceConfig, surfaceName) => {
+        seenBaseUrls[surfaceName] = surfaceConfig.appBaseUrl;
+      },
+    );
+
+    // race-bad must see its own port (9994), not the global 5790
+    expect(seenBaseUrls['race-bad']).toBe('http://localhost:9994');
+    // self-spa still gets its declared baseUrl
+    expect(seenBaseUrls['self-spa']).toBe('http://localhost:5790');
+  });
+});
+
+// ──────────────────────────────────────────────────
 // Integration: 6-surface topology produces ≥3 distinct surface names
 // ──────────────────────────────────────────────────
 
