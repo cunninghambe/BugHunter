@@ -2,6 +2,28 @@
 
 import type { NetworkRequest, BugDetection, ExpectedOutcome } from '../types.js';
 
+/**
+ * Patterns that identify mutator-synthesized paths. A 404 on these is expected
+ * by design — not a linked-route bug (fixes false-positive class #112).
+ *
+ * Covers:
+ *   - All-zero UUIDs (fuzz.ts boundary case for uuid format)
+ *   - __bughunter_* sentinels (palette.ts out_of_bounds / fuzz.ts extra_key)
+ *   - -nonexistent suffix (palette.ts foreignIdCases edge variant)
+ *   - fake-id and synthetic-test-id (documented in issue #112 mutator pool)
+ */
+const MUTATOR_SYNTHETIC_PATTERNS = [
+  '00000000-0000-0000-0000-000000000000',
+  '__bughunter_',
+  '-nonexistent',
+  'fake-id',
+  'synthetic-test-id',
+] as const;
+
+export function isMutatorSyntheticPath(path: string): boolean {
+  return MUTATOR_SYNTHETIC_PATTERNS.some(p => path.includes(p));
+}
+
 export function classifyNetworkRequests(
   requests: NetworkRequest[],
   expectedOutcome: ExpectedOutcome,
@@ -50,7 +72,7 @@ export function classifyNetworkRequests(
       }
     }
 
-    if (req.status === 404) {
+    if (req.status === 404 && !isMutatorSyntheticPath(req.path)) {
       bugs.push({
         kind: '404_for_linked_route',
         rootCause: `Page links to ${req.path} which returned 404`,
