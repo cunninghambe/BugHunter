@@ -8,6 +8,7 @@ import * as child_process from 'node:child_process';
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import { runCommand } from './run.js';
 import { listRunIds, runPaths, fileExists } from '../store/filesystem.js';
+import { loadRunState } from '../store/run-state.js';
 import type { BugKind } from '../types.js';
 import type { BugCluster } from '../types.js';
 
@@ -127,10 +128,22 @@ function readBugsJsonl(fixtureRoot: string, runId: string): BugCluster[] {
     .map(l => JSON.parse(l) as BugCluster);
 }
 
-function latestRunId(fixtureRoot: string): string {
-  const ids = listRunIds(fixtureRoot).sort();
-  if (ids.length === 0) throw new SelfTestSetupError('No runs found in fixture after BugHunter run.');
-  return ids[ids.length - 1];
+function runStartTime(fixtureRoot: string, runId: string): number {
+  try {
+    const state = loadRunState(fixtureRoot, runId);
+    return new Date(state.startedAt).getTime();
+  } catch {
+    const { runDir } = runPaths(fixtureRoot, runId);
+    return fs.statSync(runDir).mtimeMs;
+  }
+}
+
+export function latestRunId(fixtureRoot: string): string | undefined {
+  const ids = listRunIds(fixtureRoot);
+  if (ids.length === 0) return undefined;
+  return ids.reduce((best, id) =>
+    runStartTime(fixtureRoot, id) > runStartTime(fixtureRoot, best) ? id : best
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -384,6 +397,7 @@ export async function selfTestCommand(opts: SelfTestOptions): Promise<void> {
 
     const elapsedMs = Date.now() - startedAt;
     const runId = latestRunId(fixtureRoot);
+    if (runId === undefined) throw new SelfTestSetupError('No runs found in fixture after BugHunter run.');
     const clusters = readBugsJsonl(fixtureRoot, runId);
     const failOnFlake = opts.failOnFlake !== false;
 
