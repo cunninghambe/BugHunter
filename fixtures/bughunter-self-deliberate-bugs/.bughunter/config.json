@@ -25,5 +25,12 @@
   },
   "multiContext": {
     "enabled": true
+  },
+  "mobile": {
+    "enabled": true,
+    "viewports": [
+      { "label": "iphone-13", "width": 390, "height": 844, "platform": "ios" },
+      { "label": "pixel-5", "width": 393, "height": 851, "platform": "android" }
+    ]
   }
 }

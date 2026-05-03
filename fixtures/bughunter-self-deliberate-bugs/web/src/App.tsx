@@ -22,6 +22,7 @@ import NavResubmit from './pages/NavResubmit.js';
 import NavRefresh from './pages/NavRefresh.js';
 import NavFormLost from './pages/NavFormLost.js';
 import NavFormStale from './pages/NavFormStale.js';
+import MobileBugs from './pages/MobileBugs.js';
 import Bloat from './bloat.js';
 
 // Bloat import ensures oversized_bundle fires.
@@ -52,6 +53,7 @@ const ROUTES: Record<string, () => React.ReactElement> = {
   '/nav-refresh': () => React.createElement(NavRefresh),
   '/nav-form-lost': () => React.createElement(NavFormLost),
   '/nav-form-stale': () => React.createElement(NavFormStale),
+  '/mobile-bugs': () => React.createElement(MobileBugs),
 };
 
 export default function App(): React.ReactElement {
