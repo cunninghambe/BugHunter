@@ -6,9 +6,13 @@
  * AXE_RUN_SCRIPT, so window.axe was always undefined and the scan silently
  * returned { violations: [] }.
  *
+ * Fix (#165): inject axe via script-tag evaluate() instead of addInitScript(),
+ * bypassing camofox-mcp's 256 KB init_script size limit (axe.min.js is ~564 KB).
+ *
  * These tests verify:
  *   1. AXE_INJECT_SCRIPT is a non-empty string containing real axe-core source.
- *   2. The execute phase calls inject before the baseline scan (via mock tracking).
+ *   2. The execute phase calls ensureAxeLoaded (via evaluate, not addInitScript)
+ *      before the baseline scan.
  *   3. Violations returned by axe flow through to image_missing_alt and
  *      form_input_unlabeled BugKinds in the a11yBaselineDetections output.
  */
@@ -107,8 +111,12 @@ function makeTestCase(page = '/a11y-test'): TestCase {
   };
 }
 
-/** Build a scope mock that returns axe violations for any axe scan script. */
-function makeScopeWithA11yViolations(violations: unknown[]): {
+/**
+ * Build a scope mock where axe is not pre-loaded.
+ * The presence check returns false on first call, then axe run returns violations.
+ * This simulates the real scenario where addInitScript failed silently.
+ */
+function makeScopeAxeAbsent(violations: unknown[]): {
   scope: TabScope;
   evaluateCalls: string[];
 } {
@@ -125,11 +133,13 @@ function makeScopeWithA11yViolations(violations: unknown[]): {
     clickByHint: vi.fn().mockResolvedValue({ clicked: false }),
     clickWithObservation: vi.fn().mockResolvedValue({ ok: true, accessibleNameAbsent: false, ariaLabelSource: null, tagName: 'a', role: null }),
     evaluate: vi.fn().mockImplementation((script: string) => {
-      evaluateCalls.push(script.slice(0, 60));
-      // AXE_RUN_SCRIPT / AXE_RUN_SCRIPT_MOBILE — both embed axe source and call window.axe
-      if (script.includes('window.axe')) {
-        return Promise.resolve({ value: { violations } });
-      }
+      evaluateCalls.push(script.slice(0, 80));
+      // ensureAxeLoaded uses bracket notation window['axe'] to avoid matching axe-run scripts
+      if (script.includes("window['axe']")) return Promise.resolve({ value: false });
+      // ensureAxeLoaded: script-tag injection
+      if (script.includes('document.createElement')) return Promise.resolve({ value: null });
+      // AXE_RUN_SCRIPT / AXE_RUN_SCRIPT_MOBILE (use dot notation window.axe)
+      if (script.includes('window.axe')) return Promise.resolve({ value: { violations } });
       if (script.includes('__bhConsoleErrors')) return Promise.resolve({ value: [] });
       if (script.includes('durationMs') || script.includes('__bhMutStop')) return Promise.resolve({ value: { durationMs: 5 } });
       if (script.includes('__bhMutStart')) return Promise.resolve({ value: { durationMs: 0 } });
@@ -141,23 +151,51 @@ function makeScopeWithA11yViolations(violations: unknown[]): {
   return { scope, evaluateCalls };
 }
 
-function makeBrowser(scope: TabScope, trackInitScript?: { called: boolean; source?: string }): BrowserMcpAdapter {
+/** Build a scope mock that simulates axe already loaded (SPA reuse path). */
+function makeScopeAxePresent(violations: unknown[]): {
+  scope: TabScope;
+  evaluateCalls: string[];
+} {
+  const evaluateCalls: string[] = [];
+
+  const scope: TabScope = {
+    tabId: 'axe-test-tab',
+    navigate: vi.fn().mockResolvedValue({ url: 'http://localhost:3100/a11y-test', title: 'Test' }),
+    click: vi.fn().mockResolvedValue({ clicked: true }),
+    type: vi.fn().mockResolvedValue({ typed: true }),
+    scroll: vi.fn().mockResolvedValue({ scrolled: true }),
+    snapshot: vi.fn().mockResolvedValue({ snapshot: '<html><body></body></html>' }),
+    screenshot: vi.fn().mockResolvedValue({ path: '', data: '' }),
+    clickByHint: vi.fn().mockResolvedValue({ clicked: false }),
+    clickWithObservation: vi.fn().mockResolvedValue({ ok: true, accessibleNameAbsent: false, ariaLabelSource: null, tagName: 'a', role: null }),
+    evaluate: vi.fn().mockImplementation((script: string) => {
+      evaluateCalls.push(script.slice(0, 80));
+      // ensureAxeLoaded uses bracket notation — axe is already there, short-circuit
+      if (script.includes("window['axe']")) return Promise.resolve({ value: true });
+      // AXE_RUN_SCRIPT / AXE_RUN_SCRIPT_MOBILE
+      if (script.includes('window.axe')) return Promise.resolve({ value: { violations } });
+      if (script.includes('__bhConsoleErrors')) return Promise.resolve({ value: [] });
+      if (script.includes('durationMs') || script.includes('__bhMutStop')) return Promise.resolve({ value: { durationMs: 5 } });
+      if (script.includes('__bhMutStart')) return Promise.resolve({ value: { durationMs: 0 } });
+      if (script.includes('__bh_xss')) return Promise.resolve({ value: [] });
+      return Promise.resolve({ value: null });
+    }),
+  } as unknown as TabScope;
+
+  return { scope, evaluateCalls };
+}
+
+function makeBrowser(scope: TabScope): BrowserMcpAdapter {
   return {
     withTab: vi.fn().mockImplementation(
       (_url: string, _headers: unknown, fn: (scope: TabScope) => Promise<unknown>) => fn(scope),
     ),
-    addInitScript: vi.fn().mockImplementation((source: string) => {
-      if (trackInitScript !== undefined) {
-        trackInitScript.called = true;
-        trackInitScript.source = source;
-      }
-      return Promise.resolve({ applied: true });
-    }),
+    addInitScript: vi.fn().mockResolvedValue({ applied: true }),
   } as unknown as BrowserMcpAdapter;
 }
 
 // ---------------------------------------------------------------------------
-// § 2: Execute phase injects axe and emits a11y BugKinds
+// § 2: Execute phase injects axe via evaluate() and emits a11y BugKinds
 // ---------------------------------------------------------------------------
 
 let tmpDir: string;
@@ -194,10 +232,9 @@ const LABEL_VIOLATION = {
 };
 
 describe('execute phase: axe injection fires before baseline scan', () => {
-  it('calls browser.addInitScript with AXE_INJECT_SCRIPT when enableA11y is true', async () => {
-    const { scope } = makeScopeWithA11yViolations([]);
-    const track = { called: false, source: '' };
-    const browser = makeBrowser(scope, track);
+  it('calls scope.evaluate with script-tag injection when enableA11y is true and axe is absent', async () => {
+    const { scope, evaluateCalls } = makeScopeAxeAbsent([]);
+    const browser = makeBrowser(scope);
 
     const opts: ExecuteOptions = {
       testCases: [makeTestCase('/a11y-test')],
@@ -213,15 +250,43 @@ describe('execute phase: axe injection fires before baseline scan', () => {
     };
 
     await runExecute(opts);
-    expect(track.called).toBe(true);
-    expect(track.source).toContain('window.axe');
-    expect(track.source!.length).toBeGreaterThan(10000);
+
+    // evaluate must have been called with the presence check (bracket notation)
+    expect(evaluateCalls.some(c => c.includes("window['axe']"))).toBe(true);
+    // evaluate must have been called with the script-tag injection (axe absent → inject)
+    expect(evaluateCalls.some(c => c.includes('document.createElement'))).toBe(true);
+    // addInitScript must NOT be called (bypassed for size limit fix)
+    expect(browser.addInitScript).not.toHaveBeenCalled();
   });
 
-  it('does NOT call browser.addInitScript when enableA11y is false', async () => {
-    const { scope } = makeScopeWithA11yViolations([]);
-    const track = { called: false };
-    const browser = makeBrowser(scope, track);
+  it('does NOT call evaluate with script-tag injection when axe is already present', async () => {
+    const { scope, evaluateCalls } = makeScopeAxePresent([]);
+    const browser = makeBrowser(scope);
+
+    const opts: ExecuteOptions = {
+      testCases: [makeTestCase('/a11y-test')],
+      runState: makeRunState(tmpDir),
+      surface: makeMinimalSurface(),
+      browser,
+      maxBugs: 50,
+      maxRuntimeMs: 30000,
+      concurrency: 1,
+      apiConcurrency: 1,
+      onClusterFound: () => 0,
+      enableA11y: true,
+    };
+
+    await runExecute(opts);
+
+    // presence check is called (bracket notation)
+    expect(evaluateCalls.some(c => c.includes("window['axe']"))).toBe(true);
+    // script-tag injection is skipped (axe already present)
+    expect(evaluateCalls.some(c => c.includes('document.createElement'))).toBe(false);
+  });
+
+  it('does NOT call evaluate with axe injection when enableA11y is false', async () => {
+    const { scope, evaluateCalls } = makeScopeAxeAbsent([]);
+    const browser = makeBrowser(scope);
 
     const opts: ExecuteOptions = {
       testCases: [makeTestCase('/a11y-test')],
@@ -237,11 +302,12 @@ describe('execute phase: axe injection fires before baseline scan', () => {
     };
 
     await runExecute(opts);
-    expect(track.called).toBe(false);
+    expect(evaluateCalls.some(c => c.includes("window['axe']"))).toBe(false);
+    expect(evaluateCalls.some(c => c.includes('document.createElement'))).toBe(false);
   });
 
   it('emits image_missing_alt when img-without-alt violations are returned', async () => {
-    const { scope } = makeScopeWithA11yViolations([IMG_ALT_VIOLATION]);
+    const { scope } = makeScopeAxeAbsent([IMG_ALT_VIOLATION]);
     const browser = makeBrowser(scope);
 
     const opts: ExecuteOptions = {
@@ -265,7 +331,7 @@ describe('execute phase: axe injection fires before baseline scan', () => {
   });
 
   it('emits form_input_unlabeled when label violations are returned', async () => {
-    const { scope } = makeScopeWithA11yViolations([LABEL_VIOLATION]);
+    const { scope } = makeScopeAxeAbsent([LABEL_VIOLATION]);
     const browser = makeBrowser(scope);
 
     const opts: ExecuteOptions = {
@@ -288,7 +354,7 @@ describe('execute phase: axe injection fires before baseline scan', () => {
   });
 
   it('emits both image_missing_alt and form_input_unlabeled on a page with both violations', async () => {
-    const { scope } = makeScopeWithA11yViolations([IMG_ALT_VIOLATION, LABEL_VIOLATION]);
+    const { scope } = makeScopeAxeAbsent([IMG_ALT_VIOLATION, LABEL_VIOLATION]);
     const browser = makeBrowser(scope);
 
     const opts: ExecuteOptions = {
@@ -312,7 +378,7 @@ describe('execute phase: axe injection fires before baseline scan', () => {
   });
 
   it('emits zero a11y baseline detections when enableA11y is false', async () => {
-    const { scope } = makeScopeWithA11yViolations([IMG_ALT_VIOLATION, LABEL_VIOLATION]);
+    const { scope } = makeScopeAxeAbsent([IMG_ALT_VIOLATION, LABEL_VIOLATION]);
     const browser = makeBrowser(scope);
 
     const opts: ExecuteOptions = {
