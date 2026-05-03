@@ -8,23 +8,32 @@ describe('DETECTOR_REGISTRY', () => {
     expect(unique.size).toBe(kinds.length);
   });
 
-  it('has 128 entries covering all BugKinds (v0.41: +6 mobile wired)', () => {
-    expect(DETECTOR_REGISTRY.length).toBe(128);
+  it('has 127 entries covering all BugKinds', () => {
+    expect(DETECTOR_REGISTRY.length).toBe(127);
   });
 
-  it('has exactly 1 deferred entry (xss_stored)', () => {
+  it('deferred kinds include the 8 flipped in audit honesty pass (SWEEP_AUDIT_2026-05-03)', () => {
     const deferred = DETECTOR_REGISTRY.filter(e => e.status === 'deferred');
-    expect(deferred).toHaveLength(1);
-    const deferredKinds = deferred.map(e => e.kind).sort();
-    expect(deferredKinds).toEqual([
-      'xss_stored',
-      'zoom_layout_break',
-    ]);
+    expect(deferred.length).toBeGreaterThanOrEqual(30);
+    const deferredKinds = new Set(deferred.map(e => e.kind));
+    // 8 newly deferred from audit (3 request-hygiene kinds kept wired: audit fix #6 merged)
+    expect(deferredKinds.has('excessive_re_renders')).toBe(true);
+    expect(deferredKinds.has('unbounded_list_render')).toBe(true);
+    expect(deferredKinds.has('oversized_bundle')).toBe(true);
+    expect(deferredKinds.has('memory_leak_suspected')).toBe(true);
+    expect(deferredKinds.has('memory_leak_attributed')).toBe(true);
+    expect(deferredKinds.has('interactive_element_missing_accessible_name')).toBe(true);
+    expect(deferredKinds.has('multi_user_inconsistent_snapshot')).toBe(true);
+    expect(deferredKinds.has('clock_skew_token_invalid')).toBe(true);
+    expect(deferredKinds.has('clock_overflow')).toBe(true);
+    expect(deferredKinds.has('clock_dst_corruption')).toBe(true);
+    expect(deferredKinds.has('clock_leap_day_failure')).toBe(true);
+    expect(deferredKinds.has('clock_timezone_display')).toBe(true);
   });
 
-  it('has 127 wired entries (v0.41: +6 mobile)', () => {
+  it('has 93 wired entries (after audit honesty flip of 8 kinds, SWEEP_AUDIT_2026-05-03)', () => {
     const wired = DETECTOR_REGISTRY.filter(e => e.status === 'wired');
-    expect(wired).toHaveLength(127);
+    expect(wired).toHaveLength(93);
   });
 
   it('has 0 dead entries', () => {

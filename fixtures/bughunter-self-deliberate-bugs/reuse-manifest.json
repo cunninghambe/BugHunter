@@ -61,16 +61,6 @@
       "port": 4090,
       "route": "/api/login"
     },
-    "unbounded_list_render": {
-      "fixture": "v24-deferred-bugs",
-      "port": 5780,
-      "route": "/long-list"
-    },
-    "request_cancellation_missing": {
-      "fixture": "v24-deferred-bugs",
-      "port": 5780,
-      "route": "/cancel"
-    },
     "dom_error_text": {
       "fixture": "v24-deferred-bugs",
       "port": 5780,
@@ -161,16 +151,6 @@
       "port": 4091,
       "route": "/api/login"
     },
-    "memory_leak_suspected": {
-      "fixture": "self",
-      "port": 5790,
-      "route": "/memory-leak"
-    },
-    "memory_leak_attributed": {
-      "fixture": "self",
-      "port": 5790,
-      "route": "/memory-leak"
-    },
     "visual_anomaly": {
       "fixture": "self",
       "port": 5790,
@@ -195,11 +175,6 @@
       "fixture": "self",
       "port": 5790,
       "route": "/no-state-change"
-    },
-    "interactive_element_missing_accessible_name": {
-      "fixture": "self",
-      "port": 5790,
-      "route": "/click-no-name"
     },
     "network_5xx": {
       "fixture": "self",
@@ -301,6 +276,11 @@
       "port": 5790,
       "route": "/cls"
     },
+    "main_thread_blocked": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/long-task"
+    },
     "n_plus_one_api_calls": {
       "fixture": "self",
       "port": 5790,
@@ -311,20 +291,10 @@
       "port": 5790,
       "route": "/dedup"
     },
-    "main_thread_blocked": {
-      "fixture": "self",
-      "port": 5790,
-      "route": "/long-task"
-    },
-    "oversized_bundle": {
-      "fixture": "self",
-      "port": 5790,
-      "route": "/"
-    },
-    "excessive_re_renders": {
-      "fixture": "self",
-      "port": 5790,
-      "route": "/rerender"
+    "request_cancellation_missing": {
+      "fixture": "v24-deferred-bugs",
+      "port": 5780,
+      "route": "/cancel"
     },
     "csrf_missing_on_mutating_route": {
       "fixture": "self",
@@ -461,37 +431,7 @@
       "port": null,
       "route": "/api"
     },
-    "clock_dst_corruption": {
-      "fixture": "production",
-      "port": null,
-      "route": "/"
-    },
-    "clock_leap_day_failure": {
-      "fixture": "production",
-      "port": null,
-      "route": "/"
-    },
-    "clock_overflow": {
-      "fixture": "production",
-      "port": null,
-      "route": "/"
-    },
-    "clock_skew_token_invalid": {
-      "fixture": "production",
-      "port": null,
-      "route": "/"
-    },
-    "clock_timezone_display": {
-      "fixture": "production",
-      "port": null,
-      "route": "/"
-    },
     "multi_context_state_divergence": {
-      "fixture": "production",
-      "port": null,
-      "route": "/"
-    },
-    "multi_user_inconsistent_snapshot": {
       "fixture": "production",
       "port": null,
       "route": "/"
@@ -533,12 +473,23 @@
     "agent_response_hallucinated",
     "animation_state_corruption",
     "autofill_state_desync",
+    "clock_dst_corruption",
+    "clock_leap_day_failure",
+    "clock_overflow",
+    "clock_skew_token_invalid",
+    "clock_timezone_display",
     "dark_mode_layout_break",
     "drag_drop_failure",
+    "excessive_re_renders",
     "forced_colors_failure",
     "idempotency_key_violation",
     "infinite_loading",
+    "interactive_element_missing_accessible_name",
+    "memory_leak_attributed",
+    "memory_leak_suspected",
+    "multi_user_inconsistent_snapshot",
     "orientation_change_layout_break",
+    "oversized_bundle",
     "paste_handler_failure",
     "permission_denied_unhandled",
     "print_stylesheet_broken",
@@ -547,6 +498,7 @@
     "soft_keyboard_occlusion",
     "streaming_response_truncated",
     "tool_call_failure_unhandled",
+    "unbounded_list_render",
     "viewport_100vh_break",
     "xss_stored",
     "zoom_layout_break"
