@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { describe, it, expect, afterEach } from 'vitest';
-import { evaluateExpectations, assertLockstep, LockstepError, latestRunId, defaultBudgetMs } from './self-test.js';
+import { evaluateExpectations, assertLockstep, LockstepError, latestRunId, defaultBudgetMs, buildSelfTestRunOpts } from './self-test.js';
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import type { BugCluster } from '../types.js';
 
@@ -389,5 +389,35 @@ describe('verdict decoupled from budget (#140)', () => {
     }
     const manifest = { kinds, deferred: [] };
     expect(defaultBudgetMs(manifest)).toBe(3_600_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit fix #2: phase flags enabled in selfTestCommand (SWEEP_AUDIT_2026-05-03)
+// ---------------------------------------------------------------------------
+
+describe('buildSelfTestRunOpts — phase flags (audit fix #2)', () => {
+  const opts = buildSelfTestRunOpts('/fixture', 400, 600_000);
+
+  it('passes enableNavState: true (unlocks 5 nav-state detectors)', () => {
+    expect(opts.enableNavState).toBe(true);
+  });
+
+  it('passes localeStress: true (unlocks 7 i18n detectors)', () => {
+    expect(opts.localeStress).toBe(true);
+  });
+
+  it('passes mobile: true (unlocks touch_target_too_small, hover_only_affordance)', () => {
+    expect(opts.mobile).toBe(true);
+  });
+
+  it('passes interactionPalette: true (enables wired interaction-palette kinds)', () => {
+    expect(opts.interactionPalette).toBe(true);
+  });
+
+  it('passes the supplied maxBugs and budget through', () => {
+    const custom = buildSelfTestRunOpts('/fixture', 200, 1_200_000);
+    expect(custom.maxBugs).toBe(200);
+    expect(custom.budget).toBe(1_200_000);
   });
 });

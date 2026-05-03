@@ -1626,6 +1626,8 @@ export type BugHunterConfig = {
   excludedRoutes?: string[];
   externalIntegrationsAllowed?: boolean;
   enableA11y?: boolean;
+  /** Alias for enableA11y — matches the "a11y": true shorthand used in fixture configs. */
+  a11y?: boolean;
   forbiddenPaths?: string[];
   extraHeaders?: Record<string, string>;
   artifactBudgetBytes?: number;

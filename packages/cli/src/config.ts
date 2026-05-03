@@ -159,6 +159,8 @@ export const ConfigSchema = z.object({
   excludedRoutes: z.array(z.string()).optional(),
   externalIntegrationsAllowed: z.boolean().optional(),
   enableA11y: z.boolean().optional(),
+  /** Alias for enableA11y — matches the "a11y": true shorthand used in fixture configs. */
+  a11y: z.boolean().optional(),
   forbiddenPaths: z.array(z.string()).optional(),
   extraHeaders: z.record(z.string()).optional(),
   artifactBudgetBytes: z.number().int().positive().optional(),
@@ -530,7 +532,7 @@ export function resolvedConfig(config: BugHunterConfig): Required<
     resetPolicy: config.resetPolicy ?? 'per-page',
     reRunForFlakes: config.reRunForFlakes ?? true,
     externalIntegrationsAllowed: config.externalIntegrationsAllowed ?? false,
-    enableA11y: config.enableA11y ?? false,
+    enableA11y: config.enableA11y ?? config.a11y ?? false,
     artifactBudgetBytes: config.artifactBudgetBytes ?? DEFAULT_ARTIFACT_BUDGET_BYTES,
   };
 }
