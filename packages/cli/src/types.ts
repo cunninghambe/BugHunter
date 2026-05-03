@@ -460,6 +460,8 @@ export type BugCluster = {
   bugIdentity?: string;
   /** v0.29: decorated at emit time from DETECTOR_REGISTRY. Optional for backward-compat with old JSONL artifacts. */
   severity?: Severity;
+  /** v0.47+: surface that produced this cluster. Undefined for SURFACE_AGNOSTIC_KINDS (oversized_bundle, memory_leak_suspected) and pre-v0.47 clusters. */
+  surface?: string;
 };
 
 export type ClusterVerdict =

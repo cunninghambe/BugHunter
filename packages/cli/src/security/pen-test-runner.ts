@@ -33,6 +33,8 @@ export type PenTestRunnerConfig = {
   jwtPublicKeyPemPath?: string;
   maxProbesPerEndpoint?: number;
   booleanDeltaThreshold?: number;
+  /** v0.47+: surface that owns targetTools. Stamped onto every emitted detection. */
+  surface?: string;
 };
 
 export type PenTestRunnerResult = {
@@ -370,6 +372,12 @@ export async function runPenTests(
           cfg, detections, telemetry,
         );
       }
+    }
+  }
+
+  if (cfg.surface !== undefined) {
+    for (const d of detections) {
+      d.surface ??= cfg.surface;
     }
   }
 

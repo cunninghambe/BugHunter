@@ -2,7 +2,7 @@
 
 import type { BugDetection, BugCluster, BugKind, Occurrence, OccurrenceFull, OccurrenceSummary, ReplayKind, TestCase, PreState, PostState } from '../types.js';
 import { suspectedFilePath } from '../types.js';
-import { clusterSignature, extractNormalizedFields } from '../cluster/signature.js';
+import { clusterSignature, extractNormalizedFields, SURFACE_AGNOSTIC_KINDS } from '../cluster/signature.js';
 import { computeFullArtifactSet } from '../store/artifact-budget.js';
 import { normalizePath } from '../classify/network.js';
 import { createId } from '../lib/ids.js';
@@ -106,6 +106,7 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
         bugIdentity: opts.projectName !== undefined && opts.projectName !== ''
           ? computeBugIdentity(opts.projectName, sig)
           : undefined,
+        surface: SURFACE_AGNOSTIC_KINDS.includes(detection.kind) ? undefined : detection.surface,
       });
     }
 

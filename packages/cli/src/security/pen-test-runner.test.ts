@@ -1,10 +1,13 @@
 // Unit tests for v0.16 pen-test palette generation and runner utilities.
 // Tests: generatePenPayloads, denylist enforcement, variant catalog counts.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { generatePenPayloads } from './injection-palette.js';
 import type { PenKind } from './injection-palette.js';
-import { responseBodyString } from './pen-test-runner.js';
+import { responseBodyString, runPenTests } from './pen-test-runner.js';
+import type { PenTestRunnerConfig } from './pen-test-runner.js';
+import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
+import type { ToolMeta } from '../types.js';
 
 // ---------------------------------------------------------------------------
 // responseBodyString — #128 regression: undefined body must not propagate as
@@ -274,6 +277,94 @@ describe('destructive payload denylist enforcement', () => {
     const payloads = generatePenPayloads(['cmd']);
     for (const p of payloads) {
       expect(p.value).not.toMatch(/:\(\)\s*\{/);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runPenTests — surface stamping (#139)
+// ---------------------------------------------------------------------------
+
+describe('runPenTests — surface stamping', () => {
+  it('stamps detection.surface when cfg.surface is set and a detection is emitted', async () => {
+    const tool: ToolMeta = {
+      toolId: 'get_file',
+      name: 'get_file',
+      method: 'GET',
+      path: '/api/file',
+      inputSchema: { type: 'object', properties: { path: { type: 'string' } } },
+      inputSchemaConfidence: 'introspected',
+      sideEffectClass: 'safe',
+      sourceFile: 'server/index.js',
+      sourceLine: 1,
+      isServerAction: false,
+    };
+
+    const mockSurface: Pick<SurfaceMcpAdapter, 'surface_call'> = {
+      surface_call: vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: 'root:x:0:0:root:/root:/bin/bash',
+        headers: {},
+        durationMs: 1,
+        revisionAtCall: 1,
+      }),
+    };
+
+    const cfg: PenTestRunnerConfig = {
+      enabled: true,
+      targetTools: [tool],
+      forms: [],
+      variants: ['path'],
+      surface: 'pen-bad',
+    };
+
+    const result = await runPenTests(cfg, mockSurface as unknown as SurfaceMcpAdapter);
+    expect(result.detections.length).toBeGreaterThan(0);
+    for (const d of result.detections) {
+      expect(d.surface).toBe('pen-bad');
+    }
+  });
+
+  it('does not overwrite detection.surface when already set', async () => {
+    // If a detector somehow pre-stamps a surface, cfg.surface must not clobber it.
+    // This is enforced via ??= semantics.
+    const tool: ToolMeta = {
+      toolId: 'get_file2',
+      name: 'get_file2',
+      method: 'GET',
+      path: '/api/file2',
+      inputSchema: { type: 'object', properties: { path: { type: 'string' } } },
+      inputSchemaConfidence: 'introspected',
+      sideEffectClass: 'safe',
+      sourceFile: 'server/index.js',
+      sourceLine: 2,
+      isServerAction: false,
+    };
+
+    const mockSurface: Pick<SurfaceMcpAdapter, 'surface_call'> = {
+      surface_call: vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: 'root:x:0:0:root:/root:/bin/bash',
+        headers: {},
+        durationMs: 1,
+        revisionAtCall: 1,
+      }),
+    };
+
+    const cfg: PenTestRunnerConfig = {
+      enabled: true,
+      targetTools: [tool],
+      forms: [],
+      variants: ['path'],
+      surface: 'pen-bad',
+    };
+
+    const result = await runPenTests(cfg, mockSurface as unknown as SurfaceMcpAdapter);
+    // All detections should have surface 'pen-bad' (stamped by ??=)
+    for (const d of result.detections) {
+      expect(d.surface).toBe('pen-bad');
     }
   });
 });
