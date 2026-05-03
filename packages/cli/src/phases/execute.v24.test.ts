@@ -208,6 +208,64 @@ describe('V24 plumbing — request_cancellation_missing', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 3.1b request_dedup_missing (audit fix #6)
+// ---------------------------------------------------------------------------
+describe('V24 plumbing — request_dedup_missing (audit fix #6)', () => {
+  it('emits request_dedup_missing when HAR contains 5 duplicate GETs within 100ms', async () => {
+    const BASE_TIME = new Date('2024-01-01T00:00:00.000Z').getTime();
+    const dedupEntries = Array.from({ length: 5 }, (_, i) => ({
+      startedDateTime: new Date(BASE_TIME + i * 20).toISOString(),
+      time: 50,
+      request: { method: 'GET', url: 'http://localhost/api/feed', httpVersion: 'HTTP/1.1', cookies: [], headers: [], headersSize: 0, bodySize: 0, queryString: [] },
+      response: { status: 200, statusText: 'OK', httpVersion: 'HTTP/1.1', cookies: [], headers: [], bodySize: 0, headersSize: 0, content: { size: 0, mimeType: '' }, redirectURL: '' },
+      timings: { send: 0, wait: 50, receive: 0 },
+      _bughunter: { actionWindowId: 'occ-dedup', cdpSessionRole: 'observer' as const, requestId: `req-${i}` },
+    }));
+    const har: HarLog = { log: { version: '1.2', creator: { name: 'bughunter', version: '0.6' }, entries: dedupEntries } };
+    const perfCollector = makePerfCollector({}, har);
+    const scope = makeScope();
+    const browser = makeBrowser(scope);
+
+    const opts: ExecuteOptions = {
+      testCases: [makeTestCase('/feed')],
+      runState: makeRunState(tmpDir),
+      surface: makeMinimalSurface(),
+      browser,
+      maxBugs: 50,
+      maxRuntimeMs: 60000,
+      concurrency: 1,
+      apiConcurrency: 1,
+      onClusterFound: () => 0,
+      perfCollector,
+    };
+
+    const result = await runExecute(opts);
+    const detected = result.results.flatMap(r => r.bugs).filter(b => b.kind === 'request_dedup_missing');
+    expect(detected).toHaveLength(1);
+    expect((detected[0].evidence as { duplicateCount: number }).duplicateCount).toBe(5);
+  });
+
+  it('does not emit request_dedup_missing without a perfCollector', async () => {
+    const opts: ExecuteOptions = {
+      testCases: [makeTestCase('/feed')],
+      runState: makeRunState(tmpDir),
+      surface: makeMinimalSurface(),
+      browser: makeBrowser(makeScope()),
+      maxBugs: 50,
+      maxRuntimeMs: 60000,
+      concurrency: 1,
+      apiConcurrency: 1,
+      onClusterFound: () => 0,
+      // No perfCollector — HAR never flows into classifyDedupMissing
+    };
+
+    const result = await runExecute(opts);
+    const detected = result.results.flatMap(r => r.bugs).filter(b => b.kind === 'request_dedup_missing');
+    expect(detected).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 3.2 unbounded_list_render
 // ---------------------------------------------------------------------------
 describe('V24 plumbing — unbounded_list_render', () => {

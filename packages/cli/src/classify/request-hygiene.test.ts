@@ -142,6 +142,18 @@ describe('classifyDedupMissing', () => {
     const result = classifyDedupMissing(makeHar(entries));
     expect(result).toHaveLength(0);
   });
+
+  // Audit fix #6: 5 duplicate GETs within 100ms must emit request_dedup_missing
+  it('T4: 5 duplicate GET /api/feed within 100ms → emit request_dedup_missing', () => {
+    const entries = Array.from({ length: 5 }, (_, i) =>
+      makeEntry('GET', 'https://example.com/api/feed', 'w1', new Date(BASE_TIME + i * 20).toISOString()),
+    );
+    const result = classifyDedupMissing(makeHar(entries));
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('request_dedup_missing');
+    expect((result[0].evidence as { duplicateCount: number }).duplicateCount).toBe(5);
+    expect((result[0].evidence as { windowMs: number }).windowMs).toBe(80);
+  });
 });
 
 // --- Cancellation tests (§4.7) ---
