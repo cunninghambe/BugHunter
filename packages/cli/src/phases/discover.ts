@@ -350,6 +350,27 @@ async function navigateForScreenshot(
   return 'ok';
 }
 
+/**
+ * Returns true when the current page (or any element on it) carries
+ * `data-bughunter-visual-ignore`, signalling that visual-anomaly detection
+ * should be skipped for this region. Failures in the evaluate call are treated
+ * as "not ignored" so no coverage is silently lost.
+ */
+export async function pageHasVisualIgnore(browser: BrowserMcpAdapter, route: string): Promise<boolean> {
+  try {
+    const result = await browser.evaluate(
+      'document.querySelector("[data-bughunter-visual-ignore]") !== null',
+    );
+    if (result.value === true) {
+      log.info(`vision baseline: skipping visual_anomaly detection for ${route} (data-bughunter-visual-ignore present)`);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // V13_INVARIANT: do not call browser.withTab in screenshotPhase — singleton tab only.
 async function screenshotPhase(
   pages: DiscoveredPage[],
@@ -393,6 +414,8 @@ async function screenshotPhase(
       }
 
       await new Promise<void>(r => { setTimeout(r, settleMs); });
+
+      if (await pageHasVisualIgnore(browser, page.route)) continue;
 
       const routeSlugRaw = page.route.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '');
       const routeSlug = routeSlugRaw !== '' ? routeSlugRaw : 'root';
