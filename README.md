@@ -42,6 +42,18 @@ The skill is the smooth UX; the CLI is the load-bearing thing.
 - [ClaudeMCP](https://github.com/cunninghambe/ClaudeMCP) — the build-delegation MCP used for auto-fix
 - [BugHunter-bench](https://github.com/cunninghambe/BugHunter-bench) — public calibration corpus (5 apps, gold-standard bug lists)
 
+## Troubleshooting
+
+### Orphaned fixture processes after a self-test
+
+If `bughunter self-test` is interrupted (e.g., Ctrl-C or OOM kill), fixture servers can be left running on ports 9994, 4090, 5780–5782, 4091, 5790, and 5791. The `up.sh` orchestrator now installs a SIGINT/SIGTERM trap that runs `down.sh` automatically, but if it is force-killed you can clean up manually:
+
+```bash
+bughunter doctor --cleanup
+```
+
+This greps for processes matching `bh-e2e-fixture` or `bughunter-fixture-`, sends SIGTERM, waits 5 s, then SIGKILLs any stragglers. It prints a JSON report of what it killed and which ports were freed.
+
 <!-- BEGIN CALIBRATION -->
 ## Calibration (last updated TBD; bench v0.1.0; 5 apps; TBD gold entries)
 
