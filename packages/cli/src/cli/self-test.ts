@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import * as child_process from 'node:child_process';
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import { runCommand } from './run.js';
+import type { RunOptions } from './run.js';
 import { listRunIds, runPaths, fileExists } from '../store/filesystem.js';
 import { loadRunState } from '../store/run-state.js';
 import type { BugKind } from '../types.js';
@@ -371,6 +372,30 @@ export function defaultBudgetMs(manifest: ReuseManifest): number {
   return Math.max(600_000, surfaceCount * 600_000);
 }
 
+/** Returns the RunOptions that selfTestCommand passes to runCommand.
+ *  Exported so tests can assert all required phase flags are present
+ *  without executing an end-to-end fixture run. (Audit fix #2) */
+export function buildSelfTestRunOpts(fixtureRoot: string, maxBugs: number, budgetMs: number): RunOptions {
+  return {
+    projectDir: fixtureRoot,
+    maxBugs,
+    budget: budgetMs,
+    a11y: true,
+    a11yStrict: true,
+    seoEnabled: true,
+    enablePerf: true,
+    enableBundleProbe: true,
+    enableMemoryProfile: true,
+    raceConditions: true,
+    raceCrossTab: true,
+    idor: true,
+    enableNavState: true,
+    localeStress: true,
+    mobile: true,
+    interactionPalette: true,
+  };
+}
+
 export async function selfTestCommand(opts: SelfTestOptions): Promise<void> {
   const fixtureRoot = fixtureRootFor(opts.projectDir);
   const manifest = readManifest(fixtureRoot);
@@ -402,20 +427,7 @@ export async function selfTestCommand(opts: SelfTestOptions): Promise<void> {
   try {
     const startedAt = Date.now();
 
-    await runCommand({
-      projectDir: fixtureRoot,
-      maxBugs: opts.maxBugs ?? 400,
-      budget: budgetMs,
-      a11y: true,
-      a11yStrict: true,
-      seoEnabled: true,
-      enablePerf: true,
-      enableBundleProbe: true,
-      enableMemoryProfile: true,
-      raceConditions: true,
-      raceCrossTab: true,
-      idor: true,
-    });
+    await runCommand(buildSelfTestRunOpts(fixtureRoot, opts.maxBugs ?? 400, budgetMs));
 
     const elapsedMs = Date.now() - startedAt;
     const runId = latestRunId(fixtureRoot);
