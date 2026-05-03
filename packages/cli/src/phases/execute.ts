@@ -57,7 +57,7 @@ import type { Clock } from '../lib/clock.js';
 import { MAX_CONSECUTIVE_INFRA_FAILURES } from '../config.js';
 import { shrinkFuzzCase } from '../mutation/fuzz.js';
 import type { PerfCollector } from '../perf/perf-collector.js';
-import { AXE_INJECT_SCRIPT, getAxeScript, classifyA11yDelta } from '../classify/accessibility.js';
+import { ensureAxeLoaded, getAxeScript, classifyA11yDelta } from '../classify/accessibility.js';
 import type { A11yViolation } from '../classify/accessibility.js';
 import { classifyA11yBaseline } from '../classify/a11y-baseline.js';
 import { PlaywrightKeyboardTrapProbe } from '../adapters/keyboard-trap-probe.js';
@@ -198,6 +198,9 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     if (isFirstVisit) {
       // Inject axe-core via a11y flag
       if (a11yStrict === true || opts.enableA11y === true) {
+        await ensureAxeLoaded(scope).catch(err => {
+          log.warn('axe-inject: ensureAxeLoaded failed, baseline scan may return empty', { err: String(err) });
+        });
         const axeResult = await scope.evaluate(getAxeScript(opts.runState.config.mobile?.enabled === true)).catch(() => null);
         const axeValue = axeResult?.value as { violations?: unknown } | null | undefined;
         const violations: A11yViolation[] = Array.isArray(axeValue?.violations)
@@ -333,12 +336,9 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     `Executing ${testCases.length} planned tests: ${willRun} will run (${apiLabel}${uiLabel})${skipLabel}\n`
   );
 
-  // Inject axe-core once at session start so window.axe is available for all page evaluations.
-  if (browser !== undefined && (a11yStrict === true || opts.enableA11y === true) && browser.addInitScript !== undefined) {
-    await browser.addInitScript(AXE_INJECT_SCRIPT).catch(err => {
-      log.warn('axe-inject: addInitScript failed, baseline scans will return empty', { err: String(err) });
-    });
-  }
+  // axe-core is now injected per-page via ensureAxeLoaded() in onPageBaseline,
+  // using scope.evaluate() to bypass camofox-mcp's 256 KB init_script limit (#165).
+  // AXE_INJECT_SCRIPT / addInitScript path removed — kept exported for legacy callers.
 
   async function runTest(tc: TestCase): Promise<TestResult> {
     const start = Date.now();
@@ -790,8 +790,12 @@ async function executeUiTestInner(
 
   // V24: pre-action axe delta capture. Gated on enableA11y (--a11y flag).
   // Runs AFTER onPageBaseline so axe is loaded on the page (EC-2 in spec).
+  // ensureAxeLoaded short-circuits if axe is already present from the baseline call.
   let preA11yViolations: A11yViolation[] = [];
   if (extras?.enableA11y === true) {
+    await ensureAxeLoaded(scope).catch(err => {
+      log.debug('v24: pre axe-inject failed', { err: String(err), occurrenceId });
+    });
     const preAxeRes = await scope.evaluate(getAxeScript(extras?.mobile === true)).catch(err => {
       log.debug('v24: pre axe-run failed', { err: String(err), occurrenceId });
       return null;
@@ -1029,8 +1033,12 @@ async function executeUiTestInner(
   }
 
   // V24: post-action axe delta capture. Gated on enableA11y.
+  // ensureAxeLoaded short-circuits if axe survived the action (SPA persistent window).
   let postA11yViolations: A11yViolation[] = [];
   if (extras?.enableA11y === true) {
+    await ensureAxeLoaded(scope).catch(err => {
+      log.debug('v24: post axe-inject failed', { err: String(err), occurrenceId });
+    });
     const postAxeRes = await scope.evaluate(getAxeScript(extras?.mobile === true)).catch(err => {
       log.debug('v24: post axe-run failed', { err: String(err), occurrenceId });
       return null;
