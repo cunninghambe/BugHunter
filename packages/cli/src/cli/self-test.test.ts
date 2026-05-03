@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { describe, it, expect, afterEach } from 'vitest';
-import { evaluateExpectations, assertLockstep, LockstepError, latestRunId } from './self-test.js';
+import { evaluateExpectations, assertLockstep, LockstepError, latestRunId, defaultBudgetMs } from './self-test.js';
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import type { BugCluster } from '../types.js';
 
@@ -327,5 +327,67 @@ describe('latestRunId', () => {
     makeRunDir(root, 'bbb-old', '2026-05-01T00:00:00.000Z');
 
     expect(latestRunId(root)).toBe('aaa-corrupt');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Verdict + budget decoupling (#140)
+// ---------------------------------------------------------------------------
+
+/** Assemble the passed/budgetExceeded fields the same way selfTestCommand does. */
+function assembleVerdict(
+  positives: ReturnType<typeof evaluateExpectations>['positives'],
+  negatives: ReturnType<typeof evaluateExpectations>['negatives'],
+  elapsedMs: number,
+  budgetMs: number,
+): { passed: boolean; budgetExceeded: boolean } {
+  const allPositivesMet = positives.every(p => p.status === 'PASS' || p.status === 'FLAKED');
+  const allNegativesMet = negatives.every(n => n.status === 'PASS');
+  return {
+    passed: allPositivesMet && allNegativesMet,
+    budgetExceeded: elapsedMs > budgetMs,
+  };
+}
+
+describe('verdict decoupled from budget (#140)', () => {
+  it('13/87 matched + budget overrun → passed=true, budgetExceeded=true (PASS-with-warning, exit 0)', () => {
+    const clusters = [makeCluster('console_error', 'console_error|/route')];
+    const golden = [makePositive('console_error', 'console_error')];
+    const { positives, negatives } = evaluateExpectations(clusters, golden, { failOnFlake: true });
+    const verdict = assembleVerdict(positives, negatives, 700_000, 600_000);
+    expect(verdict.passed).toBe(true);
+    expect(verdict.budgetExceeded).toBe(true);
+  });
+
+  it('0/87 matched + budget overrun → passed=false, budgetExceeded=true (FAILED, exit 1)', () => {
+    const clusters: BugCluster[] = [];
+    const golden = [makePositive('console_error', 'console_error')];
+    const { positives, negatives } = evaluateExpectations(clusters, golden, { failOnFlake: true });
+    const verdict = assembleVerdict(positives, negatives, 700_000, 600_000);
+    expect(verdict.passed).toBe(false);
+    expect(verdict.budgetExceeded).toBe(true);
+  });
+
+  it('13/87 matched + no overrun → passed=true, budgetExceeded=false (PASS, exit 0)', () => {
+    const clusters = [makeCluster('console_error', 'console_error|/route')];
+    const golden = [makePositive('console_error', 'console_error')];
+    const { positives, negatives } = evaluateExpectations(clusters, golden, { failOnFlake: true });
+    const verdict = assembleVerdict(positives, negatives, 500_000, 600_000);
+    expect(verdict.passed).toBe(true);
+    expect(verdict.budgetExceeded).toBe(false);
+  });
+
+  it('single-surface budget default is 600s', () => {
+    const manifest = { kinds: { console_error: { fixture: 'self', port: null, route: '/' } }, deferred: [] };
+    expect(defaultBudgetMs(manifest)).toBe(600_000);
+  });
+
+  it('6-surface fixture default budget is 3_600_000ms (6 × 600s)', () => {
+    const kinds: Record<string, { fixture: string; port: null; route: string }> = {};
+    for (let i = 0; i < 6; i++) {
+      kinds[`kind_${i}`] = { fixture: `surface-${i}`, port: null, route: '/' };
+    }
+    const manifest = { kinds, deferred: [] };
+    expect(defaultBudgetMs(manifest)).toBe(3_600_000);
   });
 });
