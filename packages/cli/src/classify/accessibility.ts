@@ -1,7 +1,20 @@
 // Accessibility classification — delta-only (§ 3.5).
 // Only enabled with --a11y flag.
 
+import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import type { BugDetection } from '../types.js';
+
+const _require = createRequire(import.meta.url);
+const _axeMinPath: string = _require.resolve('axe-core/axe.min.js');
+const _axeSource: string = fs.readFileSync(_axeMinPath, 'utf8');
+
+/**
+ * Evaluating this script on a page installs window.axe if not already present.
+ * Must be eval'd before AXE_RUN_SCRIPT.
+ */
+export const AXE_INJECT_SCRIPT: string = `(function(){if(!window.axe){${_axeSource}}})()`;
+
 
 export type A11yViolation = {
   id: string;
@@ -36,6 +49,14 @@ export const AXE_RUN_SCRIPT_MOBILE = `
   });
 })()
 `;
+
+/**
+ * Returns the axe run script appropriate for the current viewport.
+ * Mobile viewports enable the `target-size` rule for touch-target AA checks (#152).
+ */
+export function getAxeScript(mobile: boolean): string {
+  return mobile ? AXE_RUN_SCRIPT_MOBILE : AXE_RUN_SCRIPT;
+}
 
 export function classifyA11yDelta(
   preViolations: A11yViolation[],

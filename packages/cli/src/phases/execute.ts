@@ -57,7 +57,7 @@ import type { Clock } from '../lib/clock.js';
 import { MAX_CONSECUTIVE_INFRA_FAILURES } from '../config.js';
 import { shrinkFuzzCase } from '../mutation/fuzz.js';
 import type { PerfCollector } from '../perf/perf-collector.js';
-import { AXE_RUN_SCRIPT, classifyA11yDelta } from '../classify/accessibility.js';
+import { getAxeScript, classifyA11yDelta } from '../classify/accessibility.js';
 import type { A11yViolation } from '../classify/accessibility.js';
 import { classifyA11yBaseline } from '../classify/a11y-baseline.js';
 import { PlaywrightKeyboardTrapProbe } from '../adapters/keyboard-trap-probe.js';
@@ -198,7 +198,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     if (isFirstVisit) {
       // Inject axe-core via a11y flag
       if (a11yStrict === true || opts.enableA11y === true) {
-        const axeResult = await scope.evaluate(AXE_RUN_SCRIPT).catch(() => null);
+        const axeResult = await scope.evaluate(getAxeScript(opts.runState.config.mobile?.enabled === true)).catch(() => null);
         const axeValue = axeResult?.value as { violations?: unknown } | null | undefined;
         const violations: A11yViolation[] = Array.isArray(axeValue?.violations)
           ? (axeValue.violations as A11yViolation[])
@@ -396,7 +396,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
       let apiCapturedCall: SurfaceCallResult | undefined;
       if (tc.action.via === 'ui') {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
-        result = await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined }, clock);
+        result = await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined, mobile: opts.runState.config.mobile?.enabled === true }, clock);
       } else {
         const outcome = await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds, appBaseUrl, clock);
         result = outcome.testResult;
@@ -710,7 +710,7 @@ async function executeUiTestInner(
   onPageBaseline?: (scope: TabScope, pageRoute: string) => Promise<FocusAfterActionResult | undefined>,
   asyncMaxWaitMs?: number,
   /** V24: extra flags for deferred detector wiring. */
-  extras?: { enableA11y?: boolean; enablePerf?: boolean },
+  extras?: { enableA11y?: boolean; enablePerf?: boolean; mobile?: boolean },
   clock: Clock = { kind: 'wall' },
 ): Promise<TestResult> {
   const bugs: BugDetection[] = [];
@@ -794,7 +794,7 @@ async function executeUiTestInner(
   // Runs AFTER onPageBaseline so axe is loaded on the page (EC-2 in spec).
   let preA11yViolations: A11yViolation[] = [];
   if (extras?.enableA11y === true) {
-    const preAxeRes = await scope.evaluate(AXE_RUN_SCRIPT).catch(err => {
+    const preAxeRes = await scope.evaluate(getAxeScript(extras?.mobile === true)).catch(err => {
       log.debug('v24: pre axe-run failed', { err: String(err), occurrenceId });
       return null;
     });
@@ -1033,7 +1033,7 @@ async function executeUiTestInner(
   // V24: post-action axe delta capture. Gated on enableA11y.
   let postA11yViolations: A11yViolation[] = [];
   if (extras?.enableA11y === true) {
-    const postAxeRes = await scope.evaluate(AXE_RUN_SCRIPT).catch(err => {
+    const postAxeRes = await scope.evaluate(getAxeScript(extras?.mobile === true)).catch(err => {
       log.debug('v24: post axe-run failed', { err: String(err), occurrenceId });
       return null;
     });
@@ -1309,7 +1309,7 @@ async function executeUiTest(
   onPageBaseline?: (scope: TabScope, pageRoute: string) => Promise<FocusAfterActionResult | undefined>,
   asyncMaxWaitMs?: number,
   /** V24: extra flags for deferred detector wiring. */
-  extras?: { enableA11y?: boolean; enablePerf?: boolean },
+  extras?: { enableA11y?: boolean; enablePerf?: boolean; mobile?: boolean },
   clock: Clock = { kind: 'wall' },
 ): Promise<TestResult> {
   const start = Date.now();

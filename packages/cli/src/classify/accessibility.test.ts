@@ -1,12 +1,30 @@
 // Unit tests for classifyA11yDelta (V24, spec §3.5, acceptance criterion 4).
 
 import { describe, it, expect } from 'vitest';
-import { classifyA11yDelta } from './accessibility.js';
+import { classifyA11yDelta, getAxeScript, AXE_RUN_SCRIPT_MOBILE, AXE_RUN_SCRIPT } from './accessibility.js';
 import type { A11yViolation } from './accessibility.js';
 
 function makeViolation(id: string, impact: A11yViolation['impact']): A11yViolation {
   return { id, impact, description: `${id} violation`, nodes: [] };
 }
+
+describe('getAxeScript (#152)', () => {
+  it('returns AXE_RUN_SCRIPT_MOBILE when mobile=true', () => {
+    expect(getAxeScript(true)).toBe(AXE_RUN_SCRIPT_MOBILE);
+  });
+
+  it('returns AXE_RUN_SCRIPT when mobile=false', () => {
+    expect(getAxeScript(false)).toBe(AXE_RUN_SCRIPT);
+  });
+
+  it('mobile script enables target-size rule', () => {
+    expect(getAxeScript(true)).toContain('target-size');
+  });
+
+  it('desktop script does not include target-size rule', () => {
+    expect(getAxeScript(false)).not.toContain('target-size');
+  });
+});
 
 describe('classifyA11yDelta', () => {
   it('returns zero detections when pre and post are identical', () => {
