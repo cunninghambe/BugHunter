@@ -194,3 +194,77 @@ describe('classifyNetworkRequests — 404_for_linked_route suppression (#112)', 
     expect(bugs).toHaveLength(0);
   });
 });
+
+describe('classifyNetworkRequests — 404_for_linked_route dev-server suppression (#149 follow-up)', () => {
+  it('emits 404_for_linked_route for a real route 404', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'GET', path: '/settings/billing', status: 404, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.some(b => b.kind === '404_for_linked_route')).toBe(true);
+  });
+
+  it('suppresses 404_for_linked_route for /@vite/ path', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'GET', path: '/@vite/client', status: 404, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.every(b => b.kind !== '404_for_linked_route')).toBe(true);
+  });
+
+  it('suppresses 404_for_linked_route for /@fs/ path', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'GET', path: '/@fs/root/path/to/foo.ts', status: 404, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.every(b => b.kind !== '404_for_linked_route')).toBe(true);
+  });
+
+  it('suppresses 404_for_linked_route for /node_modules/.vite/ path', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'GET', path: '/node_modules/.vite/deps/react.js', status: 404, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.every(b => b.kind !== '404_for_linked_route')).toBe(true);
+  });
+
+  it('suppresses 404_for_linked_route for /__vite_ping', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'GET', path: '/__vite_ping', status: 404, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.every(b => b.kind !== '404_for_linked_route')).toBe(true);
+  });
+
+  it('suppresses 404_for_linked_route for /__nuxt/ path', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'GET', path: '/__nuxt/hmr', status: 404, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.every(b => b.kind !== '404_for_linked_route')).toBe(true);
+  });
+
+  it('suppresses 404_for_linked_route for /_next/static/development/ path', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'GET', path: '/_next/static/development/foo.js', status: 404, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.every(b => b.kind !== '404_for_linked_route')).toBe(true);
+  });
+
+  it('emits 404_for_linked_route for /_next/static/chunks/ (production prefix)', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'GET', path: '/_next/static/chunks/main.js', status: 404, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.some(b => b.kind === '404_for_linked_route')).toBe(true);
+  });
+});

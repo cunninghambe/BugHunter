@@ -90,7 +90,7 @@ export function classifyNetworkRequests(
       }
     }
 
-    if (req.status === 404 && !isMutatorSyntheticPath(req.path)) {
+    if (req.status === 404 && !isMutatorSyntheticPath(req.path) && !isDevServerPath(req.path)) {
       bugs.push({
         kind: '404_for_linked_route',
         rootCause: `Page links to ${req.path} which returned 404`,

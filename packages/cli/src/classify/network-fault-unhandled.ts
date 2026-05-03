@@ -2,6 +2,7 @@
 // no error UI, no console network errors, no URL change, and no rollback.
 
 import type { PreState, PostState, BugDetection, NetworkFaultSpec, NetworkFaultContext, NetworkRequest } from '../types.js';
+import { isDevServerPath } from './network.js';
 
 const NETWORK_CONSOLE_KEYWORDS = /fetch|network|XMLHttpRequest|aborted|failed|offline|ERR_/i;
 const ERROR_ELEMENT_SELECTORS = ['[role="alert"]', '[data-testid*="error"]', '.error'];
@@ -34,13 +35,15 @@ export function detectNetworkFaultUnhandled(
   // Check post-state snapshot for error elements (best-effort via domErrorTextDetected)
   // domErrorTextDetected covers [role="alert"], .error, data-testid*=error per CHECK_DOM_ERROR_SCRIPT
 
+  const appRequests = postState.networkRequests.filter(r => !isDevServerPath(r.path));
+
   const { retryStormDetected, observedRetryRateRps } = computeRetryStorm(
-    postState.networkRequests,
+    appRequests,
     postState.mutationObserverWindowMs,
     retryStormThresholdRps,
   );
 
-  const affectedEndpoints = uniqueEndpoints(postState.networkRequests);
+  const affectedEndpoints = uniqueEndpoints(appRequests);
 
   const networkFaultContext: NetworkFaultContext = {
     faultVariant: fault.kind,
