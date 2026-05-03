@@ -17,6 +17,8 @@ const mockState = {
   callTool: undefined as ReturnType<typeof vi.fn> | undefined,
   callToolImpl: (_params: { name: string; arguments?: Record<string, unknown> }): Promise<unknown> =>
     Promise.resolve({ content: [], isError: false }),
+  listToolsImpl: (): Promise<{ tools: Array<{ name: string }> }> =>
+    Promise.reject(new Error('listTools: not configured')),
 };
 
 vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
@@ -40,6 +42,7 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
     connect = vi.fn().mockResolvedValue(undefined);
     close = vi.fn().mockResolvedValue(undefined);
     callTool: ReturnType<typeof vi.fn>;
+    listTools: ReturnType<typeof vi.fn>;
 
     constructor() {
       // Create this instance's callTool spy and route it through mockState.callToolImpl
@@ -47,13 +50,14 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
         (params: { name: string; arguments?: Record<string, unknown> }) =>
           mockState.callToolImpl(params),
       );
+      this.listTools = vi.fn().mockImplementation(() => mockState.listToolsImpl());
       // Expose via mockState so tests can inspect/override after connect()
       mockState.callTool = this.callTool;
     }
   },
 }));
 
-import { CamofoxBrowserMcpAdapter, CamofoxBrowserHttpAdapter, makeBrowserAdapter } from './browser-mcp.js';
+import { CamofoxBrowserMcpAdapter, CamofoxBrowserHttpAdapter, makeBrowserAdapter, assertMcpHttpCompatible } from './browser-mcp.js';
 
 const TAB_ID = 'tab-shape-test';
 
@@ -350,5 +354,63 @@ describe('CamofoxBrowserMcpAdapter — factory (makeBrowserAdapter)', () => {
       browserMcpStdio: { command: '/opt/camofox-mcp/dist/index.js' },
     });
     expect(result).toBeInstanceOf(CamofoxBrowserMcpAdapter);
+  });
+});
+
+describe('assertMcpHttpCompatible — issue #115', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockState.callTool = undefined;
+    mockState.listToolsImpl = () => Promise.reject(new Error('listTools: not configured'));
+    setupDefaultCallTool();
+  });
+
+  it('no-ops when adapter is undefined', async () => {
+    await expect(
+      assertMcpHttpCompatible(undefined, { browserTransport: 'mcp-http', browserMcpUrl: 'http://127.0.0.1:3104/mcp' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('no-ops when transport is not mcp-http', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    (CamofoxBrowserHttpAdapter as unknown as { deprecationWarned: boolean }).deprecationWarned = false;
+    const adapter = makeBrowserAdapter({
+      projectName: 'test',
+      surfaceMcpUrl: 'http://x',
+      browserMcpUrl: 'http://127.0.0.1:3104/mcp',
+      browserTransport: 'http-legacy',
+    });
+    await expect(
+      assertMcpHttpCompatible(adapter, { browserTransport: 'http-legacy', browserMcpUrl: 'http://127.0.0.1:3104/mcp' }),
+    ).resolves.toBeUndefined();
+    warnSpy.mockRestore();
+  });
+
+  it('throws friendly error (issue #115) when listTools rejects on mcp-http', async () => {
+    mockState.listToolsImpl = () => Promise.reject(new Error('connect ECONNREFUSED'));
+    const adapter = makeBrowserAdapter({
+      projectName: 'test',
+      surfaceMcpUrl: 'http://x',
+      browserMcpUrl: 'http://127.0.0.1:3104/mcp',
+      browserTransport: 'mcp-http',
+    });
+    await expect(
+      assertMcpHttpCompatible(adapter, { browserTransport: 'mcp-http', browserMcpUrl: 'http://127.0.0.1:3104/mcp' }),
+    ).rejects.toThrow(
+      'Your camofox-mcp at http://127.0.0.1:3104/mcp does not advertise the mcp-http transport.',
+    );
+  });
+
+  it('resolves when listTools returns tools (compatible server)', async () => {
+    mockState.listToolsImpl = () => Promise.resolve({ tools: [{ name: 'navigate' }] });
+    const adapter = makeBrowserAdapter({
+      projectName: 'test',
+      surfaceMcpUrl: 'http://x',
+      browserMcpUrl: 'http://127.0.0.1:3104/mcp',
+      browserTransport: 'mcp-http',
+    });
+    await expect(
+      assertMcpHttpCompatible(adapter, { browserTransport: 'mcp-http', browserMcpUrl: 'http://127.0.0.1:3104/mcp' }),
+    ).resolves.toBeUndefined();
   });
 });

@@ -9,7 +9,7 @@ import type { HarReplayer } from '../adapters/har-replay.js';
 import { initRunState, saveRunState, loadRunState } from '../store/run-state.js';
 import { runPaths } from '../store/filesystem.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
-import { makeBrowserAdapter } from '../adapters/browser-mcp.js';
+import { makeBrowserAdapter, assertMcpHttpCompatible } from '../adapters/browser-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import { AnthropicVisionClient } from '../adapters/vision-client.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
@@ -386,6 +386,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   const surface = new HttpSurfaceMcpAdapter(resolved.surfaceMcpUrl);
   const browser = makeBrowserAdapter(resolved);
+  await assertMcpHttpCompatible(browser, resolved);
 
   // Resolve vision auth — prefer Claude CLI subprocess (Q8); fall back to API key.
   const visionEnabled = resolved.vision?.enabled ?? false;

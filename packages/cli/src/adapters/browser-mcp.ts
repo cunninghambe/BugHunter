@@ -423,6 +423,15 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     if (t !== undefined) await t.close().catch(() => {});
   }
 
+  // ---- Transport probe ----
+
+  /** List tools advertised by the connected camofox-mcp server. Used by assertMcpHttpCompatible. */
+  async listTools(): Promise<string[]> {
+    const client = await this.ensureConnected();
+    const result = await client.listTools();
+    return result.tools.map(t => t.name);
+  }
+
   // ---- Generic tool dispatcher (internal — accessible by V20/V22/V23 callers) ----
 
   async tool<T>(name: string, args: Record<string, unknown>, expect: 'json' | 'image' = 'json'): Promise<T> {
@@ -1548,6 +1557,41 @@ export function makeBrowserAdapter(config: BugHunterConfig): BrowserMcpAdapter |
     url: config.browserMcpUrl,
     authKey,
   });
+}
+
+/**
+ * Probe the camofox-mcp server's tool list when browserTransport is 'mcp-http'.
+ * Throws a descriptive error (referencing issue #115) if the server does not advertise
+ * any tools — indicating the remote is a legacy camofox-mcp (<0.3.0) that speaks the
+ * old REST protocol instead of Streamable HTTP MCP.
+ *
+ * No-ops when adapter is undefined, transport is not 'mcp-http', or the probe succeeds.
+ */
+export async function assertMcpHttpCompatible(
+  adapter: BrowserMcpAdapter | undefined,
+  config: Pick<BugHunterConfig, 'browserTransport' | 'browserMcpUrl'>,
+): Promise<void> {
+  if (adapter === undefined) return;
+  if ((config.browserTransport ?? 'mcp-http') !== 'mcp-http') return;
+  if (!(adapter instanceof CamofoxBrowserMcpAdapter)) return;
+  const url = config.browserMcpUrl ?? 'http://127.0.0.1:3104/mcp';
+  let tools: string[];
+  try {
+    tools = await adapter.listTools();
+  } catch {
+    throw new Error(
+      `Your camofox-mcp at ${url} does not advertise the mcp-http transport. ` +
+        `Either upgrade camofox-mcp to ≥0.3.0 or set \`browserTransport: 'http-rest'\` in your config. ` +
+        `(issue #115)`,
+    );
+  }
+  if (tools.length === 0) {
+    throw new Error(
+      `Your camofox-mcp at ${url} does not advertise the mcp-http transport. ` +
+        `Either upgrade camofox-mcp to ≥0.3.0 or set \`browserTransport: 'http-rest'\` in your config. ` +
+        `(issue #115)`,
+    );
+  }
 }
 
 // ---- Legacy transport helpers (used by CamofoxBrowserHttpAdapter only) ----
