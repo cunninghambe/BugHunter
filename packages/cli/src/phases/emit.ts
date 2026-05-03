@@ -13,9 +13,9 @@ import { nowIso } from '../lib/clock.js';
 import type { Clock } from '../lib/clock.js';
 
 const BUGHUNTER_VERSION = '0.1.0';
-// v0.29: severity not yet in DetectorRegistryEntry — defaults to 'info' for all entries.
-const registryLookup: Partial<Record<string, { severity?: Severity }>> = Object.fromEntries(
-  DETECTOR_REGISTRY.map(e => [e.kind, e as { severity?: Severity }]),
+// v0.29: per-kind severity lookup from DETECTOR_REGISTRY defaultSeverity (#147).
+const registryLookup: Partial<Record<string, { defaultSeverity?: Severity }>> = Object.fromEntries(
+  DETECTOR_REGISTRY.map(e => [e.kind, e]),
 );
 
 export type TestCounters = {
@@ -94,7 +94,7 @@ export function runEmit(
   const bySeverity: Record<Severity, number> = { critical: 0, major: 0, minor: 0, info: 0 };
 
   for (const cluster of clusters) {
-    const sev = (registryLookup[cluster.kind] as { severity?: Severity } | undefined)?.severity ?? 'info';
+    const sev: Severity = cluster.severity ?? registryLookup[cluster.kind]?.defaultSeverity ?? 'info';
     (cluster as BugCluster & { severity: Severity }).severity = sev;
     bySeverity[sev] += 1;
     byKind[cluster.kind] = (byKind[cluster.kind] ?? 0) + 1;
