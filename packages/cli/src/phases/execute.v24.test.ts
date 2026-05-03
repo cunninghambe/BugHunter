@@ -13,6 +13,7 @@ import type { HarLog } from '../adapters/har-writer.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { AXE_RUN_SCRIPT_MOBILE, AXE_RUN_SCRIPT } from '../classify/accessibility.js';
 
 const RUN_ID = 'v24-plumbing-run';
 
@@ -468,5 +469,115 @@ describe('V24 plumbing — accessibility_critical (delta path)', () => {
     const result = await runExecute(opts);
     const detected = result.results.flatMap(r => r.bugs).filter(b => b.kind === 'accessibility_critical');
     expect(detected).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #152 — mobile viewport uses AXE_RUN_SCRIPT_MOBILE
+// ---------------------------------------------------------------------------
+describe('#152 — axe script selection based on mobile config', () => {
+  it('invokes the mobile axe script when config.mobile.enabled=true', async () => {
+    const evaluatedScripts: string[] = [];
+    const scope: TabScope = {
+      tabId: 'mobile-tab',
+      navigate: vi.fn().mockResolvedValue({ url: 'http://test', title: 'Test' }),
+      click: vi.fn().mockResolvedValue({ clicked: true }),
+      type: vi.fn().mockResolvedValue({ typed: true }),
+      scroll: vi.fn().mockResolvedValue({ scrolled: true }),
+      snapshot: vi.fn().mockResolvedValue({ snapshot: '<html></html>' }),
+      screenshot: vi.fn().mockResolvedValue({ path: '', data: '' }),
+      clickByHint: vi.fn().mockResolvedValue({ clicked: false }),
+      clickWithObservation: vi.fn().mockResolvedValue({ ok: true, accessibleNameAbsent: false, ariaLabelSource: null, tagName: 'button', role: null }),
+      evaluate: vi.fn().mockImplementation((script: string) => {
+        evaluatedScripts.push(script);
+        if (script.includes('__bhConsoleErrors')) return Promise.resolve({ value: [] });
+        if (script.includes('durationMs') || script.includes('__bhMutStop')) return Promise.resolve({ value: { durationMs: 5 } });
+        if (script.includes('__bhMutStart')) return Promise.resolve({ value: { durationMs: 0 } });
+        if (script.includes('__bh_xss')) return Promise.resolve({ value: [] });
+        return Promise.resolve({ value: { violations: [] } });
+      }),
+    } as unknown as TabScope;
+
+    const browser: BrowserMcpAdapter = {
+      withTab: vi.fn().mockImplementation(
+        (_url: string, _headers: unknown, fn: (scope: TabScope) => Promise<unknown>) => fn(scope),
+      ),
+    } as unknown as BrowserMcpAdapter;
+
+    const runState: RunState = {
+      runId: RUN_ID,
+      projectDir: tmpDir,
+      startedAt: new Date().toISOString(),
+      phase: 'execute',
+      config: {
+        projectName: 'test',
+        surfaceMcpUrl: 'http://localhost:3100',
+        mobile: { enabled: true, viewports: [{ width: 390, height: 844, label: 'iphone-14', platform: 'ios' }] },
+      },
+      clusterCount: 0,
+      infraFailureCount: 0,
+      consecutiveInfraFailures: 0,
+      emitted: false,
+      partialEmit: false,
+    };
+
+    await runExecute({
+      testCases: [makeTestCase('/mobile-bugs')],
+      runState,
+      surface: makeMinimalSurface(),
+      browser,
+      maxBugs: 50,
+      maxRuntimeMs: 60000,
+      concurrency: 1,
+      apiConcurrency: 1,
+      onClusterFound: () => 0,
+      enableA11y: true,
+    });
+    expect(evaluatedScripts.some(s => s === AXE_RUN_SCRIPT_MOBILE)).toBe(true);
+    expect(evaluatedScripts.some(s => s === AXE_RUN_SCRIPT)).toBe(false);
+  });
+
+  it('invokes the desktop axe script when config.mobile is not set', async () => {
+    const evaluatedScripts: string[] = [];
+    const scope: TabScope = {
+      tabId: 'desktop-tab',
+      navigate: vi.fn().mockResolvedValue({ url: 'http://test', title: 'Test' }),
+      click: vi.fn().mockResolvedValue({ clicked: true }),
+      type: vi.fn().mockResolvedValue({ typed: true }),
+      scroll: vi.fn().mockResolvedValue({ scrolled: true }),
+      snapshot: vi.fn().mockResolvedValue({ snapshot: '<html></html>' }),
+      screenshot: vi.fn().mockResolvedValue({ path: '', data: '' }),
+      clickByHint: vi.fn().mockResolvedValue({ clicked: false }),
+      clickWithObservation: vi.fn().mockResolvedValue({ ok: true, accessibleNameAbsent: false, ariaLabelSource: null, tagName: 'button', role: null }),
+      evaluate: vi.fn().mockImplementation((script: string) => {
+        evaluatedScripts.push(script);
+        if (script.includes('__bhConsoleErrors')) return Promise.resolve({ value: [] });
+        if (script.includes('durationMs') || script.includes('__bhMutStop')) return Promise.resolve({ value: { durationMs: 5 } });
+        if (script.includes('__bhMutStart')) return Promise.resolve({ value: { durationMs: 0 } });
+        if (script.includes('__bh_xss')) return Promise.resolve({ value: [] });
+        return Promise.resolve({ value: { violations: [] } });
+      }),
+    } as unknown as TabScope;
+
+    const browser: BrowserMcpAdapter = {
+      withTab: vi.fn().mockImplementation(
+        (_url: string, _headers: unknown, fn: (scope: TabScope) => Promise<unknown>) => fn(scope),
+      ),
+    } as unknown as BrowserMcpAdapter;
+
+    await runExecute({
+      testCases: [makeTestCase('/desktop-page')],
+      runState: makeRunState(tmpDir),
+      surface: makeMinimalSurface(),
+      browser,
+      maxBugs: 50,
+      maxRuntimeMs: 60000,
+      concurrency: 1,
+      apiConcurrency: 1,
+      onClusterFound: () => 0,
+      enableA11y: true,
+    });
+    expect(evaluatedScripts.some(s => s === AXE_RUN_SCRIPT)).toBe(true);
+    expect(evaluatedScripts.some(s => s === AXE_RUN_SCRIPT_MOBILE)).toBe(false);
   });
 });
