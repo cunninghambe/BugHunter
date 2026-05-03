@@ -1590,20 +1590,56 @@ export type FuzzTelemetry = {
   errors: Array<{ strategy: string; surface: string; message: string }>;
 };
 
+export type AuthCredentials = {
+  username?: string;
+  password?: string;
+  email?: string;
+  token?: string;
+  cookie?: string;
+};
+
+export type AuthConfig =
+  | { kind: 'none' }
+  | { kind: 'bearer'; token?: string; credentials?: Record<string, AuthCredentials> }
+  | {
+      kind: 'form';
+      loginUrl?: string;
+      fields?: { username?: string; password?: string; submit?: string };
+      successCheck?:
+        | { kind: 'cookie'; name: string }
+        | { kind: 'redirect'; to: string }
+        | { kind: 'dom_signal'; selector: string };
+      logoutUrl?: string;
+      credentials: Record<string, AuthCredentials>;
+    }
+  | {
+      kind: 'cookie';
+      loginEndpoint: {
+        method: 'POST';
+        url: string;
+        bodyShape: 'json' | 'form-encoded';
+        usernameField: string;
+        passwordField: string;
+      };
+      cookieName: string;
+      logoutEndpoint?: { method: 'POST'; url: string };
+      credentials: Record<string, AuthCredentials>;
+    };
+
 export type BugHunterConfig = {
   projectName: string;
   surfaceMcpUrl: string;
   browserMcpUrl?: string;
   roles?: string[];
   /** Top-level auth hint. When kind is 'none', browser login is skipped entirely. Default fall-through for surfaces without their own auth. */
-  auth?: { kind: 'none' };
+  auth?: AuthConfig;
   /**
    * v0.43+: per-surface overrides. When a surface name appears here, its `auth` and `roles` win
    * over the top-level `config.auth` and `config.roles`. Surfaces NOT listed inherit top-level.
    * Single-surface configs do not need to populate this.
    */
   surfaces?: Record<string, {
-    auth?: { kind: 'none' };
+    auth?: AuthConfig;
     roles?: string[];
     concurrency?: number;
     apiConcurrency?: number;

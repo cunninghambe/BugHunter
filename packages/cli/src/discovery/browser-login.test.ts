@@ -1,8 +1,10 @@
 // Unit tests for loginInBrowser — mocked adapters only
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loginInBrowser, fieldCandidates, looksLikeCssSelector, labelTextCandidates } from './browser-login.js';
+import { loginInBrowser, fieldCandidates, looksLikeCssSelector, labelTextCandidates, loginViaCookieEndpoint, cookieEndpointPlanFromConfig } from './browser-login.js';
+import type { CookieEndpointPlan } from './browser-login.js';
 import type { BrowserMcpAdapter, CookieEntry } from '../adapters/browser-mcp.js';
 import type { SurfaceMcpAdapter, DescribeAuthResult } from '../adapters/surface-mcp.js';
+import type { AuthConfig } from '../types.js';
 
 const BASE_URL = 'http://localhost:3002';
 const ROLE = 'owner';
@@ -851,5 +853,145 @@ describe('verifySuccess — dom_signal kind', () => {
       verifyPollMs: 10,
     });
     expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V55.2: loginViaCookieEndpoint tests
+// ---------------------------------------------------------------------------
+
+const COOKIE_ENDPOINT_PLAN: CookieEndpointPlan = {
+  authKind: 'cookie_endpoint',
+  loginEndpoint: { method: 'POST', url: '/api/auth/login', bodyShape: 'json' },
+  usernameField: 'email',
+  passwordField: 'password',
+  cookieName: 'bench_session',
+  successCheck: { kind: 'cookie', name: 'bench_session' },
+};
+
+const COOKIE_AUTH: Extract<AuthConfig, { kind: 'cookie' }> = {
+  kind: 'cookie',
+  loginEndpoint: {
+    method: 'POST',
+    url: '/api/auth/login',
+    bodyShape: 'json',
+    usernameField: 'email',
+    passwordField: 'password',
+  },
+  cookieName: 'bench_session',
+  credentials: {
+    admin: { email: 'admin@bench.local', password: 'Admin123!' },
+    member: { email: 'member@bench.local', password: 'Member123!' },
+  },
+};
+
+const SESSION_COOKIE_BENCH: CookieEntry = {
+  name: 'bench_session',
+  value: 'sessval',
+  domain: 'localhost',
+  path: '/',
+  expires: -1,
+  httpOnly: true,
+  secure: false,
+  sameSite: 'Lax',
+};
+
+function makeCookieBrowser(opts: {
+  fetchStatus?: number;
+  fetchOk?: boolean;
+  evaluateThrows?: boolean;
+  cookieNames?: string[];
+  cookies?: CookieEntry[];
+} = {}): BrowserMcpAdapter {
+  const status = opts.fetchStatus ?? 200;
+  const fetchOk = opts.fetchOk ?? (status >= 200 && status < 300);
+  return {
+    navigate: vi.fn(async () => ({ url: '' })),
+    click: vi.fn(async () => ({ clicked: true })),
+    type: vi.fn(async () => ({ typed: true })),
+    scroll: vi.fn(async () => ({ scrolled: true })),
+    snapshot: vi.fn(async () => ({ snapshot: '' })),
+    screenshot: vi.fn(async () => ({ path: '' })),
+    evaluate: vi.fn(async () => {
+      if (opts.evaluateThrows) throw new Error('evaluate_failed');
+      return { value: { status, ok: fetchOk } };
+    }),
+    listTabs: vi.fn(async () => ({ tabs: [] })),
+    closeTab: vi.fn(async () => ({ closed: true })),
+    openTab: vi.fn(async () => ({ tabId: 'tab1', finalUrl: '' })),
+    closeTabExplicit: vi.fn(async () => {}),
+    withTab: vi.fn(),
+    cookies: vi.fn(async () => ({
+      tabId: 'tab1',
+      cookies: opts.cookies ?? (opts.cookieNames ? opts.cookieNames.map(n => ({ ...SESSION_COOKIE_BENCH, name: n })) : [SESSION_COOKIE_BENCH]),
+    })),
+  } as unknown as BrowserMcpAdapter;
+}
+
+describe('loginViaCookieEndpoint — V55.2', () => {
+  it('returns ok:true when POST succeeds and session cookie is present', async () => {
+    const browser = makeCookieBrowser({ cookies: [SESSION_COOKIE_BENCH] });
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.cookies.some(c => c.name === 'bench_session')).toBe(true);
+    }
+  });
+
+  it('returns submit_failed on 4xx response', async () => {
+    const browser = makeCookieBrowser({ fetchStatus: 401, fetchOk: false });
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('submit_failed');
+  });
+
+  it('returns login_page_load_failed on 5xx response', async () => {
+    const browser = makeCookieBrowser({ fetchStatus: 500, fetchOk: false });
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('login_page_load_failed');
+  });
+
+  it('returns login_page_load_failed when evaluate throws', async () => {
+    const browser = makeCookieBrowser({ evaluateThrows: true });
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('login_page_load_failed');
+  });
+
+  it('returns role_has_no_credentials when role is missing', async () => {
+    const browser = makeCookieBrowser();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'unknown-role', BASE_URL);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('role_has_no_credentials');
+  });
+
+  it('returns verification_failed when session cookie is absent after successful POST', async () => {
+    const browser = makeCookieBrowser({ fetchStatus: 200, fetchOk: true, cookieNames: ['other_cookie'] });
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('verification_failed');
+  });
+
+  it('posts JSON body with correct credential fields', async () => {
+    const browser = makeCookieBrowser({ cookies: [SESSION_COOKIE_BENCH] });
+    await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL);
+    const evalCall = (browser.evaluate as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+    expect(evalCall).toContain('Content-Type');
+    expect(evalCall).toContain('application/json');
+    expect(evalCall).toContain('admin@bench.local');
+    expect(evalCall).toContain('Admin123!');
+  });
+});
+
+describe('cookieEndpointPlanFromConfig — V55.2', () => {
+  it('synthesises a plan from BugHunter config auth block', () => {
+    const plan = cookieEndpointPlanFromConfig(COOKIE_AUTH);
+    expect(plan.authKind).toBe('cookie_endpoint');
+    expect(plan.cookieName).toBe('bench_session');
+    expect(plan.loginEndpoint.url).toBe('/api/auth/login');
+    expect(plan.loginEndpoint.bodyShape).toBe('json');
+    expect(plan.usernameField).toBe('email');
+    expect(plan.passwordField).toBe('password');
   });
 });

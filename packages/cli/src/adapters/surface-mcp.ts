@@ -203,6 +203,14 @@ export type DescribeAuthResult =
       values: Record<string, string>;
       successCheck: SuccessCheck;
       cookieName: string;
+    }
+  | {
+      authKind: 'cookie_endpoint';
+      loginEndpoint: { method: 'POST'; url: string; bodyShape: 'json' | 'form-encoded' };
+      usernameField: string;
+      passwordField: string;
+      cookieName: string;
+      successCheck: { kind: 'cookie'; name: string };
     };
 
 export interface SurfaceMcpAdapter {

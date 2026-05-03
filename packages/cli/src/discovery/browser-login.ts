@@ -5,6 +5,7 @@
 import type { BrowserMcpAdapter, CookieEntry, TabScope } from '../adapters/browser-mcp.js';
 import type { DescribeAuthResult, SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { StructuredSelector } from '../adapters/browser-mcp-snapshot.js';
+import type { AuthConfig } from '../types.js';
 import { parsePlaywrightHasText } from '../adapters/browser-mcp-snapshot.js';
 import { log } from '../log.js';
 
@@ -40,6 +41,9 @@ type BrowseableAuthPlan = Extract<DescribeAuthResult, { authKind: 'form' | 'next
  * loginInTabScope for each parallel tab.
  */
 export type BrowserLoginPlan = BrowseableAuthPlan;
+
+/** V55.2: cookie-endpoint plan shape from DescribeAuthResult or synthesised from BugHunter config. */
+export type CookieEndpointPlan = Extract<DescribeAuthResult, { authKind: 'cookie_endpoint' }>;
 
 // Selector candidates for a field, tried in priority order.
 // True when domName already looks like a CSS selector (#id, .class, [attr=...],
@@ -849,5 +853,109 @@ export async function loginInTabScope(
     ok: false,
     reason: 'verification_failed',
     detail: `URL did not change from ${loginUrl} within ${verifyTimeoutMs}ms`,
+  };
+}
+
+/**
+ * V55.2: Cookie-endpoint login executor.
+ * Issues a programmatic POST to the login API endpoint and verifies that the
+ * expected session cookie is set on the browser context afterward.
+ *
+ * A 4xx from the server returns LoginResult.ok=false with reason='submit_failed'.
+ * A 5xx returns reason='login_page_load_failed'.
+ * A missing session cookie after a 2xx returns reason='verification_failed'.
+ */
+export async function loginViaCookieEndpoint(
+  browser: BrowserMcpAdapter,
+  plan: CookieEndpointPlan,
+  auth: Extract<AuthConfig, { kind: 'cookie' }>,
+  role: string,
+  baseUrl: string,
+): Promise<LoginResult> {
+  const creds = auth.credentials[role];
+  if (creds === undefined) {
+    log.warn(`browser_login: cookie_endpoint: no credentials for role="${role}"`);
+    return { ok: false, reason: 'role_has_no_credentials', detail: `No credentials for role "${role}"` };
+  }
+
+  const usernameField = plan.usernameField;
+  const passwordField = plan.passwordField;
+  const usernameValue = creds.email ?? creds.username ?? '';
+  const passwordValue = creds.password ?? '';
+
+  const bodyShape = plan.loginEndpoint.bodyShape;
+  const body = bodyShape === 'json'
+    ? JSON.stringify({ [usernameField]: usernameValue, [passwordField]: passwordValue })
+    : new URLSearchParams({ [usernameField]: usernameValue, [passwordField]: passwordValue }).toString();
+  const contentType = bodyShape === 'json'
+    ? 'application/json'
+    : 'application/x-www-form-urlencoded';
+
+  const endpointUrl = plan.loginEndpoint.url.startsWith('http')
+    ? plan.loginEndpoint.url
+    : new URL(plan.loginEndpoint.url, baseUrl).toString();
+
+  const script = `(async function(){
+    var resp = await fetch(${JSON.stringify(endpointUrl)}, {
+      method: 'POST',
+      headers: { 'Content-Type': ${JSON.stringify(contentType)} },
+      body: ${JSON.stringify(body)},
+      credentials: 'include',
+    });
+    return { status: resp.status, ok: resp.ok };
+  })()`;
+
+  let status: number;
+  let fetchOk: boolean;
+  try {
+    const result = await browser.evaluate(script);
+    const val = result.value as { status?: number; ok?: boolean } | null;
+    status = val?.status ?? 0;
+    fetchOk = val?.ok ?? false;
+  } catch (err) {
+    return { ok: false, reason: 'login_page_load_failed', detail: `fetch to login endpoint failed: ${String(err)}` };
+  }
+
+  if (status >= 500) {
+    return { ok: false, reason: 'login_page_load_failed', detail: `login endpoint returned ${status}` };
+  }
+  if (!fetchOk) {
+    return { ok: false, reason: 'submit_failed', detail: `login endpoint returned ${status}` };
+  }
+
+  // Verify the session cookie was set
+  const cookieNames = await getCookieNames(browser, baseUrl);
+  if (!cookieNames.includes(plan.cookieName)) {
+    log.warn(`browser_login: cookie_endpoint: expected cookie "${plan.cookieName}" not set after login; present=[${cookieNames.join(',')}]`);
+    return {
+      ok: false,
+      reason: 'verification_failed',
+      detail: `expected cookie "${plan.cookieName}" not set after POST to ${endpointUrl}`,
+    };
+  }
+
+  const cookies = await getCookies(browser, baseUrl);
+  log.info(`browser_login: cookie_endpoint success`, { role, cookieName: plan.cookieName, cookieCount: cookies.length });
+  return { ok: true, cookies, finalUrl: baseUrl };
+}
+
+/**
+ * V55.2: Synthesises a CookieEndpointPlan from BugHunter's own config.auth block
+ * when SurfaceMCP returns authKind:'none' or doesn't support cookie_endpoint yet.
+ */
+export function cookieEndpointPlanFromConfig(
+  auth: Extract<AuthConfig, { kind: 'cookie' }>,
+): CookieEndpointPlan {
+  return {
+    authKind: 'cookie_endpoint',
+    loginEndpoint: {
+      method: 'POST',
+      url: auth.loginEndpoint.url,
+      bodyShape: auth.loginEndpoint.bodyShape,
+    },
+    usernameField: auth.loginEndpoint.usernameField,
+    passwordField: auth.loginEndpoint.passwordField,
+    cookieName: auth.cookieName,
+    successCheck: { kind: 'cookie', name: auth.cookieName },
   };
 }
