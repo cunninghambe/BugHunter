@@ -4,11 +4,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import { runVisualBaseline, runBrowserLoginPhase } from './discover.js';
-import type { BrowserMcpAdapter, ClickByHintResult } from '../adapters/browser-mcp.js';
+import type { BrowserMcpAdapter, ClickByHintResult, CookieEntry } from '../adapters/browser-mcp.js';
 import type { SurfaceMcpAdapter, DescribeAuthResult } from '../adapters/surface-mcp.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
-import type { BugHunterConfig, DiscoveredPage } from '../types.js';
+import type { BugHunterConfig, DiscoveredPage, AuthConfig } from '../types.js';
 
 const BASE_URL = 'http://localhost:3200';
 // Low settle for tests — overrides the 2500ms default
@@ -517,5 +517,120 @@ describe('runBrowserLoginPhase — skip guards (#116)', () => {
     expect(result.skipped).toBe(false);
     expect(surface.surface_describe_auth).toHaveBeenCalled();
     expect(browser.navigate).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runBrowserLoginPhase — cookie-endpoint auth propagation (#171)
+// Verifies that the session cookie set during loginViaCookieEndpoint is
+// accessible in the same browser context that the crawler later uses.
+// ---------------------------------------------------------------------------
+
+const COOKIE_AUTH_CONFIG: Extract<AuthConfig, { kind: 'cookie' }> = {
+  kind: 'cookie',
+  loginEndpoint: {
+    method: 'POST',
+    url: '/api/auth/login',
+    bodyShape: 'json',
+    usernameField: 'email',
+    passwordField: 'password',
+  },
+  cookieName: 'bench_session',
+  credentials: {
+    owner: { email: 'owner@bench.local', password: 'Owner123!' },
+  },
+};
+
+const SESSION_COOKIE: CookieEntry = {
+  name: 'bench_session',
+  value: 'sess-abc123',
+  domain: 'localhost',
+  path: '/',
+  expires: -1,
+  httpOnly: true,
+  secure: false,
+  sameSite: 'Lax',
+};
+
+function makeCookieAuthBrowser(opts: { cookiePresent?: boolean } = {}): BrowserMcpAdapter {
+  const cookiePresent = opts.cookiePresent ?? true;
+  return {
+    navigate: vi.fn(async (url: string) => ({ url })),
+    click: vi.fn(async () => ({ clicked: true })),
+    type: vi.fn(async () => ({ typed: true })),
+    scroll: vi.fn(async () => ({ scrolled: true })),
+    snapshot: vi.fn(async () => ({ snapshot: '' })),
+    screenshot: vi.fn(async () => ({ path: '' })),
+    evaluate: vi.fn(async () => ({ value: { status: 200, ok: true } })),
+    listTabs: vi.fn(async () => ({ tabs: [] })),
+    closeTab: vi.fn(async () => ({ closed: true })),
+    openTab: vi.fn(async () => ({ tabId: 'tab1', finalUrl: '' })),
+    closeTabExplicit: vi.fn(async () => {}),
+    withTab: vi.fn(),
+    cookies: vi.fn(async () => ({
+      tabId: 'tab1',
+      cookies: cookiePresent ? [SESSION_COOKIE] : [],
+    })),
+  } as unknown as BrowserMcpAdapter;
+}
+
+describe('runBrowserLoginPhase — cookie-endpoint auth propagation (#171)', () => {
+  it('cookie auth: navigate(baseUrl) is called so the browser tab exists before the in-browser fetch', async () => {
+    const browser = makeCookieAuthBrowser();
+    const surface = makeMockSurface();
+    const config = makeMinimalConfig({ auth: COOKIE_AUTH_CONFIG, appBaseUrl: APP_BASE_URL });
+
+    await runBrowserLoginPhase(config, browser, surface, ['owner']);
+
+    // navigate must be called with appBaseUrl to open a browser tab before evaluate()
+    const navigateCalls = (browser.navigate as ReturnType<typeof vi.fn>).mock.calls;
+    expect(navigateCalls.length).toBeGreaterThan(0);
+    expect(navigateCalls[0]?.[0]).toBe(APP_BASE_URL);
+  });
+
+  it('cookie auth: login succeeds and phase returns skipped=false with loginRole', async () => {
+    const browser = makeCookieAuthBrowser({ cookiePresent: true });
+    const surface = makeMockSurface();
+    const config = makeMinimalConfig({ auth: COOKIE_AUTH_CONFIG, appBaseUrl: APP_BASE_URL });
+
+    const result = await runBrowserLoginPhase(config, browser, surface, ['owner']);
+
+    expect(result.skipped).toBe(false);
+    if (!result.skipped) {
+      expect(result.loginRole).toBe('owner');
+      expect(result.skipItem).toBeUndefined();
+    }
+  });
+
+  it('cookie auth: evaluate is called with credentials-include fetch script (#171)', async () => {
+    const browser = makeCookieAuthBrowser();
+    const surface = makeMockSurface();
+    const config = makeMinimalConfig({ auth: COOKIE_AUTH_CONFIG, appBaseUrl: APP_BASE_URL });
+
+    await runBrowserLoginPhase(config, browser, surface, ['owner']);
+
+    const evaluateCalls = (browser.evaluate as ReturnType<typeof vi.fn>).mock.calls;
+    expect(evaluateCalls.length).toBeGreaterThan(0);
+    const script = evaluateCalls[0]?.[0] as string;
+    expect(script).toContain('credentials');
+    expect(script).toContain('include');
+    // The fetch runs AFTER navigate — verify call order
+    const navOrder = (browser.navigate as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0] ?? 0;
+    const evalOrder = (browser.evaluate as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0] ?? Infinity;
+    expect(navOrder).toBeLessThan(evalOrder);
+  });
+
+  it('cookie auth: missing session cookie after fetch → skipItem set, phase not skipped', async () => {
+    const browser = makeCookieAuthBrowser({ cookiePresent: false });
+    const surface = makeMockSurface();
+    const config = makeMinimalConfig({ auth: COOKIE_AUTH_CONFIG, appBaseUrl: APP_BASE_URL });
+
+    const result = await runBrowserLoginPhase(config, browser, surface, ['owner']);
+
+    expect(result.skipped).toBe(false);
+    if (!result.skipped) {
+      expect(result.skipItem).toBeDefined();
+      expect(result.skipItem?.reason).toContain('browser_login_');
+    }
   });
 });
