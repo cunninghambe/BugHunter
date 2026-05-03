@@ -1608,7 +1608,13 @@ export async function runMultiSurfacePipeline(
       continue;
     }
 
-    const surfaceConfig = mergePerSurfaceConfig(config, summary.name);
+    // audit fix #8: override appBaseUrl with the surface topology's baseUrl so the
+    // race-runner (and any other per-surface path) dispatches against the correct port
+    // (e.g. race-bad:9994) instead of the global appBaseUrl (self-spa:5790).
+    const surfaceConfig = {
+      ...mergePerSurfaceConfig(config, summary.name),
+      appBaseUrl: summary.baseUrl,
+    };
     const boundAdapter = new BoundSurfaceMcpAdapter(surface, summary.name);
 
     log.info('multi_surface: running pipeline for surface', { surface: summary.name });
