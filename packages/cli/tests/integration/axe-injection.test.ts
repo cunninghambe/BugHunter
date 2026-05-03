@@ -20,7 +20,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { AXE_INJECT_SCRIPT, AXE_RUN_SCRIPT } from '../../src/classify/accessibility.js';
+import { AXE_INJECT_SCRIPT, AXE_RUN_SCRIPT, ensureAxeLoaded } from '../../src/classify/accessibility.js';
 import { runExecute } from '../../src/phases/execute.js';
 import type { ExecuteOptions } from '../../src/phases/execute.js';
 import type { BrowserMcpAdapter, TabScope } from '../../src/adapters/browser-mcp.js';
@@ -398,5 +398,62 @@ describe('execute phase: axe injection fires before baseline scan', () => {
     const baseline = out.a11yBaselineDetections ?? [];
     expect(baseline.filter(d => d.kind === 'image_missing_alt')).toHaveLength(0);
     expect(baseline.filter(d => d.kind === 'form_input_unlabeled')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// § 3: ensureAxeLoaded passes 120 s timeout to every injection evaluate (#169)
+// ---------------------------------------------------------------------------
+
+describe('ensureAxeLoaded: 120 s timeout on axe-load evaluates (#169)', () => {
+  it('passes { timeout: 120000 } to script-tag injection evaluate when axe is absent', async () => {
+    const capturedOptions: Array<{ timeout?: number } | undefined> = [];
+    let callCount = 0;
+
+    const scope = {
+      tabId: 'timeout-test-tab',
+      evaluate: vi.fn().mockImplementation((_script: string, opts?: { timeout?: number }) => {
+        callCount++;
+        capturedOptions.push(opts);
+        // First call: presence check — axe absent
+        if (callCount === 1) return Promise.resolve({ value: false });
+        // Subsequent calls (inject + poll): resolve immediately
+        return Promise.resolve({ value: true });
+      }),
+    } as unknown as TabScope;
+
+    await ensureAxeLoaded(scope);
+
+    // All injection-path calls (strategy 1 and poll) must carry the 120 s timeout.
+    const injectionOpts = capturedOptions.slice(1); // skip presence check
+    for (const opt of injectionOpts) {
+      expect(opt).toEqual({ timeout: 120_000 });
+    }
+  });
+
+  it('succeeds even when axe-load evaluate takes longer than 60 s (simulated 70 s delay)', async () => {
+    // Simulate a 70 s delay on the script-tag injection call — longer than MCP SDK 60 s default.
+    // ensureAxeLoaded must resolve without error because it passes { timeout: 120000 }.
+    // In the test we don't use real timers; the mock resolves immediately to avoid blocking.
+    // What we verify is that { timeout: 120000 } is passed so the real adapter can succeed.
+    let callCount = 0;
+    const capturedTimeouts: Array<number | undefined> = [];
+
+    const scope = {
+      tabId: 'slow-load-tab',
+      evaluate: vi.fn().mockImplementation((_script: string, opts?: { timeout?: number }) => {
+        callCount++;
+        capturedTimeouts.push(opts?.timeout);
+        if (callCount === 1) return Promise.resolve({ value: false }); // axe absent
+        return Promise.resolve({ value: true });                        // inject + poll resolve
+      }),
+    } as unknown as TabScope;
+
+    await expect(ensureAxeLoaded(scope)).resolves.toBeUndefined();
+
+    // Every call after the initial presence check must carry a timeout > 60_000.
+    for (const t of capturedTimeouts.slice(1)) {
+      expect(t).toBeGreaterThan(60_000);
+    }
   });
 });

@@ -32,12 +32,19 @@ export const AXE_INJECT_SCRIPT: string = `(function(){if(!window.axe){${AXE_SOUR
 // "window.axe" substring — keeps test mocks from mistaking injection for an axe run call.
 const _AXE_SOURCE_B64: string = Buffer.from(AXE_SOURCE_TEXT).toString('base64');
 
+// Explicit 2-minute timeout for axe-load evaluates (#169).
+// The MCP SDK default is 60 s; the base64 axe.min.js (~564 KB) can take longer to evaluate.
+const AXE_LOAD_TIMEOUT = { timeout: 120_000 };
+
 /**
  * Ensures axe-core is available on the page by injecting it via a DOM script tag.
  *
  * Uses scope.evaluate() rather than browser.addInitScript() to avoid the 256 KB
  * init_script size limit in camofox-mcp (axe.min.js is ~564 KB). evaluate() goes
  * through CDP Runtime.evaluate which accepts up to 5–10 MB.
+ *
+ * All evaluate calls during injection use a 120 s timeout (#169) to avoid hitting
+ * the MCP SDK 60 s default when the base64 source takes time to parse/execute.
  *
  * Short-circuits if window.axe is already defined (safe for SPA nav reuse).
  * The source is base64-encoded so no inject-script contains "window.axe" as a literal
@@ -49,12 +56,12 @@ export async function ensureAxeLoaded(scope: TabScope): Promise<void> {
   if (checkResult.value !== false && checkResult.value !== null && checkResult.value !== undefined) return;
 
   // atob decodes the base64 source in-browser. The script body contains no "window.axe"
-  // literal since the source is opaque base64.
+  // literal since the source is opaque base64. 120 s timeout (#169) avoids MCP SDK 60 s default.
   await scope.evaluate(`(function(){
     var s = document.createElement('script');
     s.textContent = atob(${JSON.stringify(_AXE_SOURCE_B64)});
     document.head.appendChild(s);
-  })()`);
+  })()`, AXE_LOAD_TIMEOUT);
 
   // Poll until axe registers. Bracket notation keeps "window.axe" out of this script too.
   await scope.evaluate(`(function(){
@@ -65,7 +72,7 @@ export async function ensureAxeLoaded(scope: TabScope): Promise<void> {
       };
       check();
     });
-  })()`);
+  })()`, AXE_LOAD_TIMEOUT);
 }
 
 
