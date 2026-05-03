@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import type { BugHunterConfig } from './types.js';
 import { NotificationsConfigSchema } from './notify/types.js';
 import { interpolateChannel } from './notify/send.js';
+import { migrateLegacyCredentials } from './config-auth-migrate.js';
 
 export const DEFAULT_FORBIDDEN_PATHS = [
   'prisma/migrations/**',
@@ -136,13 +137,79 @@ const DataIntegrityConfigSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+// --- v0.55 auth schema ---
+
+const AuthCredentialSchema = z.object({
+  username: z.string().optional(),
+  password: z.string().optional(),
+  email: z.string().email().optional(),
+  token: z.string().optional(),
+  cookie: z.string().optional(),
+}).refine(
+  c => c.username !== undefined || c.email !== undefined || c.token !== undefined || c.cookie !== undefined,
+  { message: 'credentials entry needs at least one of username/email/token/cookie' },
+);
+
+const AuthSchema = z.union([
+  z.object({ kind: z.literal('none') }),
+  z.object({
+    kind: z.literal('bearer'),
+    token: z.string().min(1).optional(),
+    credentials: z.record(z.string(), AuthCredentialSchema).optional(),
+  }),
+  z.object({
+    kind: z.literal('form'),
+    loginUrl: z.string().optional(),
+    fields: z.object({
+      username: z.string().optional(),
+      password: z.string().optional(),
+      submit: z.string().optional(),
+    }).optional(),
+    successCheck: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('cookie'), name: z.string().min(1) }),
+      z.object({ kind: z.literal('redirect'), to: z.string().min(1) }),
+      z.object({ kind: z.literal('dom_signal'), selector: z.string().min(1) }),
+    ]).optional(),
+    logoutUrl: z.string().optional(),
+    credentials: z.record(z.string(), AuthCredentialSchema),
+  }),
+  z.object({
+    kind: z.literal('cookie'),
+    loginEndpoint: z.object({
+      method: z.literal('POST'),
+      url: z.string().min(1),
+      bodyShape: z.enum(['json', 'form-encoded']),
+      usernameField: z.string().default('email'),
+      passwordField: z.string().default('password'),
+    }),
+    cookieName: z.string().min(1),
+    logoutEndpoint: z.object({
+      method: z.literal('POST'),
+      url: z.string().min(1),
+    }).optional(),
+    credentials: z.record(z.string(), AuthCredentialSchema),
+  }),
+  z.object({
+    kind: z.literal('credentials'),
+    loginUrl: z.string().optional(),
+    loginEndpoint: z.string().optional(),
+    tokenStorage: z.enum(['httpOnly-cookie', 'localStorage', 'bearer-header']).optional(),
+    credentials: z.array(z.object({
+      role: z.string(),
+      email: z.string().email().optional(),
+      username: z.string().optional(),
+      password: z.string().optional(),
+    })).optional(),
+  }).transform(legacy => migrateLegacyCredentials(legacy)),
+]).optional();
+
 export const ConfigSchema = z.object({
   projectName: z.string().min(1),
   surfaceMcpUrl: z.string().url(),
   browserMcpUrl: z.string().url().optional(),
   roles: z.array(z.string()).optional(),
-  /** Top-level auth hint. When kind is 'none', browser login is skipped entirely. */
-  auth: z.object({ kind: z.literal('none') }).optional(),
+  /** Top-level auth hint. Accepts none/bearer/form/cookie. Legacy 'credentials' is migrated automatically. */
+  auth: AuthSchema,
   resetCommand: z.string().min(1).optional(),
   resetPolicy: z.enum(['transactional', 'per-test', 'per-page', 'per-run']).optional(),
   paletteOverridePath: z.string().optional(),
@@ -487,7 +554,10 @@ export function loadConfig(projectDir: string): BugHunterConfig {
   if (!result.success) {
     throw new Error(`Invalid .bughunter/config.json: ${result.error.message}`);
   }
-  const config = result.data;
+  // The Zod union with a .transform() branch produces a wider inferred type than
+  // BugHunterConfig. The transform always produces a valid AuthConfig, so this
+  // narrowing cast is safe.
+  const config = result.data as unknown as BugHunterConfig;
   // v0.48: Interpolate env vars in non-secret-bearing notification channels at
   // config-load time with loud Zod-style failure. Secret-bearing channels
   // (slack-channel, email) defer env check to send time.

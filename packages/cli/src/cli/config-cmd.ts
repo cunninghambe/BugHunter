@@ -56,7 +56,9 @@ function runValidate(projectDir: string): void {
     return;
   }
 
-  const config = result.data;
+  // The Zod union with a .transform() branch produces a wider inferred type than
+  // BugHunterConfig. The transform always produces a valid AuthConfig.
+  const config = result.data as unknown as BugHunterConfig;
 
   // Palette file (optional) — if present must parse as JSON
   const palettePath = path.join(projectDir, '.bughunter', 'palette.json');

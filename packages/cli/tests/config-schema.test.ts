@@ -234,3 +234,115 @@ describe('ConfigSchema feature flag declarations', () => {
     expect(() => ConfigSchema.parse(input)).toThrow();
   });
 });
+
+describe('AuthSchema — V55.1', () => {
+  it('accepts auth.kind: none', () => {
+    const result = ConfigSchema.parse({ ...MINIMAL_VALID, auth: { kind: 'none' } });
+    expect(result.auth).toEqual({ kind: 'none' });
+  });
+
+  it('accepts auth.kind: bearer with static token', () => {
+    const result = ConfigSchema.parse({
+      ...MINIMAL_VALID,
+      auth: { kind: 'bearer', token: 'tok_abc' },
+    });
+    expect(result.auth).toMatchObject({ kind: 'bearer', token: 'tok_abc' });
+  });
+
+  it('accepts auth.kind: bearer with credentials map', () => {
+    const result = ConfigSchema.parse({
+      ...MINIMAL_VALID,
+      auth: {
+        kind: 'bearer',
+        credentials: { admin: { username: 'admin', password: 'pw' } },
+      },
+    });
+    expect(result.auth).toMatchObject({ kind: 'bearer' });
+  });
+
+  it('accepts auth.kind: form with required credentials', () => {
+    const result = ConfigSchema.parse({
+      ...MINIMAL_VALID,
+      auth: {
+        kind: 'form',
+        loginUrl: '/login',
+        credentials: { member: { email: 'member@test.com', password: 'pw' } },
+      },
+    });
+    expect(result.auth).toMatchObject({ kind: 'form', loginUrl: '/login' });
+  });
+
+  it('accepts auth.kind: cookie with full shape', () => {
+    const result = ConfigSchema.parse({
+      ...MINIMAL_VALID,
+      auth: {
+        kind: 'cookie',
+        loginEndpoint: { method: 'POST', url: '/api/auth/login', bodyShape: 'json' },
+        cookieName: 'session',
+        credentials: { admin: { email: 'admin@test.com', password: 'Admin123!' } },
+      },
+    });
+    expect(result.auth).toMatchObject({ kind: 'cookie', cookieName: 'session' });
+  });
+
+  it('applies usernameField/passwordField defaults for cookie kind', () => {
+    const result = ConfigSchema.parse({
+      ...MINIMAL_VALID,
+      auth: {
+        kind: 'cookie',
+        loginEndpoint: { method: 'POST', url: '/api/auth/login', bodyShape: 'json' },
+        cookieName: 'bench_session',
+        credentials: { admin: { email: 'admin@test.com', password: 'pw' } },
+      },
+    });
+    const auth = result.auth as Extract<typeof result.auth, { kind: 'cookie' }>;
+    expect(auth?.loginEndpoint.usernameField).toBe('email');
+    expect(auth?.loginEndpoint.passwordField).toBe('password');
+  });
+
+  it('accepts legacy auth.kind: credentials and coerces to cookie', () => {
+    const result = ConfigSchema.parse({
+      ...MINIMAL_VALID,
+      auth: {
+        kind: 'credentials',
+        loginEndpoint: '/api/auth/login',
+        tokenStorage: 'httpOnly-cookie',
+        credentials: [
+          { role: 'admin', email: 'admin@bench.local', password: 'Admin123!' },
+          { role: 'member', email: 'member@bench.local', password: 'Member123!' },
+        ],
+      },
+    });
+    expect(result.auth).toMatchObject({ kind: 'cookie' });
+    const auth = result.auth as Extract<typeof result.auth, { kind: 'cookie' }>;
+    expect(auth?.credentials['admin']).toMatchObject({ email: 'admin@bench.local' });
+    expect(auth?.credentials['member']).toMatchObject({ email: 'member@bench.local' });
+  });
+
+  it('coerces legacy credentials with localStorage tokenStorage to form kind', () => {
+    const result = ConfigSchema.parse({
+      ...MINIMAL_VALID,
+      auth: {
+        kind: 'credentials',
+        loginUrl: '/login',
+        tokenStorage: 'localStorage',
+        credentials: [{ role: 'owner', email: 'owner@test.com', password: 'pw' }],
+      },
+    });
+    expect(result.auth).toMatchObject({ kind: 'form' });
+  });
+
+  it('rejects auth.kind: oauth with a validation error', () => {
+    expect(() =>
+      ConfigSchema.parse({
+        ...MINIMAL_VALID,
+        auth: { kind: 'oauth', providerUrl: 'https://accounts.google.com' },
+      })
+    ).toThrow();
+  });
+
+  it('config without auth field still parses cleanly', () => {
+    const result = ConfigSchema.parse(MINIMAL_VALID);
+    expect(result.auth).toBeUndefined();
+  });
+});

@@ -16,7 +16,7 @@ import { isDynamicRoute, expandDynamicRoute } from '../discovery/filesystem-page
 import { discoverPages } from '../discovery/pages.js';
 import { walkDom } from '../discovery/dom-walker.js';
 import { crawlFromSeeds } from '../discovery/crawler.js';
-import { loginInBrowser } from '../discovery/browser-login.js';
+import { loginInBrowser, loginViaCookieEndpoint, cookieEndpointPlanFromConfig } from '../discovery/browser-login.js';
 import { crossRefForms } from '../discovery/form-cross-ref.js';
 import { collapseElements } from '../discovery/element-collapse.js';
 import { classifyVisualAnomaliesConsistent } from '../classify/vision.js';
@@ -67,6 +67,31 @@ export async function runBrowserLoginPhase(
   }
 
   const baseUrl = config.appBaseUrl ?? new URL(config.surfaceMcpUrl).origin;
+
+  // V55.2: cookie-endpoint path — config.auth.kind === 'cookie' uses programmatic POST.
+  if (config.auth?.kind === 'cookie') {
+    const cookieAuth = config.auth;
+    // Ask SurfaceMCP first; fall back to synthesising a plan from BugHunter config.
+    let plan;
+    try {
+      const smcpPlan = await surface.surface_describe_auth({ role: loginRole });
+      plan = smcpPlan.authKind === 'cookie_endpoint'
+        ? smcpPlan
+        : cookieEndpointPlanFromConfig(cookieAuth);
+    } catch {
+      plan = cookieEndpointPlanFromConfig(cookieAuth);
+    }
+    const result = await loginViaCookieEndpoint(browser, plan, cookieAuth, loginRole, baseUrl);
+    log.info(`browser_login: cookie_endpoint`, { role: loginRole, kind: 'cookie', ok: result.ok });
+    if (result.ok) return { skipped: false, loginRole };
+    log.warn(`browser_login: cookie_endpoint failed (role=${loginRole}, reason=${result.reason}): ${result.detail}`);
+    return {
+      skipped: false,
+      loginRole,
+      skipItem: { route: '<login>', reason: `browser_login_${result.reason}` },
+    };
+  }
+
   const result = await loginInBrowser(browser, surface, {
     role: loginRole,
     baseUrl,
