@@ -507,167 +507,253 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   });
   seedHookTelemetry.push(...beforeRunResults);
 
+  // Aggregation arrays populated by the per-surface callback inside runMultiSurfacePipeline.
+  type DiscoveryOutput = Awaited<ReturnType<typeof runDiscover>>;
+  const surfaceDiscoveries: DiscoveryOutput[] = [];
+  const aggTestCases: TestCase[] = [];
+  const aggResults: TestResult[] = [];
+  const aggSkipReasons: Array<{ reason: string; count: number }> = [];
+  let aggProjectedRuntimeMs = 0;
+  let aggPlanSkipReasons: Array<{ reason: string; count: number }> = [];
+  const aggHeaderProbeDetections: BugDetection[] = [];
+  const aggPerfArtifacts: Map<string, PerfArtifacts> = new Map();
+  const aggA11yBaselineDetections: BugDetection[] = [];
+  const aggSeoDetections: BugDetection[] = [];
+  const aggBrowserPlatformDetections: BugDetection[] = [];
+  let aggBrowserPlatformTelemetry: Awaited<ReturnType<typeof runExecute>>['browserPlatformTelemetry'];
+  let aggCdpSessionHandle: CdpSession | undefined;
+
   try {
-    // Phase 1: discover
-    const discovery = await runDiscover(
-      opts.projectDir,
-      resolved,
-      effectiveRoles,
-      runId,
+    // Resolve surface topology (v0.3 multi-surface or legacy single-surface shim).
+    const topology = await resolveSurfaceTopology(surface);
+
+    await runMultiSurfacePipeline(
       surface,
-      browser,
-      opts.route,
-      visionClient,
-      visionBudget,
-    );
-    runState.discovery = discovery;
-    runState.phase = 'plan';
-    saveRunState(runState);
-
-    // Seed afterLogin / perRole — fires once per login role after discover completes.
-    // Discover performs a single browser login for the configured role; we mirror that here.
-    const loginRole = resolved.browserLogin?.role ?? effectiveRoles[0];
-    if (loginRole !== '') {
-      const afterLoginResults = await runSeedHooksAt(resolved.seedHooks?.afterLogin, {
-        ...seedCtxBase, role: loginRole, lifecyclePoint: 'afterLogin',
-      });
-      seedHookTelemetry.push(...afterLoginResults);
-
-      const perRoleHooks = resolved.seedHooks?.perRole?.[loginRole];
-      if (perRoleHooks !== undefined) {
-        const perRoleResults = await runSeedHooksAt(perRoleHooks, {
-          ...seedCtxBase, role: loginRole, lifecyclePoint: 'perRole',
-        });
-        seedHookTelemetry.push(...perRoleResults);
-      }
-
-      // Warn for any perRole keys that don't match the active login role.
-      for (const configuredRole of Object.keys(resolved.seedHooks?.perRole ?? {})) {
-        if (configuredRole !== loginRole) {
-          log.info('seed: perRole hook skipped (role not in active roles)', { role: configuredRole });
-        }
-      }
-    }
-
-    // Phase 1.5: form-reachability probe (runs after discover, before plan)
-    let probeResults: Map<ProbeKey, ProbeResult> | undefined;
-    if (browser !== undefined && resolved.browserLogin?.enabled !== false) {
-      const asyncMaxWaitMs = opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs;
-      const appBaseUrl = resolved.appBaseUrl ?? new URL(resolved.surfaceMcpUrl).origin;
-      const { results: probeResultMap, telemetry } = await runFormReachabilityProbes({
-        browser,
-        appBaseUrl,
-        pages: discovery.pages,
-        roles: effectiveRoles,
-        runId,
-        extraHeaders: resolved.extraHeaders,
-        asyncMaxWaitMs,
-        perProbeTimeoutMs: 5000,
-        budgetMs: 60_000,
-      });
-      probeResults = probeResultMap;
-      // Attach telemetry to discovery so it lands in state.json
-      runState.discovery = { ...discovery, probe: { telemetry } };
-      saveRunState(runState);
-      log.info('form-reachability-probe: complete', { ...telemetry });
-    }
-
-    // Phase 2: plan
-    const { testCases, projectedRuntimeMs, skipReasons: planSkipReasons } = await runPlan(
-      runId,
-      discovery,
+      topology,
       resolved,
-      effectiveRoles,
-      surface,
-      probeResults,
-    );
-    runState.testCases = testCases;
-    runState.phase = 'execute';
-    saveRunState(runState);
+      async (boundAdapter, surfaceConfig, surfaceName) => {
+        // Phase 1: discover (scoped to this surface via boundAdapter)
+        const discovery = await runDiscover(
+          opts.projectDir,
+          surfaceConfig,
+          effectiveRoles,
+          runId,
+          boundAdapter,
+          browser,
+          opts.route,
+          visionClient,
+          visionBudget,
+        );
+        surfaceDiscoveries.push(discovery);
+        runState.discovery = discovery;
+        runState.phase = 'plan';
+        saveRunState(runState);
 
-    // Seed beforeExecute — fires after plan, before execute phase.
-    const beforeExecuteResults = await runSeedHooksAt(resolved.seedHooks?.beforeExecute, {
-      ...seedCtxBase, lifecyclePoint: 'beforeExecute',
-    });
-    seedHookTelemetry.push(...beforeExecuteResults);
-
-    // Page URLs for header probing — one per discovered page route.
-    const pageUrls = discovery.pages.map(p => p.route);
-
-    // v0.6: create perf collector when --enable-perf is set
-    let perfCollector: PerfCollector | undefined;
-    let cdpSessionHandle: CdpSession | undefined;
-
-    if (perfEnabled) {
-      const cdpResult = await createCdpSession();
-      if (cdpResult.ok) {
-        const rPaths = runPaths(opts.projectDir, runId);
-        const perfDir = `${rPaths.runDir}/perf`;
-        try {
-          perfCollector = createPerfCollector({
-            cdpSession: cdpResult.session,
-            perfDir,
-            networkDir: rPaths.networkDir,
-            heapSampling,
+        // Seed afterLogin / perRole — fires once per login role after discover completes.
+        const loginRole = surfaceConfig.browserLogin?.role ?? effectiveRoles[0];
+        if (loginRole !== '') {
+          const afterLoginResults = await runSeedHooksAt(resolved.seedHooks?.afterLogin, {
+            ...seedCtxBase, role: loginRole, lifecyclePoint: 'afterLogin',
           });
-          cdpSessionHandle = cdpResult.session;
-          log.info('perf-collector: CDP session started');
-        } catch (err) {
-          log.warn('perf-collector: failed to create collector', { err: String(err) });
+          seedHookTelemetry.push(...afterLoginResults);
+
+          const perRoleHooks = resolved.seedHooks?.perRole?.[loginRole];
+          if (perRoleHooks !== undefined) {
+            const perRoleResults = await runSeedHooksAt(perRoleHooks, {
+              ...seedCtxBase, role: loginRole, lifecyclePoint: 'perRole',
+            });
+            seedHookTelemetry.push(...perRoleResults);
+          }
+
+          for (const configuredRole of Object.keys(resolved.seedHooks?.perRole ?? {})) {
+            if (configuredRole !== loginRole) {
+              log.info('seed: perRole hook skipped (role not in active roles)', { role: configuredRole });
+            }
+          }
         }
-      } else {
-        log.warn('perf-collector: failed to start CDP session', { reason: cdpResult.reason });
-      }
-    }
 
-    // Phase 3: execute
-    const { results, abortReason, skipReasons, headerProbeDetections, perfArtifacts, a11yBaselineDetections, seoDetections, browserPlatformDetections, browserPlatformTelemetry } = await runExecute({
-      testCases,
-      runState,
-      browser,
-      surface,
-      maxBugs: resolved.maxBugs,
-      maxRuntimeMs: resolved.maxRuntimeMs,
-      budgetMs: resolved.budgetMs,
-      concurrency: resolved.concurrency,
-      apiConcurrency: resolved.apiConcurrency,
-      onClusterFound: () => runState.clusterCount,
-      extraHeaders: resolved.extraHeaders,
-      enableA11y: resolved.enableA11y,
-      appBaseUrl: resolved.appBaseUrl,
-      visionEnabled,
-      visionConfig: resolved.vision,
-      visionClient,
-      visionBudget,
-      headerProbeEnabled: resolved.headers?.enabled ?? true,
-      pageUrls,
-      perfCollector,
-      a11yStrict: resolved.a11yStrict ?? false,
-      seoEnabled: resolved.seoEnabled ?? false,
-      seoSuppressDuplicateTitles: resolved.seoSuppressDuplicateTitles ?? false,
-      keyboardTrapMaxPresses: resolved.keyboardTrapMaxPresses ?? 20,
-      asyncMaxWaitMs: opts.formReachabilityTimeout ?? resolved.asyncMaxWaitMs,
-      discoveryPages: discovery.pages,
-      fixtureUnresolvableRoutes: new Set(discovery.fixtureUnresolvableRoutes ?? []),
-      browserPlatformOpts,
-    });
+        // Phase 1.5: form-reachability probe (runs after discover, before plan)
+        let probeResults: Map<ProbeKey, ProbeResult> | undefined;
+        if (browser !== undefined && surfaceConfig.browserLogin?.enabled !== false) {
+          const asyncMaxWaitMs = opts.formReachabilityTimeout ?? surfaceConfig.asyncMaxWaitMs ?? resolved.asyncMaxWaitMs;
+          const appBaseUrl = surfaceConfig.appBaseUrl ?? new URL(surfaceConfig.surfaceMcpUrl).origin;
+          const { results: probeResultMap, telemetry } = await runFormReachabilityProbes({
+            browser,
+            appBaseUrl,
+            pages: discovery.pages,
+            roles: effectiveRoles,
+            runId,
+            extraHeaders: surfaceConfig.extraHeaders,
+            asyncMaxWaitMs,
+            perProbeTimeoutMs: 5000,
+            budgetMs: 60_000,
+          });
+          probeResults = probeResultMap;
+          runState.discovery = { ...discovery, probe: { telemetry } };
+          saveRunState(runState);
+          log.info('form-reachability-probe: complete', { ...telemetry });
+        }
 
-    // Close CDP session after execute completes
-    if (cdpSessionHandle !== undefined) {
-      await cdpSessionHandle.close().catch(err =>
-        log.warn('perf-collector: CDP session close failed', { err: String(err) })
-      );
-    }
+        // Phase 2: plan
+        const { testCases, projectedRuntimeMs, skipReasons: planSkipReasons } = await runPlan(
+          runId,
+          discovery,
+          surfaceConfig,
+          effectiveRoles,
+          boundAdapter,
+          probeResults,
+        );
+        aggTestCases.push(...testCases);
+        aggProjectedRuntimeMs += projectedRuntimeMs;
+        aggPlanSkipReasons = [...aggPlanSkipReasons, ...planSkipReasons];
+        runState.testCases = aggTestCases;
+        runState.phase = 'execute';
+        saveRunState(runState);
 
-    if (abortReason !== undefined) {
-      log.warn(`Run stopped: ${abortReason}`);
-      runState.partialEmit = true;
-    }
-    runState.skipReasons = skipReasons;
+        // Seed beforeExecute — fires after plan, before execute phase.
+        const beforeExecuteResults = await runSeedHooksAt(resolved.seedHooks?.beforeExecute, {
+          ...seedCtxBase, lifecyclePoint: 'beforeExecute',
+        });
+        seedHookTelemetry.push(...beforeExecuteResults);
 
-    runState.testResults = results;
-    runState.phase = 'classify';
-    saveRunState(runState);
+        const pageUrls = discovery.pages.map(p => p.route);
+
+        // v0.6: create perf collector when --enable-perf is set
+        let perfCollector: PerfCollector | undefined;
+        let cdpSessionHandle: CdpSession | undefined;
+
+        if (perfEnabled) {
+          const cdpResult = await createCdpSession();
+          if (cdpResult.ok) {
+            const rPaths = runPaths(opts.projectDir, runId);
+            const perfDir = `${rPaths.runDir}/perf`;
+            try {
+              perfCollector = createPerfCollector({
+                cdpSession: cdpResult.session,
+                perfDir,
+                networkDir: rPaths.networkDir,
+                heapSampling,
+              });
+              cdpSessionHandle = cdpResult.session;
+              aggCdpSessionHandle = cdpSessionHandle;
+              log.info('perf-collector: CDP session started');
+            } catch (err) {
+              log.warn('perf-collector: failed to create collector', { err: String(err) });
+            }
+          } else {
+            log.warn('perf-collector: failed to start CDP session', { reason: cdpResult.reason });
+          }
+        }
+
+        // Phase 3: execute
+        const executeOut = await runExecute({
+          testCases,
+          runState,
+          browser,
+          surface: boundAdapter,
+          maxBugs: surfaceConfig.maxBugs ?? resolved.maxBugs,
+          maxRuntimeMs: surfaceConfig.maxRuntimeMs ?? resolved.maxRuntimeMs,
+          budgetMs: surfaceConfig.budgetMs,
+          concurrency: surfaceConfig.concurrency ?? resolved.concurrency,
+          apiConcurrency: surfaceConfig.apiConcurrency ?? resolved.apiConcurrency,
+          onClusterFound: () => runState.clusterCount,
+          extraHeaders: surfaceConfig.extraHeaders,
+          enableA11y: surfaceConfig.enableA11y,
+          appBaseUrl: surfaceConfig.appBaseUrl,
+          visionEnabled,
+          visionConfig: surfaceConfig.vision,
+          visionClient,
+          visionBudget,
+          headerProbeEnabled: surfaceConfig.headers?.enabled ?? true,
+          pageUrls,
+          perfCollector,
+          a11yStrict: surfaceConfig.a11yStrict ?? false,
+          seoEnabled: surfaceConfig.seoEnabled ?? false,
+          seoSuppressDuplicateTitles: surfaceConfig.seoSuppressDuplicateTitles ?? false,
+          keyboardTrapMaxPresses: surfaceConfig.keyboardTrapMaxPresses ?? 20,
+          asyncMaxWaitMs: opts.formReachabilityTimeout ?? surfaceConfig.asyncMaxWaitMs,
+          discoveryPages: discovery.pages,
+          fixtureUnresolvableRoutes: new Set(discovery.fixtureUnresolvableRoutes ?? []),
+          browserPlatformOpts,
+        });
+
+        // Close CDP session after execute completes
+        if (cdpSessionHandle !== undefined) {
+          await cdpSessionHandle.close().catch(err =>
+            log.warn('perf-collector: CDP session close failed', { err: String(err) })
+          );
+        }
+
+        if (executeOut.abortReason !== undefined) {
+          log.warn(`Run stopped: ${executeOut.abortReason}`);
+          runState.partialEmit = true;
+        }
+
+        // Bug 2: stamp detection.surface on every detection that doesn't already have one.
+        for (const result of executeOut.results) {
+          for (const d of result.bugs) {
+            d.surface ??= surfaceName;
+          }
+        }
+
+        aggResults.push(...executeOut.results);
+        aggSkipReasons.push(...executeOut.skipReasons);
+        if (executeOut.headerProbeDetections !== undefined) {
+          aggHeaderProbeDetections.push(...executeOut.headerProbeDetections);
+        }
+        if (executeOut.perfArtifacts !== undefined) {
+          for (const [k, v] of executeOut.perfArtifacts) aggPerfArtifacts.set(k, v);
+        }
+        if (executeOut.a11yBaselineDetections !== undefined) {
+          aggA11yBaselineDetections.push(...executeOut.a11yBaselineDetections);
+        }
+        if (executeOut.seoDetections !== undefined) {
+          aggSeoDetections.push(...executeOut.seoDetections);
+        }
+        if (executeOut.browserPlatformDetections !== undefined) {
+          aggBrowserPlatformDetections.push(...executeOut.browserPlatformDetections);
+        }
+        if (executeOut.browserPlatformTelemetry !== undefined) {
+          aggBrowserPlatformTelemetry ??= executeOut.browserPlatformTelemetry;
+        }
+
+        runState.skipReasons = aggSkipReasons;
+        runState.testResults = aggResults;
+        runState.phase = 'classify';
+        saveRunState(runState);
+      },
+    );
+
+    // Build a merged discovery view from all surface discoveries for downstream phases.
+    const discovery: DiscoveryOutput = surfaceDiscoveries.length === 1
+      ? surfaceDiscoveries[0]
+      : {
+          pages: surfaceDiscoveries.flatMap(d => d.pages),
+          apiTools: surfaceDiscoveries.flatMap(d => d.apiTools),
+          skipList: surfaceDiscoveries.flatMap(d => d.skipList),
+          visualBaselineDetections: surfaceDiscoveries.flatMap(d => d.visualBaselineDetections ?? []),
+          staticDetections: surfaceDiscoveries.flatMap(d => d.staticDetections ?? []),
+          fixtureUnresolvableRoutes: surfaceDiscoveries.flatMap(d => d.fixtureUnresolvableRoutes ?? []),
+          localeStressDetections: surfaceDiscoveries.flatMap(d => d.localeStressDetections ?? []),
+          crawlTelemetry: surfaceDiscoveries[surfaceDiscoveries.length - 1]?.crawlTelemetry,
+          visionBaselineTelemetry: surfaceDiscoveries[surfaceDiscoveries.length - 1]?.visionBaselineTelemetry,
+          visionConsistencyTelemetry: surfaceDiscoveries[surfaceDiscoveries.length - 1]?.visionConsistencyTelemetry,
+          visionByViewport: surfaceDiscoveries[surfaceDiscoveries.length - 1]?.visionByViewport,
+        };
+
+    // Unpack aggregated execute outputs for downstream phases.
+    const results = aggResults;
+    const testCases = aggTestCases;
+    const planSkipReasons = aggPlanSkipReasons;
+    const projectedRuntimeMs = aggProjectedRuntimeMs;
+    const skipReasons = aggSkipReasons;
+    const headerProbeDetections = aggHeaderProbeDetections.length > 0 ? aggHeaderProbeDetections : undefined;
+    const perfArtifacts = aggPerfArtifacts.size > 0 ? aggPerfArtifacts : undefined;
+    const a11yBaselineDetections = aggA11yBaselineDetections.length > 0 ? aggA11yBaselineDetections : undefined;
+    const seoDetections = aggSeoDetections.length > 0 ? aggSeoDetections : undefined;
+    const browserPlatformDetections = aggBrowserPlatformDetections.length > 0 ? aggBrowserPlatformDetections : undefined;
+    const browserPlatformTelemetry = aggBrowserPlatformTelemetry;
+    const cdpSessionHandle = aggCdpSessionHandle;
 
     // Phase 3.5: cross-user IDOR probe (runs after execute, before classify).
     // v0.21: --idor / --no-idor flags override config.idor.enabled.
