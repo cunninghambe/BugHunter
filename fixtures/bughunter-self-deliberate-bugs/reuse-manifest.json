@@ -281,6 +281,21 @@
       "port": 5790,
       "route": "/long-task"
     },
+    "n_plus_one_api_calls": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/n-plus-one"
+    },
+    "request_dedup_missing": {
+      "fixture": "self",
+      "port": 5790,
+      "route": "/dedup"
+    },
+    "request_cancellation_missing": {
+      "fixture": "v24-deferred-bugs",
+      "port": 5780,
+      "route": "/cancel"
+    },
     "csrf_missing_on_mutating_route": {
       "fixture": "self",
       "port": 5791,
@@ -473,7 +488,6 @@
     "memory_leak_attributed",
     "memory_leak_suspected",
     "multi_user_inconsistent_snapshot",
-    "n_plus_one_api_calls",
     "orientation_change_layout_break",
     "oversized_bundle",
     "paste_handler_failure",
@@ -481,8 +495,6 @@
     "print_stylesheet_broken",
     "pull_to_refresh_conflict",
     "reduced_motion_violation",
-    "request_cancellation_missing",
-    "request_dedup_missing",
     "soft_keyboard_occlusion",
     "streaming_response_truncated",
     "tool_call_failure_unhandled",
