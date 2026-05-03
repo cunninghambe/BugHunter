@@ -606,6 +606,47 @@ function isMutatingTestCase(tc: TestCase, toolMap: Map<string, ToolMeta> | undef
 }
 
 /**
+ * Returns true when a 4xx response is an expected validation rejection of mutator-generated
+ * bad inputs — not a real bug. 5xx responses and empty bodies are never suppressed.
+ * @internal exported for unit tests only
+ */
+export function isMutatorValidationRejection(tc: TestCase, callResult: SurfaceCallResult): boolean {
+  const fromMutator = tc.fuzzMeta !== undefined
+    || tc.action.palette === 'fuzz'
+    || tc.action.palette === 'null'
+    || tc.action.palette === 'edge'
+    || tc.action.palette === 'out_of_bounds';
+  if (!fromMutator) return false;
+
+  const status = callResult.status ?? 0;
+  if (status < 400 || status >= 500) return false;
+
+  const { body } = callResult;
+  if (body === undefined || body === null) return false;
+  const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+  if (bodyStr.trim().length === 0) return false;
+
+  // ZodError shape
+  if (typeof body === 'object' && 'issues' in body && Array.isArray((body as Record<string, unknown>).issues)) {
+    return true;
+  }
+  // Generic validation message in JSON
+  if (typeof body === 'object' && 'error' in body) {
+    const errStr = String((body as Record<string, unknown>).error).toLowerCase();
+    if (errStr.includes('valid') || errStr.includes('invalid') || errStr.includes('bad request') || errStr.includes('zod')) return true;
+  }
+  // Header signals
+  const headers: Record<string, string> = callResult.headers ?? {};
+  const lowerHeaders: Record<string, string> = Object.fromEntries(
+    Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]),
+  );
+  if ((lowerHeaders['x-error-type'] ?? '').toLowerCase().includes('valid')) return true;
+  if ((lowerHeaders['content-type'] ?? '').toLowerCase().includes('validation')) return true;
+
+  return false;
+}
+
+/**
  * Fetch robots.txt for the given origin. Returns null on any error.
  * Cached in-memory for the life of the execute phase.
  */
@@ -1510,20 +1551,22 @@ async function executeApiTest(
       if (callResult.ok !== true && tc.action.palette === 'happy') {
         const status = callResult.status ?? 0;
         if (status >= 400 && status < 500) {
-          const meta = toolMap?.get(tc.action.toolId);
-          const endpoint = meta !== undefined
-            ? `${meta.method} ${normalizePath(meta.path)}`
-            : tc.action.toolId;
-          if (meta === undefined) {
-            log.debug(`toolMap miss for toolId ${tc.action.toolId}; using bare id as endpoint`);
+          if (!isMutatorValidationRejection(tc, callResult)) {
+            const meta = toolMap?.get(tc.action.toolId);
+            const endpoint = meta !== undefined
+              ? `${meta.method} ${normalizePath(meta.path)}`
+              : tc.action.toolId;
+            if (meta === undefined) {
+              log.debug(`toolMap miss for toolId ${tc.action.toolId}; using bare id as endpoint`);
+            }
+            bugs.push({
+              kind: 'surface_call_failed',
+              rootCause: `surface_call failed with status ${status} for tool ${tc.action.toolId}`,
+              endpoint,
+              status,
+              responseBodyShape: callResult.error?.message,
+            });
           }
-          bugs.push({
-            kind: 'surface_call_failed',
-            rootCause: `surface_call failed with status ${status} for tool ${tc.action.toolId}`,
-            endpoint,
-            status,
-            responseBodyShape: callResult.error?.message,
-          });
         }
       }
 
