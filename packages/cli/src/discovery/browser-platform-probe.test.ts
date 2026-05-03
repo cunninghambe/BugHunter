@@ -274,21 +274,22 @@ describe('classifyBrowserPlatform', () => {
   });
 
   describe('coop_coep_violation', () => {
-    it('fires when crossOriginIsolated is false but SAB is referenced', () => {
+    it('fires when SAB is instantiated and crossOriginIsolated is false', () => {
       const envelope = makeEnvelope({
-        isolation: { crossOriginIsolated: false, sabReferenced: true, sabInstantiated: false },
+        isolation: { crossOriginIsolated: false, sabReferenced: true, sabInstantiated: true },
       });
       const detections = classifyBrowserPlatform(envelope, BASE_OPTS);
       expect(detections).toHaveLength(1);
       expect(detections[0].kind).toBe('coop_coep_violation');
     });
 
-    it('fires when crossOriginIsolated is false but SAB is instantiated', () => {
+    it('fires when SAB is instantiated without prior reference flag', () => {
       const envelope = makeEnvelope({
         isolation: { crossOriginIsolated: false, sabReferenced: false, sabInstantiated: true },
       });
       const detections = classifyBrowserPlatform(envelope, BASE_OPTS);
       expect(detections).toHaveLength(1);
+      expect(detections[0].kind).toBe('coop_coep_violation');
     });
 
     it('does NOT fire when crossOriginIsolated is true', () => {
@@ -301,6 +302,21 @@ describe('classifyBrowserPlatform', () => {
     it('does NOT fire when neither SAB ref nor instantiation', () => {
       const envelope = makeEnvelope({
         isolation: { crossOriginIsolated: false, sabReferenced: false, sabInstantiated: false },
+      });
+      expect(classifyBrowserPlatform(envelope, BASE_OPTS)).toHaveLength(0);
+    });
+
+    it('does NOT fire when SAB is only referenced by a polyfill but never instantiated', () => {
+      // typeof SharedArrayBuffer !== 'undefined' sets sabReferenced but not sabInstantiated
+      const envelope = makeEnvelope({
+        isolation: { crossOriginIsolated: false, sabReferenced: true, sabInstantiated: false },
+      });
+      expect(classifyBrowserPlatform(envelope, BASE_OPTS)).toHaveLength(0);
+    });
+
+    it('does NOT fire for typeof SharedArrayBuffer feature-detection guard with no allocation', () => {
+      const envelope = makeEnvelope({
+        isolation: { crossOriginIsolated: false, sabReferenced: true, sabInstantiated: false },
       });
       expect(classifyBrowserPlatform(envelope, BASE_OPTS)).toHaveLength(0);
     });
@@ -344,7 +360,7 @@ describe('classifyBrowserPlatform', () => {
     const envelope = makeEnvelope({
       workers: { errors: [{ scriptUrl: '/w.js', kind: 'error', errorMsg: 'fail' }] },
       trustedTypes: { violations: [{ sample: 's', blockedURI: 'b', effectiveDirective: 'r' }] },
-      isolation: { crossOriginIsolated: false, sabReferenced: true, sabInstantiated: false },
+      isolation: { crossOriginIsolated: false, sabReferenced: true, sabInstantiated: true },
     });
     const detections = classifyBrowserPlatform(envelope, BASE_OPTS);
     expect(detections).toHaveLength(3);
