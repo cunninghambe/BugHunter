@@ -10,7 +10,9 @@
       "watchPaths": [],
       "watchIgnore": [],
       "auth": { "kind": "none" },
-      "roles": [],
+      "roles": [
+        { "name": "anonymous", "credentials": {} }
+      ],
       "excludedRoutes": []
     },
     {
@@ -23,7 +25,9 @@
       "watchPaths": ["src"],
       "watchIgnore": [],
       "auth": { "kind": "none" },
-      "roles": [],
+      "roles": [
+        { "name": "anonymous", "credentials": {} }
+      ],
       "excludedRoutes": []
     },
     {
@@ -36,7 +40,9 @@
       "watchPaths": [],
       "watchIgnore": [],
       "auth": { "kind": "none" },
-      "roles": [],
+      "roles": [
+        { "name": "anonymous", "credentials": {} }
+      ],
       "excludedRoutes": []
     },
     {
@@ -50,6 +56,7 @@
       "watchIgnore": [],
       "auth": { "kind": "none" },
       "roles": [
+        { "name": "anonymous", "credentials": {} },
         { "name": "alice", "credentials": { "userId": "alice" } },
         { "name": "bob", "credentials": { "userId": "bob" } },
         { "name": "admin", "credentials": { "userId": "admin" } }
@@ -66,7 +73,9 @@
       "watchPaths": ["src"],
       "watchIgnore": [],
       "auth": { "kind": "none" },
-      "roles": [],
+      "roles": [
+        { "name": "anonymous", "credentials": {} }
+      ],
       "excludedRoutes": []
     },
     {
@@ -79,7 +88,9 @@
       "watchPaths": [],
       "watchIgnore": [],
       "auth": { "kind": "none" },
-      "roles": [],
+      "roles": [
+        { "name": "anonymous", "credentials": {} }
+      ],
       "excludedRoutes": []
     }
   ]

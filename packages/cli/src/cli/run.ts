@@ -8,7 +8,8 @@ import { loadHar, loadNormalizeConfig, makeHarReplayer } from '../adapters/har-r
 import type { HarReplayer } from '../adapters/har-replay.js';
 import { initRunState, saveRunState, loadRunState } from '../store/run-state.js';
 import { runPaths } from '../store/filesystem.js';
-import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
+import { HttpSurfaceMcpAdapter, BoundSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
+import type { SurfaceListSurfacesResult, SurfaceSummary } from '../adapters/surface-mcp.js';
 import { makeBrowserAdapter, assertMcpHttpCompatible } from '../adapters/browser-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import { AnthropicVisionClient } from '../adapters/vision-client.js';
@@ -1429,4 +1430,102 @@ function buildReadOnlyTelemetry(
     blockedAtRuntime: 0,
     banner,
   };
+}
+
+/**
+ * v0.43+: Merge per-surface config overrides on top of the global config.
+ * The merged config is passed to runDiscover/runPlan/runExecute for a specific surface.
+ * Single-surface configs with no `config.surfaces` map fall through unchanged.
+ */
+export function mergePerSurfaceConfig(config: BugHunterConfig, surfaceName: string): BugHunterConfig {
+  const override = config.surfaces?.[surfaceName] ?? {};
+  return {
+    ...config,
+    auth: override.auth ?? config.auth,
+    roles: override.roles ?? config.roles,
+    concurrency: override.concurrency ?? config.concurrency,
+    apiConcurrency: override.apiConcurrency ?? config.apiConcurrency,
+    budgetMs: override.budgetMs ?? config.budgetMs,
+    excludedRoutes: [...(config.excludedRoutes ?? []), ...(override.excludedRoutes ?? [])],
+  };
+}
+
+/**
+ * v0.43+: Resolve the surface topology from SurfaceMCP.
+ * If `surface_list_surfaces` throws (SurfaceMCP < 0.3), synthesise a single-surface
+ * topology from `surface_describe_self()` for backward compatibility.
+ */
+export async function resolveSurfaceTopology(
+  surface: HttpSurfaceMcpAdapter,
+): Promise<SurfaceListSurfacesResult> {
+  try {
+    const result = await surface.surface_list_surfaces();
+    log.info('multi_surface_topology: native', { surfaceCount: result.surfaces.length });
+    return result;
+  } catch {
+    log.info('multi_surface_topology: legacy_shim');
+    const legacy = await surface.surface_describe_self();
+    const summary: SurfaceSummary = {
+      name: legacy.name,
+      stack: legacy.stack,
+      baseUrl: legacy.baseUrl,
+      state: { kind: 'ready' },
+      toolCount: 0,
+      pageCount: 0,
+      navigationCount: 0,
+      toolRevision: legacy.toolRevision,
+      capabilities: {
+        listPages: legacy.capabilities.listPages,
+        listNavigations: legacy.capabilities.listNavigations ?? false,
+        enumerateRoutesRuntime: legacy.capabilities.enumerateRoutesRuntime ?? false,
+        crawlSeed: legacy.capabilities.crawlSeed ?? false,
+      },
+    };
+    return { surfaceMcpVersion: '<unknown:legacy>', surfaces: [summary] };
+  }
+}
+
+export type PerSurfaceRunResult = {
+  surfaceName: string;
+  summary: SurfaceSummary;
+  skipped: boolean;
+};
+
+/**
+ * v0.43+: Run the discover → plan → execute pipeline once per ready surface and
+ * return the surface results for aggregation. This wraps the existing runDiscover,
+ * runPlan, runExecute without modifying those phase modules.
+ *
+ * The single-surface fast path: when there is exactly one surface, BoundSurfaceMcpAdapter
+ * still wraps but SurfaceMCP ignores the redundant surface arg (upstream § 5.7).
+ */
+export async function runMultiSurfacePipeline(
+  surface: HttpSurfaceMcpAdapter,
+  topology: SurfaceListSurfacesResult,
+  config: BugHunterConfig,
+  runPhaseForSurface: (
+    adapter: BoundSurfaceMcpAdapter,
+    surfaceConfig: BugHunterConfig,
+    surfaceName: string,
+  ) => Promise<void>,
+): Promise<PerSurfaceRunResult[]> {
+  const results: PerSurfaceRunResult[] = [];
+
+  for (const summary of topology.surfaces) {
+    if (summary.state.kind !== 'ready') {
+      const phase = summary.state.kind === 'failed' ? summary.state.phase : summary.state.kind;
+      log.warn('multi_surface: skipping surface', { surface: summary.name, state: summary.state.kind, phase });
+      results.push({ surfaceName: summary.name, summary, skipped: true });
+      continue;
+    }
+
+    const surfaceConfig = mergePerSurfaceConfig(config, summary.name);
+    const boundAdapter = new BoundSurfaceMcpAdapter(surface, summary.name);
+
+    log.info('multi_surface: running pipeline for surface', { surface: summary.name });
+    await runPhaseForSurface(boundAdapter, surfaceConfig, summary.name);
+    results.push({ surfaceName: summary.name, summary, skipped: false });
+  }
+
+  return results;
 }

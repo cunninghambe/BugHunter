@@ -4,6 +4,7 @@
   "browserMcpUrl": "http://localhost:3141/mcp",
   "_portNote": "3140/3141 chosen to avoid conflict with SpoonWorks (3120) and its companion (3121). Do not revert to 3120/3121.",
   "appBaseUrl": "http://localhost:5790",
+  "auth": { "kind": "none" },
   "crawl": {
     "enabled": true,
     "maxPages": 60,

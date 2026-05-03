@@ -123,23 +123,26 @@ export async function runValidate(opts: ValidateOptions): Promise<ValidateResult
     log.info('networkFaults capability probe passed');
   }
 
-  // 3. Login check per role
+  // 3. Login check per role — skip entirely when auth.kind === 'none'
   const roles = opts.config.roles ?? extractRolesFromCatalog(catalog.tools);
-  const failedRoles: string[] = [];
 
-  for (const role of roles) {
-    const status = await opts.surfaceMcp.surface_login_status({ role }).catch(() => null);
-    if (status?.authenticated !== true) {
-      const reloginResult = await opts.surfaceMcp.surface_relogin({ role }).catch(() => null);
-      if (reloginResult?.ok !== true) {
-        failedRoles.push(role);
-        log.warn(`Login failed for role: ${role}`);
+  if (opts.config.auth?.kind !== 'none') {
+    const failedRoles: string[] = [];
+
+    for (const role of roles) {
+      const status = await opts.surfaceMcp.surface_login_status({ role }).catch(() => null);
+      if (status?.authenticated !== true) {
+        const reloginResult = await opts.surfaceMcp.surface_relogin({ role }).catch(() => null);
+        if (reloginResult?.ok !== true) {
+          failedRoles.push(role);
+          log.warn(`Login failed for role: ${role}`);
+        }
       }
     }
-  }
 
-  if (failedRoles.length > 0) {
-    throw new Error(`Login failed for roles: ${failedRoles.join(', ')}. Aborting.`);
+    if (failedRoles.length > 0) {
+      throw new Error(`Login failed for roles: ${failedRoles.join(', ')}. Aborting.`);
+    }
   }
 
   // 4. Resume validity check

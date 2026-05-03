@@ -29,6 +29,35 @@ export type SurfaceListPagesResult = {
   skips?: SurfacePageSkip[];
 };
 
+// v0.3.0+: Surface lifecycle and multi-surface topology types.
+
+export type SurfaceLifecycleState =
+  | { kind: 'ready' }
+  | { kind: 'extracting' }
+  | { kind: 'failed'; phase: 'extract' | 'login' | 'detect'; error: string };
+
+export type SurfaceSummary = {
+  name: string;
+  stack: 'nextjs' | 'express' | 'fastapi' | 'django' | 'openapi' | 'vite';
+  baseUrl: string;
+  state: SurfaceLifecycleState;
+  toolCount: number;
+  pageCount: number;
+  navigationCount: number;
+  toolRevision: number;
+  capabilities: {
+    listPages: boolean;
+    listNavigations: boolean;
+    enumerateRoutesRuntime: boolean;
+    crawlSeed: boolean;
+  };
+};
+
+export type SurfaceListSurfacesResult = {
+  surfaceMcpVersion: string;
+  surfaces: SurfaceSummary[];
+};
+
 export type SurfaceDescribeSelfResult = {
   name: string;
   stack: 'nextjs' | 'express' | 'fastapi' | 'django' | 'openapi' | 'vite';
@@ -44,6 +73,10 @@ export type SurfaceDescribeSelfResult = {
     /** Optional — absent on SurfaceMCP < 0.2.2. Present when surface_enumerate_routes_runtime is available. */
     enumerateRoutesRuntime?: boolean;
   };
+  /** v0.3.0+: SurfaceMCP version string. Absent on SurfaceMCP < 0.3. */
+  surfaceMcpVersion?: string;
+  /** v0.3.0+: full multi-surface view. Absent on SurfaceMCP < 0.3. */
+  surfaces?: SurfaceSummary[];
 };
 
 export type SurfaceNavigation = {
@@ -173,11 +206,16 @@ export type DescribeAuthResult =
     };
 
 export interface SurfaceMcpAdapter {
+  /** v0.3.0+: returns all surfaces. Falls back to single-surface shim on SurfaceMCP < 0.3. */
+  surface_list_surfaces(): Promise<SurfaceListSurfacesResult>;
+
   surface_list_tools(filter?: {
     method?: string;
     sideEffect?: string;
     pathPrefix?: string;
     confidence?: string;
+    /** v0.3.0+: scope listing to a single surface. */
+    surface?: string;
   }): Promise<SurfaceListToolsResult>;
 
   surface_describe_tool(args: { name?: string; toolId?: string }): Promise<ToolDescription>;
@@ -188,23 +226,26 @@ export interface SurfaceMcpAdapter {
 
   surface_sample_inputs(args: { name?: string; toolId?: string }): Promise<SurfaceSampleInputsResult>;
 
-  surface_login_status(args: { role: string }): Promise<SurfaceLoginStatusResult>;
+  surface_login_status(args: { role: string; surface?: string }): Promise<SurfaceLoginStatusResult>;
 
-  surface_relogin(args: { role: string }): Promise<{ ok: boolean; error?: string }>;
+  surface_relogin(args: { role: string; surface?: string }): Promise<{ ok: boolean; error?: string }>;
 
-  surface_routes_for_page(args: { pagePath: string }): Promise<SurfaceRoutesForPageResult>;
+  surface_routes_for_page(args: { pagePath: string; surface?: string }): Promise<SurfaceRoutesForPageResult>;
 
-  surface_list_pages(filter?: { pathPrefix?: string; lazy?: boolean }): Promise<SurfaceListPagesResult>;
+  surface_list_pages(args?: { surface?: string; filter?: { pathPrefix?: string; lazy?: boolean } }): Promise<SurfaceListPagesResult>;
 
-  surface_describe_self(): Promise<SurfaceDescribeSelfResult>;
+  surface_describe_self(args?: { surface?: string }): Promise<SurfaceDescribeSelfResult>;
 
-  surface_describe_auth(args: { role: string }): Promise<DescribeAuthResult>;
+  surface_describe_auth(args: { role: string; surface?: string }): Promise<DescribeAuthResult>;
 
-  surface_list_navigations(filter?: { method?: string; kind?: string }): Promise<SurfaceListNavigationsResult>;
+  surface_list_navigations(args?: { surface?: string; filter?: { method?: string; kind?: string } }): Promise<SurfaceListNavigationsResult>;
 
-  surface_enumerate_routes_runtime(): Promise<SurfaceRuntimeEnumScript>;
+  surface_enumerate_routes_runtime(args?: { surface?: string }): Promise<SurfaceRuntimeEnumScript>;
 
-  surface_postprocess_runtime_routes(args: { raw: unknown }): Promise<SurfacePostprocessResult>;
+  surface_postprocess_runtime_routes(args: { raw: unknown; surface?: string }): Promise<SurfacePostprocessResult>;
+
+  /** v0.43+: returns the bound surface name, or undefined for the unbound root adapter. */
+  getSurfaceName?(): string | undefined;
 }
 
 // HTTP-based implementation targeting a live SurfaceMCP instance.
@@ -267,11 +308,16 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
     return JSON.parse(content) as T;
   }
 
+  async surface_list_surfaces(): Promise<SurfaceListSurfacesResult> {
+    return this.mcpCall<SurfaceListSurfacesResult>('surface_list_surfaces', {});
+  }
+
   async surface_list_tools(filter?: {
     method?: string;
     sideEffect?: string;
     pathPrefix?: string;
     confidence?: string;
+    surface?: string;
   }): Promise<SurfaceListToolsResult> {
     return this.mcpCall<SurfaceListToolsResult>('surface_list_tools', { filter });
   }
@@ -292,39 +338,127 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
     return this.mcpCall<SurfaceSampleInputsResult>('surface_sample_inputs', args);
   }
 
-  async surface_login_status(args: { role: string }): Promise<SurfaceLoginStatusResult> {
+  async surface_login_status(args: { role: string; surface?: string }): Promise<SurfaceLoginStatusResult> {
     return this.mcpCall<SurfaceLoginStatusResult>('surface_login_status', args);
   }
 
-  async surface_relogin(args: { role: string }): Promise<{ ok: boolean; error?: string }> {
+  async surface_relogin(args: { role: string; surface?: string }): Promise<{ ok: boolean; error?: string }> {
     return this.mcpCall<{ ok: boolean; error?: string }>('surface_relogin', args);
   }
 
-  async surface_routes_for_page(args: { pagePath: string }): Promise<SurfaceRoutesForPageResult> {
+  async surface_routes_for_page(args: { pagePath: string; surface?: string }): Promise<SurfaceRoutesForPageResult> {
     return this.mcpCall<SurfaceRoutesForPageResult>('surface_routes_for_page', args);
   }
 
-  async surface_list_pages(filter?: { pathPrefix?: string; lazy?: boolean }): Promise<SurfaceListPagesResult> {
-    return this.mcpCall<SurfaceListPagesResult>('surface_list_pages', { filter });
+  async surface_list_pages(args?: { surface?: string; filter?: { pathPrefix?: string; lazy?: boolean } }): Promise<SurfaceListPagesResult> {
+    return this.mcpCall<SurfaceListPagesResult>('surface_list_pages', args ?? {});
   }
 
-  async surface_describe_self(): Promise<SurfaceDescribeSelfResult> {
-    return this.mcpCall<SurfaceDescribeSelfResult>('surface_describe_self', {});
+  async surface_describe_self(args?: { surface?: string }): Promise<SurfaceDescribeSelfResult> {
+    return this.mcpCall<SurfaceDescribeSelfResult>('surface_describe_self', args ?? {});
   }
 
-  async surface_describe_auth(args: { role: string }): Promise<DescribeAuthResult> {
+  async surface_describe_auth(args: { role: string; surface?: string }): Promise<DescribeAuthResult> {
     return this.mcpCall<DescribeAuthResult>('surface_describe_auth', args);
   }
 
-  async surface_list_navigations(filter?: { method?: string; kind?: string }): Promise<SurfaceListNavigationsResult> {
-    return this.mcpCall<SurfaceListNavigationsResult>('surface_list_navigations', { filter });
+  async surface_list_navigations(args?: { surface?: string; filter?: { method?: string; kind?: string } }): Promise<SurfaceListNavigationsResult> {
+    return this.mcpCall<SurfaceListNavigationsResult>('surface_list_navigations', args ?? {});
   }
 
-  async surface_enumerate_routes_runtime(): Promise<SurfaceRuntimeEnumScript> {
-    return this.mcpCall<SurfaceRuntimeEnumScript>('surface_enumerate_routes_runtime', {});
+  async surface_enumerate_routes_runtime(args?: { surface?: string }): Promise<SurfaceRuntimeEnumScript> {
+    return this.mcpCall<SurfaceRuntimeEnumScript>('surface_enumerate_routes_runtime', args ?? {});
   }
 
-  async surface_postprocess_runtime_routes(args: { raw: unknown }): Promise<SurfacePostprocessResult> {
+  async surface_postprocess_runtime_routes(args: { raw: unknown; surface?: string }): Promise<SurfacePostprocessResult> {
     return this.mcpCall<SurfacePostprocessResult>('surface_postprocess_runtime_routes', args);
+  }
+
+  getSurfaceName(): undefined {
+    return undefined;
+  }
+}
+
+/**
+ * v0.43+: Wraps a SurfaceMcpAdapter and injects a fixed surface name into every
+ * meta-tool call that accepts a `surface` argument. Phases call meta-tools without
+ * supplying a surface; the wrapper supplies the bound name on the wire.
+ */
+export class BoundSurfaceMcpAdapter implements SurfaceMcpAdapter {
+  constructor(
+    private readonly inner: SurfaceMcpAdapter,
+    private readonly surfaceName: string,
+  ) {}
+
+  getSurfaceName(): string {
+    return this.surfaceName;
+  }
+
+  // Global — not surface-scoped; pass through unchanged.
+  surface_list_surfaces(): Promise<SurfaceListSurfacesResult> {
+    return this.inner.surface_list_surfaces();
+  }
+
+  surface_list_tools(filter?: {
+    method?: string;
+    sideEffect?: string;
+    pathPrefix?: string;
+    confidence?: string;
+    surface?: string;
+  }): Promise<SurfaceListToolsResult> {
+    return this.inner.surface_list_tools({ ...filter, surface: filter?.surface ?? this.surfaceName });
+  }
+
+  // Tool resolution is by name (already prefixed) or toolId (globally unique). No surface arg.
+  surface_describe_tool(args: { name?: string; toolId?: string }): Promise<ToolDescription> {
+    return this.inner.surface_describe_tool(args);
+  }
+
+  surface_call(args: SurfaceCallInput): Promise<SurfaceCallResult> {
+    return this.inner.surface_call(args);
+  }
+
+  surface_probe(args: { name?: string; toolId?: string; role: string }): Promise<SurfaceProbeResult> {
+    return this.inner.surface_probe(args);
+  }
+
+  surface_sample_inputs(args: { name?: string; toolId?: string }): Promise<SurfaceSampleInputsResult> {
+    return this.inner.surface_sample_inputs(args);
+  }
+
+  surface_describe_self(args?: { surface?: string }): Promise<SurfaceDescribeSelfResult> {
+    return this.inner.surface_describe_self({ surface: args?.surface ?? this.surfaceName });
+  }
+
+  surface_list_pages(args?: { surface?: string; filter?: { pathPrefix?: string; lazy?: boolean } }): Promise<SurfaceListPagesResult> {
+    return this.inner.surface_list_pages({ ...args, surface: args?.surface ?? this.surfaceName });
+  }
+
+  surface_list_navigations(args?: { surface?: string; filter?: { method?: string; kind?: string } }): Promise<SurfaceListNavigationsResult> {
+    return this.inner.surface_list_navigations({ ...args, surface: args?.surface ?? this.surfaceName });
+  }
+
+  surface_login_status(args: { role: string; surface?: string }): Promise<SurfaceLoginStatusResult> {
+    return this.inner.surface_login_status({ ...args, surface: args.surface ?? this.surfaceName });
+  }
+
+  surface_relogin(args: { role: string; surface?: string }): Promise<{ ok: boolean; error?: string }> {
+    return this.inner.surface_relogin({ ...args, surface: args.surface ?? this.surfaceName });
+  }
+
+  surface_describe_auth(args: { role: string; surface?: string }): Promise<DescribeAuthResult> {
+    return this.inner.surface_describe_auth({ ...args, surface: args.surface ?? this.surfaceName });
+  }
+
+  surface_routes_for_page(args: { pagePath: string; surface?: string }): Promise<SurfaceRoutesForPageResult> {
+    return this.inner.surface_routes_for_page({ ...args, surface: args.surface ?? this.surfaceName });
+  }
+
+  surface_enumerate_routes_runtime(args?: { surface?: string }): Promise<SurfaceRuntimeEnumScript> {
+    return this.inner.surface_enumerate_routes_runtime({ surface: args?.surface ?? this.surfaceName });
+  }
+
+  surface_postprocess_runtime_routes(args: { raw: unknown; surface?: string }): Promise<SurfacePostprocessResult> {
+    return this.inner.surface_postprocess_runtime_routes({ ...args, surface: args.surface ?? this.surfaceName });
   }
 }
