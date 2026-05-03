@@ -138,4 +138,73 @@ describe('classifyMissingStateChange', () => {
     const result = classifyMissingStateChange(preState, postState, renderAction, '/products');
     expect(result).toBeNull();
   });
+
+  it('aria-expanded false→true = state changed, no fire', () => {
+    const pre: PreState = { ...preState, ariaSnapshot: { expanded: false, haspopup: true } };
+    const post: PostState = {
+      url: '/products',
+      title: 'Products',
+      consoleErrors: [],
+      networkRequests: [],
+      domErrorTextDetected: false,
+      mutationObserverWindowMs: 300,
+      ariaSnapshot: { expanded: true, haspopup: true },
+    };
+    expect(classifyMissingStateChange(pre, post, happyAction, '/products')).toBeNull();
+  });
+
+  it('DOM-scoped mutation (URL change) = existing guard still works', () => {
+    const post: PostState = {
+      url: '/products/new',
+      title: 'Products',
+      consoleErrors: [],
+      networkRequests: [],
+      domErrorTextDetected: false,
+      mutationObserverWindowMs: 300,
+    };
+    expect(classifyMissingStateChange(preState, post, happyAction, '/products')).toBeNull();
+  });
+
+  it('no DOM change, no ARIA change = fires (real bug)', () => {
+    const pre: PreState = { ...preState, ariaSnapshot: { expanded: false, haspopup: true } };
+    const post: PostState = {
+      url: '/products',
+      title: 'Products',
+      consoleErrors: [],
+      networkRequests: [],
+      domErrorTextDetected: false,
+      mutationObserverWindowMs: 500,
+      ariaSnapshot: { expanded: false, haspopup: true },
+      newPortalCount: 0,
+    };
+    expect(classifyMissingStateChange(pre, post, happyAction, '/products')?.kind).toBe('missing_state_change');
+  });
+
+  it('aria-haspopup button → Radix portal appears (newPortalCount=1) = no fire', () => {
+    const pre: PreState = { ...preState, ariaSnapshot: { haspopup: true } };
+    const post: PostState = {
+      url: '/products',
+      title: 'Products',
+      consoleErrors: [],
+      networkRequests: [],
+      domErrorTextDetected: false,
+      mutationObserverWindowMs: 300,
+      ariaSnapshot: { haspopup: true },
+      newPortalCount: 1,
+    };
+    expect(classifyMissingStateChange(pre, post, happyAction, '/products')).toBeNull();
+  });
+
+  it('Headless UI button → portal appears (newPortalCount > 0, no ARIA) = no fire', () => {
+    const post: PostState = {
+      url: '/products',
+      title: 'Products',
+      consoleErrors: [],
+      networkRequests: [],
+      domErrorTextDetected: false,
+      mutationObserverWindowMs: 300,
+      newPortalCount: 2,
+    };
+    expect(classifyMissingStateChange(preState, post, happyAction, '/products')).toBeNull();
+  });
 });

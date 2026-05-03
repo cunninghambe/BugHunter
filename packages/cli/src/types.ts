@@ -304,6 +304,13 @@ export type Action = {
   interactionPalette?: InteractionPaletteVariant;
 };
 
+/** v0.45: ARIA attributes on the clicked element, used for portal/popover detection. */
+export type AriaSnapshot = {
+  expanded?: boolean;
+  haspopup?: boolean;
+  controls?: string;
+};
+
 export type PreState = {
   url: string;
   title: string;
@@ -313,6 +320,8 @@ export type PreState = {
    * Populated for nav-state tests; undefined on regular tests.
    */
   domSignature?: string;
+  /** v0.45: ARIA attributes on the click target before the action fires. */
+  ariaSnapshot?: AriaSnapshot;
 };
 
 /**
@@ -356,6 +365,10 @@ export type PostState = {
    * Undefined on non-nav-state tests.
    */
   domSignature?: string;
+  /** v0.45: ARIA attributes on the click target after the action fires. */
+  ariaSnapshot?: AriaSnapshot;
+  /** v0.45: Number of portal/popover elements newly added to document.body post-action. */
+  newPortalCount?: number;
 };
 
 export type OccurrenceSummary = {

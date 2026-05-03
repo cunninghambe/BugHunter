@@ -2,7 +2,18 @@
 // Action-fire → (URL change OR network completion OR 30s ceiling).
 // After window closes, check for change in target region.
 
-import type { BugDetection, Action, PreState, PostState } from '../types.js';
+import type { BugDetection, Action, PreState, PostState, AriaSnapshot } from '../types.js';
+
+// Option B: ARIA-state signal — aria-expanded/aria-haspopup/aria-controls flipping
+// means the click intentionally opened a popover/dropdown/dialog.
+function ariaStateChanged(pre: AriaSnapshot | undefined, post: AriaSnapshot | undefined): boolean {
+  if (pre === undefined || post === undefined) return false;
+  return (
+    pre.expanded !== post.expanded ||
+    pre.haspopup !== post.haspopup ||
+    pre.controls !== post.controls
+  );
+}
 
 export function classifyMissingStateChange(
   preState: PreState,
@@ -21,6 +32,12 @@ export function classifyMissingStateChange(
 
   // If URL changed, or network completed, or there was a toast/error — not a missing state change
   if (urlChanged || hasToast || networkCompleted || hasConsoleError) return null;
+
+  // Option B (primary): ARIA signal — expanded/haspopup/controls changed → portal/popover opened
+  if (ariaStateChanged(preState.ariaSnapshot, postState.ariaSnapshot)) return null;
+
+  // Option A (fallback): a known portal element appeared in document.body post-click
+  if ((postState.newPortalCount ?? 0) > 0) return null;
 
   // No observable change after the action window
   return {
@@ -64,5 +81,49 @@ export const MUTATION_OBSERVER_STOP_SCRIPT = `
     mutations: window.__bhMutations || [],
     durationMs: Date.now() - (window.__bhObserverStart || Date.now()),
   };
+})()
+`;
+
+/**
+ * v0.45: Capture ARIA state of the clicked element.
+ * Requires window.__bhAriaSelector to be set to the element's CSS selector before calling.
+ * Returns { expanded?, haspopup?, controls? }.
+ */
+export const ARIA_SNAPSHOT_SCRIPT = `
+(function() {
+  var sel = window.__bhAriaSelector;
+  if (!sel) return {};
+  var el = document.querySelector(sel);
+  if (!el) return {};
+  var result = {};
+  var exp = el.getAttribute('aria-expanded');
+  if (exp !== null) result.expanded = exp === 'true';
+  var hpop = el.getAttribute('aria-haspopup');
+  if (hpop !== null) result.haspopup = hpop !== 'false' && hpop !== '';
+  var ctrl = el.getAttribute('aria-controls');
+  if (ctrl !== null) result.controls = ctrl;
+  return result;
+})()
+`;
+
+/**
+ * v0.45: Well-known portal/popover selectors from Radix UI and Headless UI.
+ */
+export const PORTAL_SELECTORS = [
+  '[data-radix-portal]',
+  '[data-radix-popper-content-wrapper]',
+  '[data-radix-dropdown-menu-content]',
+  '[data-radix-popover-content]',
+  '[data-headlessui-portal]',
+].join(',');
+
+/**
+ * v0.45: Count portal/popover elements in document.body matching well-known selectors.
+ * Diff pre- vs post-action; positive delta means a portal was opened.
+ */
+export const PORTAL_COUNT_SCRIPT = `
+(function() {
+  var sel = ${JSON.stringify(PORTAL_SELECTORS)};
+  return document.body.querySelectorAll(sel).length;
 })()
 `;

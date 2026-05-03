@@ -28,7 +28,8 @@ import { classifyVitals } from '../classify/vitals.js';
 import { classifyLongTasks } from '../classify/long-tasks.js';
 import { classifyExcessiveRerenders } from '../classify/rerenders.js';
 import { classifyNPlusOne, classifyDedupMissing, classifyCancelMissing } from '../classify/request-hygiene.js';
-import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT } from '../classify/state-change.js';
+import { classifyMissingStateChange, MUTATION_OBSERVER_START_SCRIPT, MUTATION_OBSERVER_STOP_SCRIPT, ARIA_SNAPSHOT_SCRIPT, PORTAL_COUNT_SCRIPT } from '../classify/state-change.js';
+import type { AriaSnapshot } from '../types.js';
 import { classifyVisualAnomaliesConsistent } from '../classify/vision.js';
 import type { VisionClientInterface } from '../adapters/vision-client.js';
 import type { VisionBudget } from '../classify/vision-budget.js';
@@ -760,6 +761,24 @@ async function executeUiTestInner(
     preA11yViolations = Array.isArray(v) ? (v as A11yViolation[]) : [];
   }
 
+  // v0.45: capture ARIA state + portal baseline before action fires (click actions only).
+  let preAriaSnapshot: AriaSnapshot | undefined;
+  let prePortalCount = 0;
+  if (tc.action.kind === 'click' && tc.action.selector !== undefined) {
+    const setSelRes = await scope.evaluate(
+      `(function(){ window.__bhAriaSelector = ${JSON.stringify(tc.action.selector)}; return true; })()`
+    ).catch(() => null);
+    if (setSelRes !== null) {
+      const ariaRes = await scope.evaluate(ARIA_SNAPSHOT_SCRIPT).catch(() => null);
+      const raw = ariaRes?.value as Record<string, unknown> | null | undefined;
+      if (raw !== null && raw !== undefined) {
+        preAriaSnapshot = raw as AriaSnapshot;
+      }
+    }
+    const portalRes = await scope.evaluate(PORTAL_COUNT_SCRIPT).catch(() => null);
+    prePortalCount = typeof portalRes?.value === 'number' ? portalRes.value : 0;
+  }
+
   try {
     await scope.evaluate(MUTATION_OBSERVER_START_SCRIPT);
   } catch (err) {
@@ -1027,10 +1046,25 @@ async function executeUiTestInner(
     }
   }
 
+  // v0.45: post-action ARIA state + portal count (click actions only).
+  let postAriaSnapshot: AriaSnapshot | undefined;
+  let newPortalCount: number | undefined;
+  if (tc.action.kind === 'click' && tc.action.selector !== undefined) {
+    const ariaRes = await scope.evaluate(ARIA_SNAPSHOT_SCRIPT).catch(() => null);
+    const raw = ariaRes?.value as Record<string, unknown> | null | undefined;
+    if (raw !== null && raw !== undefined) {
+      postAriaSnapshot = raw as AriaSnapshot;
+    }
+    const portalRes = await scope.evaluate(PORTAL_COUNT_SCRIPT).catch(() => null);
+    const postPortalCount = typeof portalRes?.value === 'number' ? portalRes.value : 0;
+    newPortalCount = Math.max(0, postPortalCount - prePortalCount);
+  }
+
   const preState: PreState = {
     url: tc.page,
     title: '',
     consoleErrorCount: preConsoleErrors.length,
+    ariaSnapshot: preAriaSnapshot,
   };
 
   const postState: PostState = {
@@ -1041,6 +1075,8 @@ async function executeUiTestInner(
     // V24: set the real value instead of hardcoded false, so classifyMissingStateChange sees it.
     domErrorTextDetected: postDomErrFound,
     mutationObserverWindowMs: mutWindowMs,
+    ariaSnapshot: postAriaSnapshot,
+    newPortalCount,
   };
 
   // V24: classifyReactErrors replaces classifyConsoleErrors — it emits hydration_mismatch,
