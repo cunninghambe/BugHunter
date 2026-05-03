@@ -6,7 +6,7 @@ export function Login({ navigate }: Props) {
   return (
     <main>
       <h1>Login</h1>
-      <form onSubmit={(e) => e.preventDefault()}>
+      <form action="/api/login" method="POST" onSubmit={(e) => e.preventDefault()}>
         <label htmlFor="email">Email</label>
         <input id="email" name="email" type="email" />
         <label htmlFor="password">Password</label>
