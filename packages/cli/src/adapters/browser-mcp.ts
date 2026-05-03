@@ -87,7 +87,7 @@ export type TabScope = {
   scroll(selector: string, direction: 'up' | 'down', distance?: number): Promise<ScrollResult>;
   snapshot(): Promise<SnapshotResult>;
   screenshot(outputPath?: string): Promise<ScreenshotResult>;
-  evaluate(script: string): Promise<EvaluateResult>;
+  evaluate(script: string, options?: { timeout?: number }): Promise<EvaluateResult>;
   clickByHint(hint: TriggerSelectorHint): Promise<ClickByHintResult>;
   /**
    * v0.12: click with rich evaluate-result. Used by execute.ts to emit the
@@ -123,7 +123,7 @@ export interface BrowserMcpAdapter {
   scroll(selector: string, direction: 'up' | 'down', distance?: number): Promise<ScrollResult>;
   snapshot(): Promise<SnapshotResult>;
   screenshot(outputPath?: string): Promise<ScreenshotResult>;
-  evaluate(script: string): Promise<EvaluateResult>;
+  evaluate(script: string, options?: { timeout?: number }): Promise<EvaluateResult>;
   listTabs(): Promise<ListTabsResult>;
   closeTab(tabId: string): Promise<CloseTabResult>;
   /** Open a new tab unconditionally; does not mutate currentTabId. */
@@ -434,11 +434,12 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
 
   // ---- Generic tool dispatcher (internal — accessible by V20/V22/V23 callers) ----
 
-  async tool<T>(name: string, args: Record<string, unknown>, expect: 'json' | 'image' = 'json'): Promise<T> {
+  async tool<T>(name: string, args: Record<string, unknown>, expect: 'json' | 'image' = 'json', timeout?: number): Promise<T> {
     const client = await this.ensureConnected();
     let res: SdkCallToolResult;
     try {
-      res = await client.callTool({ name, arguments: args }) as SdkCallToolResult;
+      const opts = timeout !== undefined ? { timeout } : undefined;
+      res = await client.callTool({ name, arguments: args }, undefined, opts) as SdkCallToolResult;
     } catch (err) {
       throw new BrowserMcpError(
         'transport',
@@ -630,10 +631,10 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     return { path: '', data: base64 };
   }
 
-  async evaluate(script: string): Promise<EvaluateResult> {
-    if (this.legacyDelegate !== undefined) return this.legacyDelegate.evaluate(script);
+  async evaluate(script: string, options?: { timeout?: number }): Promise<EvaluateResult> {
+    if (this.legacyDelegate !== undefined) return this.legacyDelegate.evaluate(script, options);
     const tabId = this.requireTab();
-    const result = await this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: script });
+    const result = await this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: script }, 'json', options?.timeout);
     return { value: result.result ?? result.value };
   }
 
@@ -914,8 +915,8 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
           }
           return { path: '', data: base64 };
         }),
-      evaluate: (script) =>
-        this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: script }).then(r => ({
+      evaluate: (script, opts?) =>
+        this.tool<CamofoxEvaluateResult>('evaluate', { tabId, expression: script }, 'json', opts?.timeout).then(r => ({
           value: r.result ?? r.value,
         })),
       clickByHint: (hint) => this.clickByHintForTab(tabId, hint),
@@ -1238,7 +1239,7 @@ export class CamofoxBrowserHttpAdapter implements BrowserMcpAdapter {
     return { path: '', data: base64 };
   }
 
-  async evaluate(script: string): Promise<EvaluateResult> {
+  async evaluate(script: string, _options?: { timeout?: number }): Promise<EvaluateResult> {
     const tabId = this.requireTab();
     const result = await this.mcpCall<CamofoxEvaluateResult>('evaluate', { tabId, expression: script });
     return { value: result.result ?? result.value };

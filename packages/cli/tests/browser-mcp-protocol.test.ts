@@ -186,6 +186,41 @@ describe('CamofoxBrowserMcpAdapter — error mapping (§3.9)', () => {
   });
 });
 
+describe('evaluate timeout propagation to MCP callTool (#169)', () => {
+  it('passes timeout to tool() when evaluate is called with { timeout: 120000 }', async () => {
+    const adapter = new CamofoxBrowserMcpAdapter({ mode: 'http', url: 'http://127.0.0.1:3104/mcp' });
+
+    // Intercept tool() to: (a) set currentTabId on navigate, (b) capture timeout on evaluate.
+    const capturedTimeouts: Array<number | undefined> = [];
+    vi.spyOn(adapter, 'tool').mockImplementation(async (name, _args, _expect, timeout) => {
+      if (name === 'navigate') return { tabId: 't1', ok: true, finalUrl: 'http://x' } as never;
+      capturedTimeouts.push(timeout);
+      return { tabId: 't1', result: 'ok', value: 'ok' } as never;
+    });
+
+    await adapter.navigate('http://x');
+    await adapter.evaluate('(function(){return true;})()', { timeout: 120_000 });
+
+    expect(capturedTimeouts[0]).toBe(120_000);
+  });
+
+  it('passes undefined timeout to tool() when evaluate is called without options', async () => {
+    const adapter = new CamofoxBrowserMcpAdapter({ mode: 'http', url: 'http://127.0.0.1:3104/mcp' });
+
+    const capturedTimeouts: Array<number | undefined> = [];
+    vi.spyOn(adapter, 'tool').mockImplementation(async (name, _args, _expect, timeout) => {
+      if (name === 'navigate') return { tabId: 't1', ok: true, finalUrl: 'http://x' } as never;
+      capturedTimeouts.push(timeout);
+      return { tabId: 't1', result: 'ok', value: 'ok' } as never;
+    });
+
+    await adapter.navigate('http://x');
+    await adapter.evaluate('(function(){return true;})()');
+
+    expect(capturedTimeouts[0]).toBeUndefined();
+  });
+});
+
 describe('CamofoxBrowserMcpAdapter — retry on element_not_found (§3.7)', () => {
   it('retries once after element_not_found on structured selector and succeeds on second snapshot', async () => {
     // v0.12: retry only applies to structured selectors (snapshot path).
