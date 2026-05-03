@@ -35,9 +35,21 @@ function makeMockCdp(handlers: Record<string, (payload: unknown) => void> = {}) 
         // Store for manual triggering in tests
       }
     },
+    off: (event: string, handler: (payload: unknown) => void) => {
+      if (listeners[event] !== undefined) {
+        listeners[event] = listeners[event].filter(h => h !== handler);
+      }
+    },
+    removeAllListeners: () => {
+      for (const key of Object.keys(listeners)) {
+        delete listeners[key];
+      }
+    },
     emit: (event: string, payload: unknown) => {
       (listeners[event] ?? []).forEach(h => h(payload));
     },
+    listenerCount: (event: string) => listeners[event]?.length ?? 0,
+    _listeners: listeners,
   };
 }
 
@@ -177,5 +189,40 @@ describe('createCdpSession', () => {
     expect(sample.jsHeapUsedSize).toBe(52428800);
     expect(sample.jsHeapTotalSize).toBe(67108864);
     expect(sample.capturedAtMs).toBeGreaterThan(0);
+  });
+
+  // Regression test for #141: CDP session must not leak abort listeners on long runs.
+  it('repeated newTab calls do not accumulate listeners on retired CDP sessions (#141)', async () => {
+    const cdpInstances: ReturnType<typeof makeMockCdp>[] = [];
+
+    mockContextNewCdpSession.mockImplementation(() => {
+      const cdp = makeMockCdp();
+      cdpInstances.push(cdp);
+      return Promise.resolve(cdp);
+    });
+
+    const { createCdpSession } = await import('./cdp-session.js');
+    const result = await createCdpSession();
+    if (!result.ok) throw new Error('Expected ok');
+
+    const N = 100;
+    for (let i = 0; i < N; i++) {
+      await result.session.newTab(`http://localhost/page-${i}`);
+    }
+
+    // Every CDP instance except the last one should have zero listeners — they were
+    // cleared by removeAllListeners() before the next newTab replaced them.
+    const retiredCdps = cdpInstances.slice(0, -1);
+    const totalRetiredListeners = retiredCdps.reduce((sum, cdp) => {
+      return sum + Object.values(cdp._listeners).reduce((s, arr) => s + arr.length, 0);
+    }, 0);
+
+    expect(retiredCdps).toHaveLength(N - 1);
+    expect(totalRetiredListeners).toBe(0);
+
+    // The active (last) CDP session should have exactly the expected listeners attached.
+    const activeCdp = cdpInstances[cdpInstances.length - 1];
+    const activeListenerCount = Object.values(activeCdp._listeners).reduce((s, arr) => s + arr.length, 0);
+    expect(activeListenerCount).toBeGreaterThan(0);
   });
 });
