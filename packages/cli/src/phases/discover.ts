@@ -247,7 +247,7 @@ export async function runDiscover(
         const pagePathForSurface = (sourceFile !== undefined && sourceFile !== '')
           ? path.relative(projectDir, sourceFile)
           : route;
-        const crossRefed = await crossRefForms(domResult.forms, pagePathForSurface, surface);
+        const crossRefed = await crossRefForms(domResult.forms, pagePathForSurface, surface, apiTools);
         // Filter external-side-effect forms/buttons
         const safeApiToolIds = new Set(
           apiTools
