@@ -50,9 +50,9 @@ export type PenTestRunnerResult = {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function responseBodyString(body: unknown): string {
+export function responseBodyString(body: unknown): string {
   if (typeof body === 'string') return body;
-  try { return JSON.stringify(body); } catch { return ''; }
+  try { return JSON.stringify(body) ?? ''; } catch { return ''; }
 }
 
 function delayMs(ms: number): Promise<void> {

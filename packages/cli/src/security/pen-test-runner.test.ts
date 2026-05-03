@@ -4,6 +4,30 @@
 import { describe, it, expect } from 'vitest';
 import { generatePenPayloads } from './injection-palette.js';
 import type { PenKind } from './injection-palette.js';
+import { responseBodyString } from './pen-test-runner.js';
+
+// ---------------------------------------------------------------------------
+// responseBodyString — #128 regression: undefined body must not propagate as
+// JS undefined (JSON.stringify(undefined) === undefined, not a string).
+// ---------------------------------------------------------------------------
+
+describe('responseBodyString', () => {
+  it('returns empty string for undefined (issue #128)', () => {
+    expect(responseBodyString(undefined)).toBe('');
+  });
+
+  it('returns "null" for null', () => {
+    expect(responseBodyString(null)).toBe('null');
+  });
+
+  it('returns the raw string for a string value', () => {
+    expect(responseBodyString('text')).toBe('text');
+  });
+
+  it('returns JSON representation for an object', () => {
+    expect(responseBodyString({ a: 1 })).toBe('{"a":1}');
+  });
+});
 
 const ALL_KINDS: PenKind[] = ['sql', 'cmd', 'path', 'jwt'];
 
