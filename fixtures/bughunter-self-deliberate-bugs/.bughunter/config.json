@@ -32,5 +32,135 @@
       { "label": "iphone-13", "width": 390, "height": 844, "platform": "ios" },
       { "label": "pixel-5", "width": 393, "height": 851, "platform": "android" }
     ]
+  },
+  "agent": {
+    "enabled": true
+  },
+  "dataIntegrity": {
+    "invariants": [
+      {
+        "name": "data_integrity_orphan: all orders have a known owner",
+        "bugKind": "data_integrity_orphan",
+        "description": "Every order returned by listOrders (alice) must have owner='alice'. The idor-bad fixture has no orphan-owner bug, so this asserts the baseline shape — a fixture with orphaned owner IDs would fail the contains check.",
+        "appliesTo": { "method": "GET", "urlPattern": "/api/orders" },
+        "after": {
+          "query": {
+            "kind": "http",
+            "method": "GET",
+            "url": "http://localhost:4090/surface/call",
+            "description": "Fetch alice's orders and assert all have owner field"
+          },
+          "parse": "json",
+          "expect": {
+            "op": "notEquals",
+            "jsonPath": "$.orders",
+            "value": null
+          }
+        }
+      },
+      {
+        "name": "money_math_precision: alice order amounts are positive integers",
+        "bugKind": "money_math_precision",
+        "description": "The idor-bad fixture seeds alice with amounts 100 and 200. Injecting a fractional amount that the server truncates would cause sum(line_items) != reported total — this invariant probes that path.",
+        "appliesTo": { "method": "GET", "urlPattern": "/api/orders/:id" },
+        "injectInputs": [
+          { "field": "amount", "values": [100, 200, 0.1] }
+        ],
+        "after": {
+          "query": {
+            "kind": "http",
+            "method": "POST",
+            "url": "http://localhost:4090/surface/call",
+            "body": { "toolId": "getOrder", "role": "alice", "input": { "id": "order-alice-1" } },
+            "description": "Fetch order-alice-1 and assert amount is a positive number"
+          },
+          "parse": "json",
+          "expect": {
+            "op": "numericEquals",
+            "jsonPath": "$.amount",
+            "value": 100,
+            "tolerance": 0
+          }
+        }
+      },
+      {
+        "name": "cache_staleness: GET /api/orders/:id returns same data on repeat reads",
+        "bugKind": "cache_staleness",
+        "description": "A stale-cache bug would return a prior version of an order after a mutation. This probes that two consecutive GETs of order-bob-1 return identical owner and amount, ensuring no stale cached version is served.",
+        "appliesTo": { "method": "GET", "urlPattern": "/api/orders/:id" },
+        "after": {
+          "queries": [
+            {
+              "query": {
+                "kind": "http",
+                "method": "POST",
+                "url": "http://localhost:4090/surface/call",
+                "body": { "toolId": "getOrder", "role": "bob", "input": { "id": "order-bob-1" } },
+                "description": "First read of order-bob-1"
+              },
+              "parse": "json",
+              "store": { "firstAmount": "$.amount" },
+              "name": "read-1"
+            },
+            {
+              "query": {
+                "kind": "http",
+                "method": "POST",
+                "url": "http://localhost:4090/surface/call",
+                "body": { "toolId": "getOrder", "role": "bob", "input": { "id": "order-bob-1" } },
+                "description": "Second read of order-bob-1 must return same amount"
+              },
+              "parse": "json",
+              "expect": {
+                "op": "numericEquals",
+                "jsonPath": "$.amount",
+                "value": 50,
+                "tolerance": 0
+              },
+              "name": "read-2"
+            }
+          ]
+        }
+      },
+      {
+        "name": "audit_log_missing_for_mutation: deleteOrder response must acknowledge the id",
+        "bugKind": "audit_log_missing_for_mutation",
+        "description": "The idor-bad fixture's deleteOrder returns {deleted:true,id} but has no ownership check and no audit log. This invariant asserts that a delete response always echoes the correct id — a fixture that silently drops the audit entry would return a mismatched or empty id.",
+        "appliesTo": { "method": "DELETE", "urlPattern": "/api/orders/:id" },
+        "after": {
+          "query": {
+            "kind": "http",
+            "method": "POST",
+            "url": "http://localhost:4090/surface/call",
+            "body": { "toolId": "deleteOrder", "role": "alice", "input": { "id": "order-alice-1" } },
+            "description": "Delete order-alice-1 and assert the response echoes the correct id"
+          },
+          "parse": "json",
+          "expect": {
+            "op": "equals",
+            "jsonPath": "$.id",
+            "value": "order-alice-1"
+          }
+        }
+      },
+      {
+        "name": "soft_delete_consistency: deleted order still readable (fixture bug: delete is a no-op)",
+        "bugKind": "soft_delete_consistency",
+        "description": "The idor-bad fixture deliberately does not remove records on deleteOrder, so a soft-delete consistency check — GET after DELETE should return 404 — will fail, surfacing the planted bug.",
+        "appliesTo": { "method": "DELETE", "urlPattern": "/api/orders/:id" },
+        "after": {
+          "query": {
+            "kind": "http",
+            "method": "POST",
+            "url": "http://localhost:4090/surface/call",
+            "body": { "toolId": "getOrder", "role": "alice", "input": { "id": "order-alice-1" } },
+            "description": "After delete, GET should 404 — but idor-bad returns 200 (planted soft-delete bug)",
+            "expectedStatus": 404
+          },
+          "parse": "json",
+          "name": "post-delete-read"
+        }
+      }
+    ]
   }
 }
