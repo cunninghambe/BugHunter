@@ -180,6 +180,8 @@ export type RunOptions = {
   mobileUa?: string;
   /** --mobile-viewport <WxH[@platform]>: add a mobile viewport (can repeat). */
   mobileViewport?: string[];
+  /** --no-browser-login: disable browser-login phase even if config has it enabled. */
+  noBrowserLogin?: boolean;
 };
 
 export async function runCommand(opts: RunOptions): Promise<void> {
@@ -376,6 +378,9 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     // v0.37 locale-stress
     ...(opts.localeStress === true ? { localeStress: true } : {}),
     ...(mobileConfig !== undefined ? { mobile: mobileConfig } : {}),
+    ...(opts.noBrowserLogin === true
+      ? { browserLogin: { ...config.browserLogin, enabled: false } }
+      : {}),
   });
 
   // v0.45 Tier 1: force-disable mutating subsystems when readOnly === true.

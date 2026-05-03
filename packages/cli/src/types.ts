@@ -1591,6 +1591,8 @@ export type BugHunterConfig = {
   surfaceMcpUrl: string;
   browserMcpUrl?: string;
   roles?: string[];
+  /** Top-level auth hint. When kind is 'none', browser login is skipped entirely. */
+  auth?: { kind: 'none' };
   resetCommand?: string;
   resetPolicy?: ResetPolicy;
   paletteOverridePath?: string;
