@@ -178,9 +178,12 @@ Cross-run / regression / history:
   (see also: bughunter diff, bughunter history, bughunter aging)
 
 Diagnostics & introspection:
-  bughunter doctor [--format table|json]
+  bughunter doctor [--format table|json] [--cleanup]
                               Reports environment health.
                               Exit 0 = green, 1 = yellow, 2 = red.
+                              --cleanup: kill any orphaned fixture processes
+                              (pattern: bh-e2e-fixture|bughunter-fixture-).
+                              Reports killed PIDs and freed ports as JSON.
   bughunter detectors [--kind <bugkind>] [--status wired|dead|deferred] [--format table|json]
                               Per-BugKind wiring report.
   bughunter scope [--route <pattern>] [--role <name>] [--format table|json]
@@ -377,6 +380,7 @@ async function main(): Promise<void> {
           mobile: flags['mobile'] === true,
           mobileUa: typeof flags['mobile-ua'] === 'string' ? flags['mobile-ua'] : undefined,
           mobileViewport: typeof flags['mobile-viewport'] === 'string' ? flags['mobile-viewport'].split(',') : undefined,
+          noBrowserLogin: flags['no-browser-login'] === true,
         });
         break;
       }
@@ -457,7 +461,7 @@ async function main(): Promise<void> {
 
       case 'doctor': {
         const format = flags['format'] === 'json' ? 'json' : 'table';
-        await doctorCommand(projectDir, { format });
+        await doctorCommand(projectDir, { format, cleanup: flags['cleanup'] === true });
         break;
       }
 

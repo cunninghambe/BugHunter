@@ -25,7 +25,7 @@ while IFS=' ' read -r name pid; do
 done < "$PID_FILE"
 
 # Give processes up to 5s to exit gracefully, then SIGKILL stragglers.
-sleep 2
+sleep 5
 
 while IFS=' ' read -r name pid; do
   if [ -z "$pid" ]; then continue; fi

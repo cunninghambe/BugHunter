@@ -2,7 +2,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { loadConfig, effectiveForbiddenPaths } from '../config.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import { makeBrowserAdapter } from '../adapters/browser-mcp.js';
@@ -26,7 +26,21 @@ type DoctorResult = {
   checks: DoctorCheck[];
 };
 
-export async function doctorCommand(projectDir: string, opts: { format?: 'table' | 'json' }): Promise<void> {
+export type CleanupReport = {
+  killed: Array<{ pid: number; name: string; signal: 'SIGTERM' | 'SIGKILL' }>;
+  ports: number[];
+};
+
+export async function doctorCommand(
+  projectDir: string,
+  opts: { format?: 'table' | 'json'; cleanup?: boolean },
+): Promise<void> {
+  if (opts.cleanup === true) {
+    const report = cleanupFixtures();
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    return;
+  }
+
   const format = opts.format ?? 'table';
   const result = await runAllChecks(projectDir);
 
@@ -38,6 +52,75 @@ export async function doctorCommand(projectDir: string, opts: { format?: 'table'
   }
 
   printTable(result);
+}
+
+const FIXTURE_PATTERN = /bh-e2e-fixture|bughunter-fixture-/;
+const FIXTURE_PORTS = [9994, 4090, 5780, 5781, 5782, 4091, 5790, 5791];
+
+export function cleanupFixtures(psOutput?: string): CleanupReport {
+  const raw = psOutput ?? (() => {
+    try {
+      return execFileSync('ps', ['-ef'], { encoding: 'utf-8', timeout: 5000 });
+    } catch {
+      return '';
+    }
+  })();
+
+  const killed: CleanupReport['killed'] = [];
+
+  for (const line of raw.split('\n')) {
+    if (!FIXTURE_PATTERN.test(line)) continue;
+    const pid = extractPid(line);
+    if (pid === null) continue;
+    const name = extractProcessName(line);
+    const sent = sendTermThenKill(pid);
+    if (sent !== null) killed.push({ pid, name, signal: sent });
+  }
+
+  const freedPorts = killed.length > 0 ? FIXTURE_PORTS : [];
+
+  process.stderr.write(
+    killed.length === 0
+      ? '[doctor --cleanup] No fixture processes found.\n'
+      : `[doctor --cleanup] Killed ${killed.length} process(es). Freed ports: ${freedPorts.join(', ')}\n`,
+  );
+
+  return { killed, ports: freedPorts };
+}
+
+function extractPid(psLine: string): number | null {
+  // ps -ef columns: UID  PID  PPID  ...
+  const parts = psLine.trimStart().split(/\s+/);
+  const pid = parseInt(parts[1] ?? '', 10);
+  return Number.isFinite(pid) ? pid : null;
+}
+
+function extractProcessName(psLine: string): string {
+  const parts = psLine.trimStart().split(/\s+/);
+  return parts.slice(7).join(' ').slice(0, 80);
+}
+
+function sendTermThenKill(pid: number): 'SIGTERM' | 'SIGKILL' | null {
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    return null;
+  }
+  // poll for 5s then SIGKILL if still alive
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return 'SIGTERM';
+    }
+  }
+  try {
+    process.kill(pid, 'SIGKILL');
+    return 'SIGKILL';
+  } catch {
+    return 'SIGTERM';
+  }
 }
 
 async function runAllChecks(projectDir: string): Promise<DoctorResult> {

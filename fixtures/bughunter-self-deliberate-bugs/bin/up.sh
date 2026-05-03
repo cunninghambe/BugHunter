@@ -13,6 +13,12 @@ PID_FILE="$FIXTURE_ROOT/.fixture-pids"
 
 log() { echo "[up.sh] $*" >&2; }
 
+_cleanup() {
+  log "Signal received — running down.sh..."
+  bash "$(dirname "${BASH_SOURCE[0]}")/down.sh" || true
+}
+trap _cleanup INT TERM
+
 check_port_free() {
   local port="$1"
   if command -v lsof &>/dev/null; then

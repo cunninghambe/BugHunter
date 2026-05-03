@@ -25,7 +25,7 @@ vi.mock('../store/filesystem.js', () => ({
   runPaths: vi.fn(),
 }));
 
-import { doctorCommand } from './doctor.js';
+import { doctorCommand, cleanupFixtures } from './doctor.js';
 import { loadConfig, effectiveForbiddenPaths } from '../config.js';
 import { HttpSurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
@@ -197,5 +197,81 @@ describe('doctorCommand', () => {
   it('table output does not include ANSI escape codes', async () => {
     const combined = await withCapturedOutput(() => doctorCommand(tmpDir, { format: 'table' }));
     expect(combined).not.toMatch(/\x1b\[/);
+  });
+
+  it('--cleanup emits JSON report and skips health checks', async () => {
+    const output = await withCapturedOutput(() =>
+      doctorCommand(tmpDir, { cleanup: true }),
+    );
+    const report = JSON.parse(output) as { killed: unknown[]; ports: unknown[] };
+    expect(report).toHaveProperty('killed');
+    expect(report).toHaveProperty('ports');
+    expect(Array.isArray(report.killed)).toBe(true);
+    expect(Array.isArray(report.ports)).toBe(true);
+    // Health check mocks were never called because cleanup short-circuits
+    expect(vi.mocked(loadConfig)).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cleanupFixtures unit tests
+// ---------------------------------------------------------------------------
+
+describe('cleanupFixtures', () => {
+  it('returns empty report when ps output has no fixture processes', () => {
+    const ps = [
+      'UID   PID  PPID  C STIME TTY          TIME CMD',
+      'root     1     0  0 00:00 ?        00:00:00 /sbin/init',
+      'root  1234   999  0 00:01 pts/0    00:00:00 node some-other-server.js',
+    ].join('\n');
+    const report = cleanupFixtures(ps);
+    expect(report.killed).toHaveLength(0);
+    expect(report.ports).toHaveLength(0);
+  });
+
+  it('identifies processes matching bh-e2e-fixture pattern', () => {
+    // SIGTERM succeeds; kill(pid, 0) immediately throws ESRCH (process exited promptly)
+    const mockKill = vi.spyOn(process, 'kill').mockImplementation((_pid, signal) => {
+      if (signal === 0) throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+      return true;
+    });
+    const ps = [
+      'UID   PID  PPID  C STIME TTY          TIME CMD',
+      'root  4242  1000  0 00:01 ?        00:00:00 node bh-e2e-fixture-race-bad.js',
+    ].join('\n');
+    const report = cleanupFixtures(ps);
+    expect(report.killed).toHaveLength(1);
+    expect(report.killed[0].pid).toBe(4242);
+    expect(report.ports.length).toBeGreaterThan(0);
+    mockKill.mockRestore();
+  });
+
+  it('identifies processes matching bughunter-fixture- pattern', () => {
+    // SIGTERM succeeds; kill(pid, 0) immediately throws ESRCH (process exited promptly)
+    const mockKill = vi.spyOn(process, 'kill').mockImplementation((_pid, signal) => {
+      if (signal === 0) throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+      return true;
+    });
+    const ps = [
+      'UID   PID  PPID  C STIME TTY          TIME CMD',
+      'root  5555  1000  0 00:01 ?        00:00:00 node bughunter-fixture-idor-bad.js',
+    ].join('\n');
+    const report = cleanupFixtures(ps);
+    expect(report.killed).toHaveLength(1);
+    expect(report.killed[0].pid).toBe(5555);
+    mockKill.mockRestore();
+  });
+
+  it('skips lines where process is already gone (SIGTERM throws)', () => {
+    const mockKill = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+    });
+    const ps = [
+      'root  9999  1000  0 00:01 ?        00:00:00 node bh-e2e-fixture-gone.js',
+    ].join('\n');
+    // kill(pid, 'SIGTERM') throws ESRCH → process was already gone → not counted
+    const report = cleanupFixtures(ps);
+    expect(report.killed).toHaveLength(0);
+    mockKill.mockRestore();
   });
 });
