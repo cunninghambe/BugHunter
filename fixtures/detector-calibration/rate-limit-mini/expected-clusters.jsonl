@@ -1,0 +1,6 @@
+{"kind":"no_rate_limit_on_login","expect":"fires","minClusterSize":1,"match":{"page":"/login-no-rate-limit"},"severity":"major"}
+{"kind":"no_rate_limit_on_login","expect":"silent","reason":"endpoint returns 429 after 5 attempts","match":{"page":"/login-rate-limited-429"}}
+{"kind":"no_rate_limit_on_login","expect":"silent","reason":"endpoint returns 423 (locked) after 3 attempts","match":{"page":"/login-rate-limited-423"},"edgeLabel":"http-423-locked"}
+{"kind":"no_rate_limit_on_login","expect":"fires","minClusterSize":1,"match":{"page":"/login-always-200"},"severity":"major","edgeLabel":"login-always-200-pathological"}
+{"kind":"no_rate_limit_on_login","expect":"fires","minClusterSize":1,"match":{"page":"/login-rst-on-6th"},"severity":"major","edgeLabel":"connection-reset-not-rate-limit"}
+{"kind":"no_rate_limit_on_login","expect":"skipped","reason":"no_response"}

@@ -282,6 +282,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'no_rate_limit_on_login' && target.fixturePath !== undefined) {
+      const clusters = await runNoRateLimitOnLoginHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (
       (contract.kind === 'iframe_postmessage_unguarded'
         || contract.kind === 'xss_dom'
@@ -1895,6 +1908,125 @@ async function runNetworkStatusHarness(
       fixHints: [],
       thirdPartyOrGenerated: false,
       severity: kind === 'network_5xx' ? 'major' : 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// no_rate_limit_on_login runner — sends N bogus-credential POSTs to each
+// route, fires when no 429/423 status is observed within the cap.
+// ---------------------------------------------------------------------------
+
+const NO_RATE_LIMIT_ATTEMPT_CAP = 15;
+
+function loginPost(url: string, body: string): Promise<number> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(url);
+      const req = http.request({
+        hostname: parsed.hostname,
+        port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
+        path: parsed.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+        timeout: 5_000,
+      }, (res) => {
+        res.on('data', () => {});
+        res.on('end', () => resolve(res.statusCode ?? 0));
+        res.on('error', () => resolve(0));
+      });
+      req.on('timeout', () => { req.destroy(); resolve(0); });
+      req.on('error', () => resolve(0));
+      req.write(body);
+      req.end();
+    } catch {
+      resolve(0);
+    }
+  });
+}
+
+async function runNoRateLimitOnLoginHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('no_rate_limit_on_login: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+  const bogusCreds = JSON.stringify({ email: 'bughunter-probe-user@invalid.test', password: 'BugHunterProbe!Invalid999' });
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+
+      let rateLimitHit = false;
+      for (let attempt = 0; attempt < NO_RATE_LIMIT_ATTEMPT_CAP; attempt++) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (signal.aborted) break;
+        const status = await loginPost(url, bogusCreds);
+        if (status === 429 || status === 423) {
+          rateLimitHit = true;
+          break;
+        }
+      }
+
+      if (!rateLimitHit) {
+        detectionsByPage.set(route, `Login endpoint ${route} accepted ${NO_RATE_LIMIT_ATTEMPT_CAP} bogus-credential POSTs without 429/423`);
+        log.info('no_rate_limit_on_login: detection', { route });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'no_rate_limit_on_login';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCause] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'expected_failure', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: ['Apply rate limiting (e.g., 5 attempts per IP per minute) to login endpoints'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
     });
   }
 
