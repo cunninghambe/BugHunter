@@ -176,4 +176,36 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects SQL injection by sending error-eliciting payloads and observing database error messages or anomalous response behaviour.',
   },
+  {
+    kind: 'idor_horizontal_read',
+    requires: {
+      phases: ['discover', 'plan', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'specific', roles: ['alice', 'bob'] },
+      pageContext: { kind: 'specific-routes', routes: ['/api/orders/:id', '/api/users/:id/profile'] },
+    },
+    fixture: {
+      path: 'idor-mini',
+      servesKinds: ['idor_horizontal_read'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects read-only IDOR: authenticated user reads another user\'s resource without a 403 (bearer-token auth, 2 seed roles).',
+  },
+  {
+    kind: 'command_injection',
+    requires: {
+      phases: ['plan', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'specific-routes', routes: ['/api/admin/health'] },
+    },
+    fixture: {
+      path: 'command-injection-mini',
+      servesKinds: ['command_injection'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects direct shell string concatenation in POST body fields (target, domain) via nonce echo-back from exec output.',
+  },
 ];
