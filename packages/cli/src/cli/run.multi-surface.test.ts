@@ -367,3 +367,124 @@ describe('runMultiSurfacePipeline — 6-surface integration (mocked)', () => {
     expect(results.filter(r => !r.skipped)).toHaveLength(6);
   });
 });
+
+// ──────────────────────────────────────────────────
+// #176: per-surface budget allocation
+// ──────────────────────────────────────────────────
+
+describe('runMultiSurfacePipeline — #176 per-surface budget allocation', () => {
+  it('2 surfaces, budget 1800000 → each gets 900000', async () => {
+    const topology: SurfaceListSurfacesResult = {
+      surfaceMcpVersion: '0.3.0',
+      surfaces: [
+        { name: 'self-web', stack: 'vite', baseUrl: 'http://localhost:5790', state: { kind: 'ready' }, toolCount: 0, pageCount: 3, navigationCount: 0, toolRevision: 1, capabilities: { listPages: true, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+        { name: 'self-api', stack: 'openapi', baseUrl: 'http://localhost:5791', state: { kind: 'ready' }, toolCount: 5, pageCount: 0, navigationCount: 0, toolRevision: 1, capabilities: { listPages: false, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+      ],
+    };
+    const config: BugHunterConfig = { ...BASE_CONFIG, budgetMs: 1_800_000 };
+    const seenBudgets: number[] = [];
+    const adapter = makeHttpAdapter();
+
+    await runMultiSurfacePipeline(adapter, topology, config, async (_b, surfaceConfig) => {
+      seenBudgets.push(surfaceConfig.budgetMs ?? -1);
+    });
+
+    expect(seenBudgets).toEqual([900_000, 900_000]);
+  });
+
+  it('6 surfaces, budget 1800000 → each gets 300000', async () => {
+    const names = ['self-api', 'self-spa', 'race-bad', 'idor-bad', 'v24-deferred', 'pen-bad'];
+    const topology: SurfaceListSurfacesResult = {
+      surfaceMcpVersion: '0.3.0',
+      surfaces: names.map(name => ({
+        name,
+        stack: 'openapi' as const,
+        baseUrl: `http://localhost:${5000 + names.indexOf(name)}`,
+        state: { kind: 'ready' as const },
+        toolCount: 1, pageCount: 0, navigationCount: 0, toolRevision: 1,
+        capabilities: { listPages: false, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false },
+      })),
+    };
+    const config: BugHunterConfig = { ...BASE_CONFIG, budgetMs: 1_800_000 };
+    const seenBudgets: number[] = [];
+    const adapter = makeHttpAdapter();
+
+    await runMultiSurfacePipeline(adapter, topology, config, async (_b, surfaceConfig) => {
+      seenBudgets.push(surfaceConfig.budgetMs ?? -1);
+    });
+
+    expect(seenBudgets).toHaveLength(6);
+    expect(seenBudgets.every(b => b === 300_000)).toBe(true);
+  });
+
+  it('1 surface (single-surface fast path) → gets full budget unchanged', async () => {
+    const topology: SurfaceListSurfacesResult = {
+      surfaceMcpVersion: '0.3.0',
+      surfaces: [
+        { name: 'self-spa', stack: 'vite', baseUrl: 'http://localhost:5790', state: { kind: 'ready' }, toolCount: 0, pageCount: 3, navigationCount: 0, toolRevision: 1, capabilities: { listPages: true, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+      ],
+    };
+    const config: BugHunterConfig = { ...BASE_CONFIG, budgetMs: 1_800_000 };
+    let seenBudget: number | undefined;
+    const adapter = makeHttpAdapter();
+
+    await runMultiSurfacePipeline(adapter, topology, config, async (_b, surfaceConfig) => {
+      seenBudget = surfaceConfig.budgetMs;
+    });
+
+    expect(seenBudget).toBe(1_800_000);
+  });
+
+  it('smoke #16 simulation — 2-surface run with budget 1800s, both surfaces complete (no starvation)', async () => {
+    const topology: SurfaceListSurfacesResult = {
+      surfaceMcpVersion: '0.3.0',
+      surfaces: [
+        { name: 'self-web', stack: 'vite', baseUrl: 'http://localhost:5790', state: { kind: 'ready' }, toolCount: 0, pageCount: 5, navigationCount: 0, toolRevision: 1, capabilities: { listPages: true, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+        { name: 'self-api', stack: 'openapi', baseUrl: 'http://localhost:5791', state: { kind: 'ready' }, toolCount: 10, pageCount: 0, navigationCount: 0, toolRevision: 1, capabilities: { listPages: false, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+      ],
+    };
+    const config: BugHunterConfig = { ...BASE_CONFIG, budgetMs: 1_800_000 };
+    const completed: string[] = [];
+    const adapter = makeHttpAdapter();
+
+    const results = await runMultiSurfacePipeline(adapter, topology, config, async (_b, surfaceConfig, name) => {
+      // Each surface must receive a positive, non-zero budget slice
+      expect(surfaceConfig.budgetMs).toBeGreaterThan(0);
+      completed.push(name);
+    });
+
+    // Both surfaces ran — neither was starved
+    expect(completed).toEqual(['self-web', 'self-api']);
+    expect(results.filter(r => !r.skipped)).toHaveLength(2);
+    // Verify per-surface telemetry is present on each result
+    for (const r of results.filter(res => !res.skipped)) {
+      expect(r.budgetMs).toBe(900_000);
+      expect(r.elapsedMs).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('per-surface explicit budgetMs override takes priority over the computed split', async () => {
+    const topology: SurfaceListSurfacesResult = {
+      surfaceMcpVersion: '0.3.0',
+      surfaces: [
+        { name: 'self-web', stack: 'vite', baseUrl: 'http://localhost:5790', state: { kind: 'ready' }, toolCount: 0, pageCount: 3, navigationCount: 0, toolRevision: 1, capabilities: { listPages: true, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+        { name: 'self-api', stack: 'openapi', baseUrl: 'http://localhost:5791', state: { kind: 'ready' }, toolCount: 5, pageCount: 0, navigationCount: 0, toolRevision: 1, capabilities: { listPages: false, listNavigations: false, enumerateRoutesRuntime: false, crawlSeed: false } },
+      ],
+    };
+    // self-api has an explicit 120s override; self-web should get the split (900s)
+    const config: BugHunterConfig = {
+      ...BASE_CONFIG,
+      budgetMs: 1_800_000,
+      surfaces: { 'self-api': { budgetMs: 120_000 } },
+    };
+    const seenBudgets: Record<string, number> = {};
+    const adapter = makeHttpAdapter();
+
+    await runMultiSurfacePipeline(adapter, topology, config, async (_b, surfaceConfig, name) => {
+      seenBudgets[name] = surfaceConfig.budgetMs ?? -1;
+    });
+
+    expect(seenBudgets['self-api']).toBe(120_000);
+    expect(seenBudgets['self-web']).toBe(900_000);
+  });
+});

@@ -2040,6 +2040,12 @@ export type RunSummary = {
   };
   /** v0.36: browser-platform probe telemetry — present when browserPlatform.enabled = true. */
   browserPlatform?: BrowserPlatformTelemetry;
+  /** #176: per-surface budget allocation telemetry — present on multi-surface runs (≥2 ready surfaces). */
+  perSurface?: Array<{
+    surfaceName: string;
+    budgetMs: number | undefined;
+    elapsedMs: number;
+  }>;
   /** v0.43: agentic-app detection telemetry — present when agent.enabled = true. */
   agent?: {
     enabled: boolean;
