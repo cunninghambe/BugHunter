@@ -282,6 +282,23 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (
+      (contract.kind === 'network_5xx' || contract.kind === 'network_4xx_unexpected')
+      && target.fixturePath !== undefined
+    ) {
+      const clusters = await runNetworkStatusHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.kind,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === '404_for_linked_route' && target.fixturePath !== undefined) {
       const clusters = await run404ForLinkedRouteHarness(
         target.appBaseUrl,
@@ -1758,6 +1775,92 @@ function buildSensitiveDataInUrlClusters(detectionsByPage: Map<string, string[]>
 // ---------------------------------------------------------------------------
 // Fixture lifecycle helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// network_5xx / network_4xx_unexpected runner — single probe loop, filters
+// clusters by contract.kind via status range.
+// ---------------------------------------------------------------------------
+
+async function runNetworkStatusHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  kind: 'network_5xx' | 'network_4xx_unexpected',
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push(`${kind}: fixture port not reachable during validate phase`);
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, { status: number; rootCause: string }>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      const status = response.status;
+
+      if (kind === 'network_5xx') {
+        if (status === 0) {
+          detectionsByPage.set(route, { status, rootCause: `Connectivity failure (status 0) from GET ${route}` });
+        } else if (status >= 500) {
+          detectionsByPage.set(route, { status, rootCause: `HTTP ${status} from GET ${route}` });
+        }
+      } else {
+        // network_4xx_unexpected
+        if (status >= 400 && status < 500) {
+          detectionsByPage.set(route, { status, rootCause: `Unexpected HTTP ${status} from GET ${route}` });
+        }
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const clusters: BugCluster[] = [];
+
+  for (const [page, { rootCause }] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'expected_failure', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: kind === 'network_5xx' ? 'major' : 'minor',
+    });
+  }
+
+  return clusters;
+}
 
 // ---------------------------------------------------------------------------
 // 404_for_linked_route runner — extracts <a href="/path"> from each fixture

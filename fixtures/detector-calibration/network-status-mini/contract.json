@@ -1,0 +1,7 @@
+{
+  "fixture": "network-status-mini",
+  "serves": ["network_5xx", "network_4xx_unexpected"],
+  "port": 9883,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

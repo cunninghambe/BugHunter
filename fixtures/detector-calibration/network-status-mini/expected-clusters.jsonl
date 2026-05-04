@@ -1,0 +1,24 @@
+{"kind":"network_5xx","expect":"silent","reason":"200 OK is not 5xx","match":{"page":"/200-ok"}}
+{"kind":"network_5xx","expect":"silent","reason":"201 Created is not 5xx","match":{"page":"/201-created"}}
+{"kind":"network_5xx","expect":"silent","reason":"204 No Content is not 5xx","match":{"page":"/204-no-content"}}
+{"kind":"network_5xx","expect":"silent","reason":"3xx redirect is not 5xx","match":{"page":"/301-moved"}}
+{"kind":"network_5xx","expect":"silent","reason":"3xx redirect is not 5xx","match":{"page":"/302-found"}}
+{"kind":"network_5xx","expect":"silent","reason":"4xx is handled by network_4xx_unexpected","match":{"page":"/400-bad-request"}}
+{"kind":"network_5xx","expect":"silent","reason":"4xx is not 5xx","match":{"page":"/401-unauthorized"}}
+{"kind":"network_5xx","expect":"silent","reason":"4xx is not 5xx","match":{"page":"/403-forbidden"}}
+{"kind":"network_5xx","expect":"silent","reason":"4xx is not 5xx","match":{"page":"/404-not-found"}}
+{"kind":"network_5xx","expect":"silent","reason":"4xx is not 5xx","match":{"page":"/410-gone"}}
+{"kind":"network_5xx","expect":"fires","minClusterSize":1,"match":{"page":"/500-server-error"},"severity":"major"}
+{"kind":"network_5xx","expect":"fires","minClusterSize":1,"match":{"page":"/502-bad-gateway"},"severity":"major","edgeLabel":"bad-gateway"}
+{"kind":"network_5xx","expect":"fires","minClusterSize":1,"match":{"page":"/503-unavailable"},"severity":"major","edgeLabel":"service-unavailable"}
+{"kind":"network_5xx","expect":"fires","minClusterSize":1,"match":{"page":"/504-timeout"},"severity":"major","edgeLabel":"gateway-timeout"}
+{"kind":"network_5xx","expect":"skipped","reason":"no_response"}
+{"kind":"network_4xx_unexpected","expect":"silent","reason":"2xx is not 4xx","match":{"page":"/200-ok"}}
+{"kind":"network_4xx_unexpected","expect":"silent","reason":"3xx redirect is not 4xx","match":{"page":"/301-moved"}}
+{"kind":"network_4xx_unexpected","expect":"fires","minClusterSize":1,"match":{"page":"/400-bad-request"},"severity":"minor"}
+{"kind":"network_4xx_unexpected","expect":"fires","minClusterSize":1,"match":{"page":"/401-unauthorized"},"severity":"minor","edgeLabel":"unauthorized"}
+{"kind":"network_4xx_unexpected","expect":"fires","minClusterSize":1,"match":{"page":"/403-forbidden"},"severity":"minor","edgeLabel":"forbidden"}
+{"kind":"network_4xx_unexpected","expect":"fires","minClusterSize":1,"match":{"page":"/404-not-found"},"severity":"minor","edgeLabel":"not-found"}
+{"kind":"network_4xx_unexpected","expect":"fires","minClusterSize":1,"match":{"page":"/410-gone"},"severity":"minor","edgeLabel":"gone"}
+{"kind":"network_4xx_unexpected","expect":"silent","reason":"5xx handled by network_5xx, not network_4xx_unexpected","match":{"page":"/500-server-error"}}
+{"kind":"network_4xx_unexpected","expect":"skipped","reason":"no_response"}
