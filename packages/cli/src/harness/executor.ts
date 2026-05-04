@@ -252,6 +252,18 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'hardcoded_credentials_in_source' && target.fixturePath !== undefined) {
+      const clusters = runHardcodedCredsHarness(
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     // Structural scaffold for all other detectors (V56.2+ populates incrementally).
     for (const phase of contract.requires.phases) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -1633,6 +1645,141 @@ export async function bootFixture(fixturePath: string, timeoutMs = 30_000): Prom
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// hardcoded_credentials_in_source runner (static analysis — no HTTP server)
+// ---------------------------------------------------------------------------
+
+/** Regex patterns for secrets we detect via Node-side scan (gitleaks substitute). */
+const SECRET_PATTERNS: Array<{ name: string; re: RegExp }> = [
+  { name: 'stripe-live-key',    re: /sk_live_[0-9a-zA-Z]{24,}/g },
+  { name: 'stripe-test-key',    re: /sk_test_[0-9a-zA-Z]{24,}/g },
+  { name: 'aws-access-key',     re: /AKIA[0-9A-Z]{16}/g },
+  { name: 'slack-bot-token',    re: /xoxb-[0-9]+-[0-9A-Za-z-]+/g },
+];
+
+type CredFinding = { file: string; secretName: string };
+
+/** Recursively walk a directory and return all file paths with the given extension. */
+function walkFiles(dir: string, ext: string): string[] {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const results: string[] = [];
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) results.push(...walkFiles(full, ext));
+    else if (entry.isFile() && entry.name.endsWith(ext)) results.push(full);
+  }
+  return results;
+}
+
+/** Scan a single file for hardcoded secret patterns. Returns finding per match-group. */
+function scanFile(filePath: string): CredFinding[] {
+  const content = fs.readFileSync(filePath, 'utf8');
+  const findings: CredFinding[] = [];
+  for (const { name, re } of SECRET_PATTERNS) {
+    re.lastIndex = 0;
+    if (re.test(content)) findings.push({ file: filePath, secretName: name });
+  }
+  return findings;
+}
+
+function runHardcodedCredsHarness(
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): BugCluster[] {
+  const generatedDir = path.join(fixturePath, 'generated');
+
+  // Boot: run up.sh to materialise generated/ from templates
+  if (phases.includes('execute')) {
+    const upScript = path.join(fixturePath, 'bin', 'up.sh');
+    if (fs.existsSync(upScript)) {
+      const result = child_process.spawnSync('bash', [upScript], { cwd: fixturePath, encoding: 'utf8' });
+      if (result.status !== 0) {
+        warnings.push(`hardcoded_credentials_in_source: up.sh exited ${String(result.status)}: ${result.stderr}`);
+      }
+    }
+  }
+
+  // Skipped case: generated/ absent after boot attempt
+  if (!fs.existsSync(generatedDir)) {
+    warnings.push('hardcoded_credentials_in_source: generated/ missing — fixture not built, skipping scan');
+    phasesRun.push('execute');
+    return [];
+  }
+
+  if (signal.aborted) return [];
+
+  // Execute: scan all .ts files under generated/ only (templates/ excluded)
+  const findings: CredFinding[] = [];
+  if (phases.includes('execute')) {
+    const tsFiles = walkFiles(generatedDir, '.ts');
+    for (const f of tsFiles) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      findings.push(...scanFile(f));
+    }
+    phasesRun.push('execute');
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildHardcodedCredsClusters(findings, fixturePath);
+}
+
+function buildHardcodedCredsClusters(findings: CredFinding[], fixturePath: string): BugCluster[] {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'hardcoded_credentials_in_source';
+
+  // Group findings by relative file path (page key matches expected-clusters.jsonl)
+  const byPage = new Map<string, string[]>();
+  for (const { file, secretName } of findings) {
+    const page = path.relative(fixturePath, file);
+    const causes = byPage.get(page) ?? [];
+    causes.push(secretName);
+    byPage.set(page, causes);
+  }
+
+  const clusters: BugCluster[] = [];
+  for (const [page, causes] of byPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'expected_failure',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: `hardcoded secret(s) detected in ${page}: ${causes.join(', ')}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: causes.length,
+      occurrences: [occurrence],
+      suspectedFiles: [page],
+      fixHints: ['Move secret to environment variable; never commit credentials to source'],
+      thirdPartyOrGenerated: false,
+      severity: 'critical',
+    });
+  }
+
+  return clusters;
+}
 
 function buildResult(
   clusters: BugCluster[],
