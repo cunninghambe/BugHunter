@@ -1,0 +1,7 @@
+{
+  "fixture": "cookie-flags-mini",
+  "serves": ["cookie_security_flags"],
+  "port": 9933,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

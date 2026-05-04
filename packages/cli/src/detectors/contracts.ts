@@ -426,4 +426,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects routes returning Access-Control-Allow-Origin: * combined with Access-Control-Allow-Credentials: true — credentialed wildcard CORS exposes session data to any origin.',
   },
+  {
+    kind: 'cookie_security_flags',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'cookie-flags-mini',
+      servesKinds: ['cookie_security_flags'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects session-shaped Set-Cookie values missing Secure / HttpOnly / SameSite flags. CSRF cookies are exempt from HttpOnly check; Secure check skipped on localhost.',
+  },
 ];
