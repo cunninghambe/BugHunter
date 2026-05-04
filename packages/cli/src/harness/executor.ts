@@ -282,6 +282,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === '404_for_linked_route' && target.fixturePath !== undefined) {
+      const clusters = await run404ForLinkedRouteHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'csrf_missing_on_mutating_route' && target.fixturePath !== undefined) {
       const clusters = await runCsrfMissingHarness(
         target.appBaseUrl,
@@ -1745,6 +1758,113 @@ function buildSensitiveDataInUrlClusters(detectionsByPage: Map<string, string[]>
 // ---------------------------------------------------------------------------
 // Fixture lifecycle helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 404_for_linked_route runner — extracts <a href="/path"> from each fixture
+// page, probes each linked path, fires on 404.
+// ---------------------------------------------------------------------------
+
+function extractInternalLinks(html: string): string[] {
+  const results: string[] = [];
+  const seen = new Set<string>();
+  const hrefRe = /href=["']([^"']+)["']/gi;
+  let match: RegExpExecArray | null;
+  while ((match = hrefRe.exec(html)) !== null) {
+    const href = match[1] ?? '';
+    if (href.length === 0) continue;
+    if (href.startsWith('#')) continue;                // fragment
+    if (href.startsWith('mailto:') || href.startsWith('tel:')) continue;
+    if (href.startsWith('javascript:')) continue;
+    if (/^https?:\/\//i.test(href) || href.startsWith('//')) continue;  // external origin
+    if (!href.startsWith('/')) continue;               // require absolute path
+    if (seen.has(href)) continue;
+    seen.add(href);
+    results.push(href);
+  }
+  return results;
+}
+
+async function run404ForLinkedRouteHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('404_for_linked_route: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  // Map page → set of broken paths
+  const brokenByPage = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      const links = extractInternalLinks(response.body);
+      const broken: string[] = [];
+      for (const link of links) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (signal.aborted) break;
+        const linkResp = await httpGet(`${appBaseUrl}${link}`).catch((): ProbeResponse => ({ status: 0, body: '' }));
+        if (linkResp.status === 404) broken.push(link);
+      }
+      if (broken.length > 0) {
+        brokenByPage.set(route, broken);
+        log.info('404_for_linked_route: detection', { route, broken });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = '404_for_linked_route';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, broken] of brokenByPage) {
+    const occurrences: Occurrence[] = broken.map((path, idx) => ({
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${idx}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    }));
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: `Page ${page} links to ${broken.length} broken path(s): ${broken.join(', ')}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: broken.length,
+      occurrences,
+      suspectedFiles: [],
+      fixHints: ['Either fix the broken paths or remove the dead links from the page'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
+    });
+  }
+
+  return clusters;
+}
 
 // ---------------------------------------------------------------------------
 // csrf_missing_on_mutating_route runner.
