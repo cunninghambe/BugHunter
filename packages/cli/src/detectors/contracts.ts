@@ -71,7 +71,12 @@ export type ClusterAssertion =
         | 'fixture_not_built'
         | 'no_pages_to_probe'
         | 'fixture_unreachable'
-        | 'no_response';
+        | 'no_response'
+        | 'fixture_db_missing'
+        | 'fixture_uploads_missing'
+        | 'no_anonymous_role'
+        | 'tool_not_found:npm-audit'
+        | (string & {});
     };
 
 /** Fixture pointer for this detector. May be shared across N detectors. */
