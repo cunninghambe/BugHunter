@@ -10,15 +10,17 @@ BugHunter automates the boring half. It discovers your app's surface from [Surfa
 
 ## Empirical numbers
 
-These numbers come from real BugHunter runs against the deliberate-bugs fixture (self-test) and the vibe-todo bench app (calibration), not from aspirational targets. They represent the current honest baseline.
+Real BugHunter runs against the deliberate-bugs fixture and the comprehensive-bench fixture. Numbers vary as the calibration pipeline matures — the trajectory is documented honestly rather than smoothed.
 
-**V33 self-test** (178/178 tests run, no crashes): 6/105 golden BugKinds detected — **5.7% recall**, **0 false positives**. The six detected kinds are `coop_coep_violation`, `focus_lost_after_action`, `missing_state_change`, `seo_h1_missing_or_multiple`, `seo_title_duplicate_across_routes`, and `xss_reflected`. The 94.3% miss rate traces to four discrete structural blockers: the fixture's API server is not registered as a SurfaceMCP surface (blocking ~25 pen-test/race/IDOR kinds), HAR network capture is empty (blocking ~15 network/console/react kinds), the bundle probe returns 0 bytes (blocking perf kinds), and the axe runner emits 0 results silently (blocking a11y kinds). Each blocker is a scoped follow-up; the pipeline itself is healthy. (Measurement is pre-fix-PRs #102/103/104/105; smoke #5 was in flight at time of writing.)
+**Peak measurement (smoke #14, focused fixture):** 17/85 golden BugKinds detected — **20.0% kind recall, 49.7% plant recall, 0 false positives.** Both UI and API kinds firing in one run. This is the empirical signal of what the system delivers when its inputs reach it cleanly.
 
-**Calibration on vibe-todo** ([issue #93](https://github.com/cunninghambe/BugHunter/issues/93)): precision 0% / recall 0% / F1 0. These numbers reflect a partially-broken calibration pipeline: `calibrate.ts` was reading clusters from `summary.json.clusters` (always empty) instead of `bugs.jsonl`. PR [#94](https://github.com/cunninghambe/BugHunter/issues/94) fixed the silent-lie path. A re-run against vibe-todo with the fix applied, the Express backend registered as a SurfaceMCP surface, and browser auth working is needed before meaningful precision/recall numbers are possible. BugHunter did surface 20 real findings (COOP/COEP violations, SEO issues, vulnerable dependencies) that were not in the gold standard — those are not false positives, they are unlisted bugs.
+**Current measurement (smoke #20, comprehensive-bench):** 9/96 (9.4%) kind recall, 17/218 (7.8%) plant recall, 0 false positives in detector classes (8 unexpected `auth_bypass_via_unauthed_route` clusters fire on intentionally-public routes — pending suppression rule). The comprehensive-bench fixture (218 plants × 101 kinds × 22 auth-gated routes × 2 surfaces) is more demanding than the focused fixture, and surfaces a regression chain currently under investigation. Two unfixed blockers are tracked:
+- Web surface budget overrun — `runPhaseForSurface` runs 7% past `budgetMs`, eating into API surface allocation
+- API cookie propagation gap — `extraCookie` obtained but not reaching outbound headers despite landed PRs
 
-**Determinism** ([issue #86](https://github.com/cunninghambe/BugHunter/issues/86)): verified — two consecutive runs with `--seed 42 --frozen-clock` against the race-bad fixture produce byte-identical canonical `summary.json` (SHA-256 `9c5ea3362c04efb4a4fbf7495ece90cb014e814a0744554c71dc8d17a8747faf`). The only fields that differ between runs are `actualRuntimeMs` (stripped from canonical hash per spec §6.5) and `runId` (by design).
+**Determinism:** verified — two consecutive runs with `--seed 42 --frozen-clock` against the race-bad fixture produce byte-identical canonical `summary.json` (SHA-256 `9c5ea3362c04efb4a4fbf7495ece90cb014e814a0744554c71dc8d17a8747faf`). The only fields that differ between runs are `actualRuntimeMs` (stripped from canonical hash per spec §6.5) and `runId` (by design).
 
-**Last measured:** 2026-05-02
+**False-positive precision:** 0 detector-class FPs on the focused fixture. On real-world targets (an Aspect staging app), 8 FP categories were identified and addressed across PRs #110–#114, #145, #150 (Vite dev-URL artifacts, mutator-validation rejections, Radix portal popovers, intentional brand colors as visual anomalies, etc.). The current FP rate on real apps is the honest open question — not the kind-recall number.
 
 ## Status
 
