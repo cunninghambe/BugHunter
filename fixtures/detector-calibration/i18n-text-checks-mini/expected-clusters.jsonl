@@ -1,0 +1,18 @@
+{"kind":"i18n_date_format_ambiguous","expect":"fires","minClusterSize":1,"match":{"page":"/date-ambiguous-mmddyyyy"},"severity":"minor"}
+{"kind":"i18n_date_format_ambiguous","expect":"fires","minClusterSize":1,"match":{"page":"/date-ambiguous-ddmmyyyy"},"severity":"minor","edgeLabel":"slash-format-ambiguous"}
+{"kind":"i18n_date_format_ambiguous","expect":"silent","reason":"ISO 8601 format is unambiguous","match":{"page":"/date-iso8601"}}
+{"kind":"i18n_date_format_ambiguous","expect":"silent","reason":"page also includes spelled-out month name","match":{"page":"/date-with-month-name"},"edgeLabel":"month-name-disambiguator"}
+{"kind":"i18n_date_format_ambiguous","expect":"silent","reason":"dot-separated DD.MM.YYYY is acceptable","match":{"page":"/date-dot-separated"},"edgeLabel":"dot-separated-european"}
+{"kind":"i18n_date_format_ambiguous","expect":"skipped","reason":"no_response"}
+{"kind":"i18n_pluralization_broken","expect":"fires","minClusterSize":1,"match":{"page":"/plural-1-items"},"severity":"minor"}
+{"kind":"i18n_pluralization_broken","expect":"fires","minClusterSize":1,"match":{"page":"/plural-1-messages"},"severity":"minor","edgeLabel":"different-noun"}
+{"kind":"i18n_pluralization_broken","expect":"silent","reason":"\"1 item\" — correct singular","match":{"page":"/plural-1-item"}}
+{"kind":"i18n_pluralization_broken","expect":"silent","reason":"\"5 items\" — correct plural","match":{"page":"/plural-5-items"}}
+{"kind":"i18n_pluralization_broken","expect":"silent","reason":"\"0 items\" — plural for zero is conventional in en-US","match":{"page":"/plural-0-items"},"edgeLabel":"zero-plural-conventional"}
+{"kind":"i18n_pluralization_broken","expect":"skipped","reason":"no_response"}
+{"kind":"i18n_currency_format_broken","expect":"fires","minClusterSize":1,"match":{"page":"/currency-usd-no-decimals"},"severity":"minor"}
+{"kind":"i18n_currency_format_broken","expect":"fires","minClusterSize":1,"match":{"page":"/currency-usd-4-decimals"},"severity":"minor","edgeLabel":"over-precision-decimals"}
+{"kind":"i18n_currency_format_broken","expect":"silent","reason":"USD with 2 decimals is correct","match":{"page":"/currency-usd-2-decimals"}}
+{"kind":"i18n_currency_format_broken","expect":"silent","reason":"JPY expects 0 decimals — correct","match":{"page":"/currency-jpy-no-decimals"},"edgeLabel":"jpy-no-decimals-correct"}
+{"kind":"i18n_currency_format_broken","expect":"silent","reason":"page has no currency text to evaluate","match":{"page":"/currency-not-present"}}
+{"kind":"i18n_currency_format_broken","expect":"skipped","reason":"no_response"}

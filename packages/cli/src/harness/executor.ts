@@ -282,6 +282,25 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (
+      (contract.kind === 'i18n_date_format_ambiguous'
+        || contract.kind === 'i18n_pluralization_broken'
+        || contract.kind === 'i18n_currency_format_broken')
+      && target.fixturePath !== undefined
+    ) {
+      const clusters = await runI18nTextStaticHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.kind,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'no_rate_limit_on_login' && target.fixturePath !== undefined) {
       const clusters = await runNoRateLimitOnLoginHarness(
         target.appBaseUrl,
@@ -1908,6 +1927,157 @@ async function runNetworkStatusHarness(
       fixHints: [],
       thirdPartyOrGenerated: false,
       severity: kind === 'network_5xx' ? 'major' : 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// i18n text-content static-heuristic runners.
+// Production paths use locale-stress probes via camofox; harness uses focused
+// regex over the rendered HTML body.
+// ---------------------------------------------------------------------------
+
+const I18N_BAD_DATE_RE = /\b(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/\d{4}\b/;
+const I18N_GOOD_DATE_DISAMBIGUATORS = [
+  /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i,
+  /\b\d{4}-\d{2}-\d{2}\b/,
+];
+
+function findAmbiguousDate(html: string): boolean {
+  if (!I18N_BAD_DATE_RE.test(html)) return false;
+  return !I18N_GOOD_DATE_DISAMBIGUATORS.some(re => re.test(html));
+}
+
+/** Detect "1 <plural-noun>" patterns where the noun is plural but count is one. */
+function findBrokenPluralization(html: string): string | null {
+  // Strip HTML tags so we don't match across element boundaries.
+  const text = html.replace(/<[^>]+>/g, ' ');
+  // Match: "1 word" where word ends in 's' but is not a known singular ending in 's' (boss, address...).
+  const re = /\b1\s+([a-z]+s)\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const noun = (match[1] ?? '').toLowerCase();
+    // Exclude common nouns that genuinely end in 's' (bus, boss, glass, etc.) by minimum length 4
+    // and dropping the common 'ss' ending that's not pluralization.
+    if (noun.length < 4) continue;
+    if (noun.endsWith('ss')) continue;
+    return noun;
+  }
+  return null;
+}
+
+const I18N_CURRENCY_DECIMALS: Record<string, number> = {
+  '$': 2,    // USD
+  'EUR': 2,
+  '£': 2,    // GBP
+  '¥': 0,    // JPY
+  'KRW': 0,
+  '€': 2,
+};
+
+/** Detect currency-amount strings whose decimals don't match the currency convention. */
+function findBrokenCurrency(html: string): string | null {
+  const text = html.replace(/<[^>]+>/g, ' ');
+  // Match $123, $123.45, $123.4567, ¥123, etc.
+  const re = /([$£¥€])(\d+(?:[.,]\d+)?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const symbol = match[1] ?? '';
+    const amount = match[2] ?? '';
+    const expected = I18N_CURRENCY_DECIMALS[symbol];
+    if (expected === undefined) continue;
+    const decimalIdx = amount.indexOf('.');
+    const decimals = decimalIdx === -1 ? 0 : amount.length - decimalIdx - 1;
+    if (decimals !== expected) return `${symbol}${amount}`;
+  }
+  return null;
+}
+
+async function runI18nTextStaticHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  kind: 'i18n_date_format_ambiguous' | 'i18n_pluralization_broken' | 'i18n_currency_format_broken',
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push(`${kind}: fixture port not reachable during validate phase`);
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      let rootCause: string | undefined;
+      if (kind === 'i18n_date_format_ambiguous') {
+        if (findAmbiguousDate(response.body)) {
+          rootCause = `${route} renders a date in ambiguous MM/DD/YYYY or DD/MM/YYYY format with no spelled-out month or ISO 8601 disambiguator`;
+        }
+      } else if (kind === 'i18n_pluralization_broken') {
+        const noun = findBrokenPluralization(response.body);
+        if (noun !== null) {
+          rootCause = `${route} renders "1 ${noun}" — singular count with plural noun morphology`;
+        }
+      } else {
+        const value = findBrokenCurrency(response.body);
+        if (value !== null) {
+          rootCause = `${route} renders currency value "${value}" with decimals not matching the currency's convention`;
+        }
+      }
+      if (rootCause !== undefined) {
+        detectionsByPage.set(route, rootCause);
+        log.info(`${kind}: detection`, { route });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCause] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'minor',
     });
   }
 
