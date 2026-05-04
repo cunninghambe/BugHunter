@@ -171,6 +171,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'cookie_security_flags',

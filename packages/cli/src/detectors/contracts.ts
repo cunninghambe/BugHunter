@@ -410,4 +410,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Runs the heuristic hardcoded-string scanner against the fixture\'s generated source tree. Detects user-facing strings not wrapped in t() / <Trans>.',
   },
+  {
+    kind: 'permissive_cors',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'cors-mini',
+      servesKinds: ['permissive_cors'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects routes returning Access-Control-Allow-Origin: * combined with Access-Control-Allow-Credentials: true — credentialed wildcard CORS exposes session data to any origin.',
+  },
 ];
