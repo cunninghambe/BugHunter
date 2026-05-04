@@ -18,6 +18,7 @@ import { detectPathTraversal, detectCommandInjection, detectSqlInjectionError, d
 import type { ProbeResponse } from '../security/pen-detectors.js';
 import { classifySeoCorpus } from '../classify/seo.js';
 import type { SeoPageInput } from '../classify/seo.js';
+import { runHardcodedStringsScanner } from '../static/tools/hardcoded-strings.js';
 import { log } from '../log.js';
 
 // ---------------------------------------------------------------------------
@@ -268,6 +269,18 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
 
     if (contract.kind === 'hardcoded_credentials_in_source' && target.fixturePath !== undefined) {
       const clusters = runHardcodedCredsHarness(
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'i18n_hardcoded_string' && target.fixturePath !== undefined) {
+      const clusters = await runI18nHardcodedStringHarness(
         target.fixturePath,
         contract.requires.phases,
         phasesRun,
@@ -2406,6 +2419,88 @@ function runHardcodedCredsHarness(
   if (phases.includes('cluster')) phasesRun.push('cluster');
 
   return buildHardcodedCredsClusters(findings, fixturePath);
+}
+
+// ---------------------------------------------------------------------------
+// i18n_hardcoded_string runner — invokes existing static scanner.
+// ---------------------------------------------------------------------------
+
+async function runI18nHardcodedStringHarness(
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  const generatedDir = path.join(fixturePath, 'generated');
+
+  if (phases.includes('execute')) {
+    const upScript = path.join(fixturePath, 'bin', 'up.sh');
+    if (fs.existsSync(upScript)) {
+      const result = child_process.spawnSync('bash', [upScript], { cwd: fixturePath, encoding: 'utf8' });
+      if (result.status !== 0) {
+        warnings.push(`i18n_hardcoded_string: up.sh exited ${String(result.status)}: ${result.stderr}`);
+      }
+    }
+  }
+
+  if (!fs.existsSync(generatedDir)) {
+    warnings.push('i18n_hardcoded_string: generated/ missing — fixture not built, skipping scan');
+    phasesRun.push('execute');
+    return [];
+  }
+
+  if (signal.aborted) return [];
+
+  const detections = await runHardcodedStringsScanner({ projectRoot: generatedDir });
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('execute')) phasesRun.push('execute');
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  // Group detections by relative file path. fixturePath/generated/src/foo.ts → generated/src/foo.ts
+  const now = new Date().toISOString();
+  const kind: BugKind = 'i18n_hardcoded_string';
+  const byPage = new Map<string, string[]>();
+  for (const d of detections) {
+    const sourceFile = d.staticContext?.sourceFile;
+    if (sourceFile === undefined) continue;
+    const page = path.relative(fixturePath, sourceFile);
+    const previews = byPage.get(page) ?? [];
+    const literalPreview = d.evidence?.['literalPreview'];
+    previews.push(typeof literalPreview === 'string' ? literalPreview : '');
+    byPage.set(page, previews);
+  }
+
+  const clusters: BugCluster[] = [];
+  for (const [page, previews] of byPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/[^a-z0-9]/gi, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: `${previews.length} hardcoded user-facing string(s) in ${page}: ${previews.slice(0, 2).map(p => `"${p}"`).join(', ')}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: previews.length,
+      occurrences: [occurrence],
+      suspectedFiles: [page],
+      fixHints: ['Wrap user-facing strings in t() or <Trans> for i18n support'],
+      thirdPartyOrGenerated: false,
+      severity: 'minor',
+    });
+  }
+
+  return clusters;
 }
 
 function buildHardcodedCredsClusters(findings: CredFinding[], fixturePath: string): BugCluster[] {

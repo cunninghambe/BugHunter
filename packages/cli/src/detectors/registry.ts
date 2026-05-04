@@ -998,6 +998,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V37_I18N_STRESS.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'i18n_pluralization_broken',
