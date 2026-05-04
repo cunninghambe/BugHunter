@@ -59,6 +59,24 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // N1: safe route — resolves path and validates it stays inside UPLOADS_DIR
+  // Detector must be silent: path.resolve() + startsWith() correctly blocks traversal.
+  const safeFileMatch = pathname.match(/^\/api\/files-safe\/(.+)$/);
+  if (safeFileMatch) {
+    const resolved = path.resolve(UPLOADS_DIR, safeFileMatch[1]);
+    if (!resolved.startsWith(UPLOADS_DIR + path.sep) && resolved !== UPLOADS_DIR) {
+      respond(res, 403, 'forbidden');
+      return;
+    }
+    try {
+      const contents = fs.readFileSync(resolved, 'utf8');
+      respond(res, 200, contents);
+    } catch {
+      respond(res, 404, 'not found');
+    }
+    return;
+  }
+
   // Health check
   if (pathname === '/') {
     respond(res, 200, 'path-traversal-mini fixture');
