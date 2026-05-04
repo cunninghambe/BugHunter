@@ -164,6 +164,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'auth_bypass_via_unauthed_route' && target.fixturePath !== undefined) {
+      const clusters = await runAuthBypassHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     // Structural scaffold for all other detectors (V56.2+ populates incrementally).
     for (const phase of contract.requires.phases) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -341,6 +354,159 @@ function buildPathTraversalClusters(detectionsByPage: Map<string, string[]>): Bu
       fixHints: [],
       thirdPartyOrGenerated: false,
       severity: 'critical',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// auth_bypass_via_unauthed_route runner
+// ---------------------------------------------------------------------------
+
+type AuthBypassFixtureContract = {
+  port: number;
+  publicAllowList?: string[];
+};
+
+/**
+ * Reads the routes to probe from expected-clusters.jsonl (match.page fields),
+ * deduplicated and filtered to those with a defined page.
+ */
+function loadAuthBypassProbeRoutes(fixturePath: string): string[] {
+  const jsonlPath = path.join(fixturePath, 'expected-clusters.jsonl');
+  if (!fs.existsSync(jsonlPath)) return [];
+
+  const pages = new Set<string>();
+  for (const line of fs.readFileSync(jsonlPath, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as { match?: { page?: string } };
+      if (parsed.match?.page !== undefined) pages.add(parsed.match.page);
+    } catch {
+      // skip malformed lines
+    }
+  }
+  return [...pages];
+}
+
+/**
+ * Returns true when the response body is a JSON value that contains no non-empty
+ * arrays or non-empty objects — i.e. all collections are empty. Used to distinguish
+ * info-severity (data present but filtered) from critical (actual data leak).
+ */
+function hasNonEmptyData(body: string): boolean {
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    return containsData(parsed);
+  } catch {
+    // Non-JSON 200 response: assume data present
+    return body.trim().length > 0;
+  }
+}
+
+function containsData(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).some(containsData);
+  }
+  return false;
+}
+
+async function runAuthBypassHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  const contractPath = path.join(fixturePath, 'contract.json');
+  const contractRaw = fs.readFileSync(contractPath, 'utf8');
+  const fixtureContract = JSON.parse(contractRaw) as AuthBypassFixtureContract;
+  const publicAllowList = new Set(fixtureContract.publicAllowList ?? []);
+
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('auth_bypass_via_unauthed_route: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadAuthBypassProbeRoutes(fixturePath);
+
+  const detections = new Map<string, { severity: 'critical' | 'info'; rootCause: string }>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      if (signal.aborted) break;
+      if (publicAllowList.has(route)) continue;
+
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      if (response.status === 401 || response.status === 403) continue;
+
+      if (response.status === 200) {
+        const severity = hasNonEmptyData(response.body) ? 'critical' : 'info';
+        const rootCause = severity === 'critical'
+          ? `${route} returns 200 with non-empty body to anonymous request — auth check missing`
+          : `${route} returns 200 with empty filtered body to anonymous — not a confirmed exploit but warrants review`;
+        detections.set(route, { severity, rootCause });
+
+        log.info('harness: auth_bypass detection', { route, status: response.status, severity });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildAuthBypassClusters(detections);
+}
+
+function buildAuthBypassClusters(
+  detections: Map<string, { severity: 'critical' | 'info'; rootCause: string }>,
+): BugCluster[] {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'auth_bypass_via_unauthed_route';
+  const clusters: BugCluster[] = [];
+
+  for (const [route, { severity, rootCause }] of detections) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${route.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page: route,
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'expected_failure',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-${route.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity,
     });
   }
 
