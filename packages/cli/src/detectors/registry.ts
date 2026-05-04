@@ -308,6 +308,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   // — § v0.25 wired (promoted from deferred) —
   {

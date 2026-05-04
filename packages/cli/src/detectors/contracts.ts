@@ -650,4 +650,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Static-heuristic harness. Decodes JWT-shaped tokens found in response bodies and fires when alg is "none" or HS-family symmetric.',
   },
+  {
+    kind: 'no_rate_limit_on_login',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'rate-limit-mini',
+      servesKinds: ['no_rate_limit_on_login'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Sends N bogus-credential POSTs to each login route. Fires when no 429/423 status is observed within the cap (15).',
+  },
 ];

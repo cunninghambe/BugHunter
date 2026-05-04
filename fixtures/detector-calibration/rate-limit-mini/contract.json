@@ -1,0 +1,7 @@
+{
+  "fixture": "rate-limit-mini",
+  "serves": ["no_rate_limit_on_login"],
+  "port": 9853,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
