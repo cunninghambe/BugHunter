@@ -1,0 +1,7 @@
+{
+  "fixture": "command-injection-mini",
+  "serves": ["command_injection"],
+  "port": 9979,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
