@@ -64,7 +64,7 @@ export type ClusterAssertion =
       /** Harness skips this assertion when the fixture is unreachable or a precondition is unmet. */
       kind: BugKind;
       expect: 'skipped';
-      reason: 'fixture_unreachable' | 'insufficient_roles' | 'missing_tool' | 'missing_surface';
+      reason: 'fixture_unreachable' | 'insufficient_roles' | 'missing_tool' | 'missing_surface' | 'no_response';
     };
 
 /** Fixture pointer for this detector. May be shared across N detectors. */

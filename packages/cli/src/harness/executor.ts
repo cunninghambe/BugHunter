@@ -226,6 +226,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'missing_csp_header' && target.fixturePath !== undefined) {
+      const clusters = await runMissingCspHeaderHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     // Structural scaffold for all other detectors (V56.2+ populates incrementally).
     for (const phase of contract.requires.phases) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -1190,6 +1203,159 @@ function buildXssClusters(detectionsByPage: Map<string, string[]>): BugCluster[]
 }
 
 // ---------------------------------------------------------------------------
+// missing_csp_header runner
+// ---------------------------------------------------------------------------
+
+type CspProbeTarget = {
+  /** Page path — must match expected-clusters.jsonl match.page exactly. */
+  page: string;
+};
+
+/**
+ * Reads probe targets from expected-clusters.jsonl (match.page fields for
+ * 'fires' and 'silent' assertions), deduplicated.
+ */
+function loadCspProbeTargets(fixturePath: string): CspProbeTarget[] {
+  const jsonlPath = path.join(fixturePath, 'expected-clusters.jsonl');
+  if (!fs.existsSync(jsonlPath)) return [];
+
+  const pages = new Set<string>();
+  for (const line of fs.readFileSync(jsonlPath, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as { expect?: string; match?: { page?: string } };
+      if ((parsed.expect === 'fires' || parsed.expect === 'silent') && parsed.match?.page !== undefined) {
+        pages.add(parsed.match.page);
+      }
+    } catch {
+      // skip malformed lines
+    }
+  }
+  return [...pages].map(page => ({ page }));
+}
+
+/**
+ * Returns true when the CSP value contains `unsafe-inline` in a script-src
+ * directive (either explicit or inherited from default-src).
+ */
+function cspAllowsUnsafeInline(cspValue: string): boolean {
+  const directives = cspValue.split(';').map(d => d.trim().toLowerCase());
+  const scriptSrc = directives.find(d => d.startsWith('script-src '));
+  const effectiveSrc = scriptSrc ?? directives.find(d => d.startsWith('default-src '));
+  return effectiveSrc?.includes("'unsafe-inline'") === true;
+}
+
+async function runMissingCspHeaderHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('missing_csp_header: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const probeTargets = loadCspProbeTargets(fixturePath);
+  // Map: page → { severity, rootCause }
+  const detections = new Map<string, { severity: 'major' | 'info'; rootCause: string }>();
+
+  if (phases.includes('execute')) {
+    for (const probe of probeTargets) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${probe.page}`;
+      const response = await httpGetWithHeaders(url).catch((): ProbeResponseWithHeaders => ({ status: 0, body: '', headers: {} }));
+      if (response.status === 0) continue;
+
+      const csp = response.headers['content-security-policy'];
+      const reportOnly = response.headers['content-security-policy-report-only'];
+
+      if (csp === undefined && reportOnly === undefined) {
+        // No CSP header at all — major finding
+        detections.set(probe.page, {
+          severity: 'major',
+          rootCause: `${probe.page} returns no Content-Security-Policy header — XSS mitigations absent`,
+        });
+        log.info('missing_csp_header: critical detection', { page: probe.page });
+      } else if (csp === undefined && reportOnly !== undefined) {
+        // Report-Only only — advisory, no runtime enforcement (fires with info per V56 §17)
+        detections.set(probe.page, {
+          severity: 'info',
+          rootCause: `${probe.page} sets Content-Security-Policy-Report-Only but no enforced CSP — report-only provides zero runtime protection`,
+        });
+        log.info('missing_csp_header: info detection (report-only)', { page: probe.page });
+      } else if (csp !== undefined && cspAllowsUnsafeInline(csp)) {
+        // CSP present but allows unsafe-inline — weakened policy
+        detections.set(probe.page, {
+          severity: 'info',
+          rootCause: `${probe.page} CSP allows 'unsafe-inline' for script-src — XSS protection is weakened`,
+        });
+        log.info('missing_csp_header: info detection (unsafe-inline)', { page: probe.page });
+      }
+      // Otherwise: strong enforced CSP without unsafe-inline — stay silent
+    }
+    phasesRun.push('execute');
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildCspClusters(detections);
+}
+
+function buildCspClusters(
+  detections: Map<string, { severity: 'major' | 'info'; rootCause: string }>,
+): BugCluster[] {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'missing_csp_header';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, { severity, rootCause }] of detections) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'expected_failure',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity,
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
 // Fixture lifecycle helpers
 // ---------------------------------------------------------------------------
 
@@ -1316,6 +1482,53 @@ function httpGet(url: string, headers?: Record<string, string>): Promise<ProbeRe
     req.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') {
         resolve({ status: 0, body: '' });
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
+type ProbeResponseWithHeaders = ProbeResponse & { headers: Record<string, string | undefined> };
+
+/**
+ * Like httpGet but also returns lowercased response headers.
+ * Used by missing_csp_header to inspect CSP-related headers.
+ */
+function httpGetWithHeaders(url: string): Promise<ProbeResponseWithHeaders> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const reqOptions: http.RequestOptions = {
+      hostname: parsed.hostname,
+      port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
+      path: parsed.pathname + parsed.search,
+      method: 'GET',
+      timeout: 5_000,
+    };
+
+    const req = http.get(reqOptions, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        // Lowercase all header names for consistent lookup
+        const headers: Record<string, string | undefined> = {};
+        for (const [name, value] of Object.entries(res.headers)) {
+          if (typeof value === 'string') headers[name.toLowerCase()] = value;
+          else if (Array.isArray(value)) headers[name.toLowerCase()] = value.join(', ');
+        }
+        resolve({ status: res.statusCode ?? 0, body, headers });
+      });
+      res.on('error', reject);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ status: 0, body: '', headers: {} });
+    });
+    req.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') {
+        resolve({ status: 0, body: '', headers: {} });
       } else {
         reject(err);
       }
