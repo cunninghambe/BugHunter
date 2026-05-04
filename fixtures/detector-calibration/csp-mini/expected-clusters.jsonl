@@ -1,2 +1,6 @@
 {"kind":"missing_csp_header","expect":"fires","minClusterSize":1,"match":{"page":"/"},"severity":"major"}
 {"kind":"missing_csp_header","expect":"fires","minClusterSize":1,"match":{"page":"/admin"},"severity":"major"}
+{"kind":"missing_csp_header","expect":"silent","reason":"Strong enforced CSP (default-src 'self'; script-src 'self') satisfies the detector; no finding expected.","match":{"page":"/secure"}}
+{"kind":"missing_csp_header","expect":"fires","minClusterSize":1,"match":{"page":"/report-only"},"severity":"info","edgeLabel":"csp-report-only"}
+{"kind":"missing_csp_header","expect":"fires","minClusterSize":1,"match":{"page":"/unsafe-inline"},"severity":"info","edgeLabel":"unsafe-inline-allowed"}
+{"kind":"missing_csp_header","expect":"skipped","reason":"no_response"}
