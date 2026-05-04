@@ -298,4 +298,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects HTML pages without <link rel="canonical"> when at least one other page in the corpus has one.',
   },
+  {
+    kind: 'seo_h1_missing_or_multiple',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'seo-mini',
+      servesKinds: ['seo_h1_missing_or_multiple'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects HTML pages with zero or multiple <h1> elements. Exactly one is required for proper page hierarchy.',
+  },
 ];

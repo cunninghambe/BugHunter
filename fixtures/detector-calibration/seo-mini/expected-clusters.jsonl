@@ -16,3 +16,10 @@
 {"kind":"seo_canonical_missing","expect":"silent","reason":"canonical link present with relative href","match":{"page":"/canonical-relative-url"}}
 {"kind":"seo_canonical_missing","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-no-canonical"},"severity":"minor","edgeLabel":"malformed-html-still-detects-missing-canonical"}
 {"kind":"seo_canonical_missing","expect":"skipped","reason":"no_response"}
+{"kind":"seo_h1_missing_or_multiple","expect":"fires","minClusterSize":1,"match":{"page":"/no-h1"},"severity":"minor"}
+{"kind":"seo_h1_missing_or_multiple","expect":"silent","reason":"page has exactly 1 <h1>","match":{"page":"/good-h1"}}
+{"kind":"seo_h1_missing_or_multiple","expect":"fires","minClusterSize":1,"match":{"page":"/two-h1s"},"severity":"minor","edgeLabel":"two-h1-elements"}
+{"kind":"seo_h1_missing_or_multiple","expect":"fires","minClusterSize":1,"match":{"page":"/three-h1s"},"severity":"minor","edgeLabel":"three-h1-elements"}
+{"kind":"seo_h1_missing_or_multiple","expect":"silent","reason":"single h1 with class/id attributes is still 1 h1","match":{"page":"/h1-with-attrs"}}
+{"kind":"seo_h1_missing_or_multiple","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-no-h1"},"severity":"minor","edgeLabel":"malformed-html-still-detects-missing-h1"}
+{"kind":"seo_h1_missing_or_multiple","expect":"skipped","reason":"no_response"}
