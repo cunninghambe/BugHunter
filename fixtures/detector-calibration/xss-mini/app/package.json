@@ -1,0 +1,6 @@
+{
+  "name": "xss-mini-fixture",
+  "version": "1.0.0",
+  "description": "BugHunter detector-calibration fixture for xss_reflected. DO NOT deploy to public networks.",
+  "private": true
+}

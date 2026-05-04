@@ -1,0 +1,5 @@
+{"kind":"xss_reflected","expect":"fires","minClusterSize":1,"match":{"page":"/api/search"},"severity":"critical"}
+{"kind":"xss_reflected","expect":"silent","reason":"/api/echo-safe escapes all HTML before reflection — &lt;script&gt; payload is inert in the response","match":{"page":"/api/echo-safe"}}
+{"kind":"xss_reflected","expect":"fires","minClusterSize":1,"match":{"page":"/api/link"},"severity":"critical","edgeLabel":"attribute-context-vs-body"}
+{"kind":"xss_reflected","expect":"fires","minClusterSize":1,"match":{"page":"/api/greet"},"severity":"critical","edgeLabel":"script-tag-payload-vs-img-onerror"}
+{"kind":"xss_reflected","expect":"skipped","reason":"fixture_unreachable"}

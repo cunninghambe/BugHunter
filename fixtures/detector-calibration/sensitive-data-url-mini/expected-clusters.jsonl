@@ -1,2 +1,6 @@
 {"kind":"sensitive_data_in_url","expect":"fires","minClusterSize":1,"match":{"page":"/reset-password"},"severity":"major"}
 {"kind":"sensitive_data_in_url","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin"},"severity":"major"}
+{"kind":"sensitive_data_in_url","expect":"silent","reason":"POST /login-safe carries credentials in the request body and Authorization header — neither transit path reaches the URL; detector must be silent on this route","match":{"page":"/login-safe"}}
+{"kind":"sensitive_data_in_url","expect":"silent","reason":"Fragment (#token=abc) is stripped by the browser before the HTTP request leaves the client; the server never sees it, so there is nothing for the detector to observe. Client-side history may retain the fragment, but that is outside the URL-transit threat model this detector covers.","edgeLabel":"token-in-url-fragment","match":{"page":"/login"}}
+{"kind":"sensitive_data_in_url","expect":"fires","minClusterSize":1,"match":{"page":"/api/v1/key/"},"severity":"major","edgeLabel":"api-key-in-path-segment"}
+{"kind":"sensitive_data_in_url","expect":"skipped","reason":"no_pages_to_probe"}

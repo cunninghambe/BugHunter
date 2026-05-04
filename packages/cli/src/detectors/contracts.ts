@@ -49,12 +49,29 @@ export type ClusterAssertion =
       minClusterSize: number;
       match: { page?: string; role?: string; signaturePrefix?: string };
       severity: 'critical' | 'major' | 'minor' | 'info';
+      /** Optional label for edge-case variants (e.g. "stripe-test-key-in-comment"). */
+      edgeLabel?: string;
     }
   | {
       kind: BugKind;
       expect: 'silent';
       reason: string;
       match?: { page?: string; role?: string };
+      /** Optional label for edge-case variants. */
+      edgeLabel?: string;
+    }
+  | {
+      /** Harness skips this assertion entirely when preconditions are unmet. */
+      kind: BugKind;
+      expect: 'skipped';
+      reason:
+        | 'insufficient_roles'
+        | 'missing_tool'
+        | 'missing_surface'
+        | 'fixture_not_built'
+        | 'no_pages_to_probe'
+        | 'fixture_unreachable'
+        | 'no_response';
     };
 
 /** Fixture pointer for this detector. May be shared across N detectors. */
@@ -183,7 +200,7 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
       tools: ['surface-mcp'],
       surface: 'api',
       role: { kind: 'specific', roles: ['alice', 'bob'] },
-      pageContext: { kind: 'specific-routes', routes: ['/api/orders/:id', '/api/users/:id/profile'] },
+      pageContext: { kind: 'specific-routes', routes: ['/api/orders/:id', '/api/users/:id/profile', '/api/orders/uuid/:id', '/api/orders/protected/:id'] },
     },
     fixture: {
       path: 'idor-mini',
