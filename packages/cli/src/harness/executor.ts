@@ -10,11 +10,11 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import type { DetectorContract, RequiredPhase } from '../detectors/contracts.js';
+import type { DetectorContract, DetectorRequires, RequiredPhase } from '../detectors/contracts.js';
 import type { BugCluster, BugKind, Occurrence } from '../types.js';
 import { generatePenPayloads } from '../security/injection-palette.js';
 import type { PenPayload } from '../security/injection-palette.js';
-import { detectPathTraversal } from '../security/pen-detectors.js';
+import { detectPathTraversal, detectCommandInjection } from '../security/pen-detectors.js';
 import type { ProbeResponse } from '../security/pen-detectors.js';
 import { log } from '../log.js';
 
@@ -168,6 +168,31 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       const clusters = await runAuthBypassHarness(
         target.appBaseUrl,
         target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'idor_horizontal_read' && target.fixturePath !== undefined) {
+      const clusters = await runIdorHorizontalReadHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'command_injection' && target.fixturePath !== undefined) {
+      const clusters = await runCommandInjectionHarness(
+        target.appBaseUrl,
         contract.requires.phases,
         phasesRun,
         combinedSignal,
@@ -361,6 +386,140 @@ function buildPathTraversalClusters(detectionsByPage: Map<string, string[]>): Bu
 }
 
 // ---------------------------------------------------------------------------
+// idor_horizontal_read runner
+// ---------------------------------------------------------------------------
+
+type IdorProbe = {
+  /** Page prefix used in occurrence.page — must match expected-clusters.jsonl match.page exactly. */
+  page: string;
+  /** Full URL of the resource owned by the victim role. */
+  url: string;
+};
+
+// Resources owned by bob that alice should NOT be able to read (IDOR plants).
+const IDOR_CROSS_USER_PROBES: IdorProbe[] = [
+  { page: '/api/orders/', url: '/api/orders/bob-order-1' },
+  { page: '/api/users/', url: '/api/users/bob/profile' },
+  { page: '/api/orders/', url: '/api/orders/1002' },
+  { page: '/api/orders/uuid/', url: '/api/orders/uuid/01HW9XMKQ2P8VB3N5T6R7YCF4B' },
+];
+
+// Resources alice legitimately owns (control case — must NOT emit a cluster).
+const IDOR_SELF_ACCESS_PROBES: IdorProbe[] = [
+  { page: '/api/orders/alice-order-1', url: '/api/orders/alice-order-1' },
+];
+
+async function runIdorHorizontalReadHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  requires: DetectorRequires,
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  // Skip when only one role is configured (insufficient_roles input-degradation case).
+  const roles = requires.role.kind === 'specific' ? requires.role.roles : [];
+  if (roles.length < 2) {
+    warnings.push('idor_horizontal_read: fewer than 2 roles configured — skipping (insufficient_roles)');
+    return [];
+  }
+
+  const contractPath = path.join(fixturePath, 'contract.json');
+  const contractRaw = fs.readFileSync(contractPath, 'utf8');
+  const fixtureContract = JSON.parse(contractRaw) as { port: number };
+  void fixtureContract; // port already encoded in appBaseUrl
+
+  if (requires.phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('idor_horizontal_read: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  // Map: page prefix → set of confirmed IDOR root causes
+  const detectionsByPage = new Map<string, string[]>();
+
+  if (requires.phases.includes('execute')) {
+    for (const probe of IDOR_CROSS_USER_PROBES) {
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${probe.url}`;
+      const response = await httpGet(url, { Authorization: 'Bearer alice-token' }).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      // IDOR fires when alice receives 200 for a bob-owned resource.
+      // Any non-empty body confirms data exposure — the resource itself is the leak.
+      if (response.status === 200 && response.body.trim().length > 0) {
+        const causes = detectionsByPage.get(probe.page) ?? [];
+        causes.push(`alice accessed ${probe.url} (bob-owned) and received 200 with data — ownership check absent`);
+        detectionsByPage.set(probe.page, causes);
+        log.info('harness: idor_horizontal_read detection', { page: probe.page, url: probe.url, status: response.status });
+      }
+    }
+
+    // Control: verify alice's own resources do NOT produce false positives.
+    // No cluster is emitted here — this is a correctness self-check only.
+    for (const probe of IDOR_SELF_ACCESS_PROBES) {
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${probe.url}`;
+      const response = await httpGet(url, { Authorization: 'Bearer alice-token' }).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status !== 200) {
+        warnings.push(`idor_horizontal_read: self-access control case ${probe.url} returned ${response.status} (expected 200 — fixture may be broken)`);
+      }
+    }
+
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (requires.phases.includes('classify')) phasesRun.push('classify');
+  if (requires.phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildIdorClusters(detectionsByPage);
+}
+
+function buildIdorClusters(detectionsByPage: Map<string, string[]>): BugCluster[] {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'idor_horizontal_read';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCauses] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'alice',
+      page,
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'expected_failure',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: rootCauses[0] ?? `idor_horizontal_read detected at ${page}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: rootCauses.length,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'critical',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
 // auth_bypass_via_unauthed_route runner
 // ---------------------------------------------------------------------------
 
@@ -514,6 +673,157 @@ function buildAuthBypassClusters(
 }
 
 // ---------------------------------------------------------------------------
+// command_injection runner
+// ---------------------------------------------------------------------------
+
+/**
+ * Probes /api/admin/health with cmd palette payloads in both the `target` and
+ * `domain` fields — the two shell-concat plants in the fixture.  A separate
+ * cluster is emitted per field so the assertions can be differentiated by
+ * signaturePrefix (field name embedded in cluster id).
+ *
+ * Also probes:
+ *   - /api/admin/health-safe  (execFile array args — must stay silent)
+ *   - missing-fields body     (server returns 400 — no exec, must stay silent)
+ *   - GET /api/admin/health   (returns 404 — must stay silent)
+ */
+async function runCommandInjectionHarness(
+  appBaseUrl: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('command_injection: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const cmdPayloads = generatePenPayloads(['cmd']);
+  // Map: field-name → list of confirmed root-cause strings
+  const detectionsByField = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const field of ['target', 'domain'] as const) {
+      if (signal.aborted) break;
+      for (const payload of cmdPayloads) {
+        if (signal.aborted) break;
+        const url = `${appBaseUrl}/api/admin/health`;
+        const body = JSON.stringify({ [field]: payload.value });
+        const response = await httpPost(url, body).catch((): ProbeResponse => ({ status: 0, body: '' }));
+        if (response.status === 0) continue;
+
+        // Stricter check: require the nonce to appear as standalone output (not embedded
+        // in a ping "Name or service not known" error, which echoes the literal arg).
+        if (!nonceAppearsAsStandaloneOutput(response.body, payload.nonce)) continue;
+        const result = detectCommandInjection(payload, response, field, '/api/admin/health');
+        if (result.ok) {
+          const causes = detectionsByField.get(field) ?? [];
+          causes.push(result.detection.rootCause);
+          detectionsByField.set(field, causes);
+          log.info('harness: command_injection detection', { field, variant: payload.variant, status: response.status });
+        }
+      }
+    }
+
+    // Negative case: /api/admin/health-safe uses execFile — must not fire.
+    // execFile passes args as an array so shell is never invoked, but ping still
+    // echoes the literal hostname in its error output. We use the same stricter
+    // nonce-line check to avoid false-positives from ping error echo-back.
+    for (const payload of cmdPayloads) {
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}/api/admin/health-safe`;
+      const body = JSON.stringify({ target: payload.value });
+      const response = await httpPost(url, body).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+      if (nonceAppearsAsStandaloneOutput(response.body, payload.nonce)) {
+        warnings.push(`command_injection: false-positive on /api/admin/health-safe variant=${payload.variant} — execFile should block this`);
+      }
+    }
+
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildCommandInjectionClusters(detectionsByField);
+}
+
+/**
+ * Returns true when the nonce marker appears as standalone output from a shell exec.
+ * The fixture server returns JSON `{output, error}`. We parse the output field and
+ * check whether the nonce appears at the start of a line — which only happens when
+ * the shell actually executed `echo BUGHUNTER_<nonce>`.
+ *
+ * Distinguishes from ping echoing the literal hostname in an error message
+ * (e.g. "ping: ; echo BUGHUNTER_X: Name or service not known") where the nonce
+ * is preceded by other text on the same line.
+ */
+function nonceAppearsAsStandaloneOutput(responseBody: string, nonce: string): boolean {
+  const marker = `BUGHUNTER_${nonce}`;
+  if (!responseBody.includes(marker)) return false;
+
+  // Parse the output field from the fixture's JSON response.
+  let outputField: string;
+  try {
+    const parsed = JSON.parse(responseBody) as Record<string, unknown>;
+    outputField = typeof parsed['output'] === 'string' ? parsed['output'] : responseBody;
+  } catch {
+    outputField = responseBody;
+  }
+
+  // Check whether the marker appears at the start of a line in the output field.
+  // Split on actual newlines (the output field contains raw newlines, not JSON escapes).
+  return outputField.split('\n').some(line => line.trimEnd() === marker);
+}
+
+function buildCommandInjectionClusters(detectionsByField: Map<string, string[]>): BugCluster[] {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'command_injection';
+  const clusters: BugCluster[] = [];
+
+  for (const [field, rootCauses] of detectionsByField) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-health-field=${field}-${Date.now()}`,
+      role: 'anonymous',
+      page: '/api/admin/health',
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'expected_failure',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-health-field=${field}`,
+      runId: 'harness',
+      kind,
+      rootCause: rootCauses[0] ?? `command_injection detected at /api/admin/health field=${field}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: rootCauses.length,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'critical',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
 // Fixture lifecycle helpers
 // ---------------------------------------------------------------------------
 
@@ -610,7 +920,7 @@ function combineSignals(budget: AbortSignal, parent?: AbortSignal): AbortSignal 
  * This is critical for path-traversal probes where `../` in the URL path must
  * reach the server as-is rather than being resolved by the HTTP client.
  */
-function httpGet(url: string): Promise<ProbeResponse> {
+function httpGet(url: string, headers?: Record<string, string>): Promise<ProbeResponse> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const reqOptions: http.RequestOptions = {
@@ -620,6 +930,7 @@ function httpGet(url: string): Promise<ProbeResponse> {
       path: parsed.pathname + parsed.search,
       method: 'GET',
       timeout: 5_000,
+      headers,
     };
 
     const req = http.get(reqOptions, (res) => {
@@ -646,9 +957,54 @@ function httpGet(url: string): Promise<ProbeResponse> {
   });
 }
 
+function httpPost(url: string, jsonBody: string, headers?: Record<string, string>): Promise<ProbeResponse> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const bodyBuf = Buffer.from(jsonBody, 'utf8');
+    const reqOptions: http.RequestOptions = {
+      hostname: parsed.hostname,
+      port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      timeout: 5_000,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': String(bodyBuf.length),
+        ...headers,
+      },
+    };
+
+    const req = http.request(reqOptions, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve({ status: res.statusCode ?? 0, body });
+      });
+      res.on('error', reject);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ status: 0, body: '' });
+    });
+    req.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') {
+        resolve({ status: 0, body: '' });
+      } else {
+        reject(err);
+      }
+    });
+
+    req.write(bodyBuf);
+    req.end();
+  });
+}
+
 async function waitForPort(appBaseUrl: string, timeoutMs: number): Promise<void> {
   const url = new URL(appBaseUrl);
-  const port = parseInt(url.port, 10) || (url.protocol === 'https:' ? 443 : 80);
+  const parsed = parseInt(url.port, 10);
+  const port = Number.isNaN(parsed) || parsed === 0 ? (url.protocol === 'https:' ? 443 : 80) : parsed;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await isPortOpen(url.hostname, port)) return;
@@ -673,5 +1029,7 @@ function isPortOpen(host: string, port: number, socketTimeoutMs = 500): Promise<
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
 }
