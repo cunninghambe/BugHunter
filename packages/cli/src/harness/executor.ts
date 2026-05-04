@@ -20,6 +20,8 @@ import { classifySeoCorpus } from '../classify/seo.js';
 import type { SeoPageInput } from '../classify/seo.js';
 import { runHardcodedStringsScanner } from '../static/tools/hardcoded-strings.js';
 import { analyzeResponseBody } from '../security/header-probe.js';
+import { detectMissingCsrf } from '../security/csrf-detector.js';
+import type { CsrfObservation } from '../adapters/har-writer.js';
 import { log } from '../log.js';
 
 // ---------------------------------------------------------------------------
@@ -270,6 +272,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
 
     if (contract.kind === 'hardcoded_credentials_in_source' && target.fixturePath !== undefined) {
       const clusters = runHardcodedCredsHarness(
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'csrf_missing_on_mutating_route' && target.fixturePath !== undefined) {
+      const clusters = await runCsrfMissingHarness(
+        target.appBaseUrl,
         target.fixturePath,
         contract.requires.phases,
         phasesRun,
@@ -1730,6 +1745,202 @@ function buildSensitiveDataInUrlClusters(detectionsByPage: Map<string, string[]>
 // ---------------------------------------------------------------------------
 // Fixture lifecycle helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// csrf_missing_on_mutating_route runner.
+// Each route gets a per-route test plan that controls method, requestHeaders,
+// and cookieJar at probe time. Probes are issued live to capture the actual
+// Set-Cookie response, then a CsrfObservation is built and fed to detectMissingCsrf.
+// ---------------------------------------------------------------------------
+
+type CsrfRouteTestPlan = {
+  /** Probe method. */
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** Headers to send on the request. */
+  requestHeaders: Record<string, string>;
+  /** Cookies to claim are in the jar at request time (built from prior route Set-Cookie). */
+  cookieJar: string[];
+};
+
+const CSRF_ROUTE_PLANS: Record<string, CsrfRouteTestPlan> = {
+  '/api/posts/create': {
+    method: 'POST',
+    requestHeaders: { cookie: 'sessionid=abc123def456ghi789jklmnop1234567890=' },
+    cookieJar: ['sessionid=abc123def456ghi789jklmnop1234567890='],
+  },
+  '/api/users/update': {
+    method: 'PUT',
+    requestHeaders: { cookie: 'sid=abc123def456ghi789jklmnop1234567890=' },
+    cookieJar: ['sid=abc123def456ghi789jklmnop1234567890='],
+  },
+  '/api/strict-session/mutate': {
+    method: 'POST',
+    requestHeaders: { cookie: 'sessionid=abc123def456ghi789jklmnop1234567890=' },
+    cookieJar: ['sessionid=abc123def456ghi789jklmnop1234567890='],
+  },
+  '/api/read-only': {
+    method: 'GET',
+    requestHeaders: {},
+    cookieJar: [],
+  },
+  '/api/with-csrf-header/mutate': {
+    method: 'POST',
+    requestHeaders: {
+      cookie: 'sessionid=abc123def456ghi789jklmnop1234567890=',
+      'x-csrf-token': 'csrf-secret-token-1234',
+    },
+    cookieJar: ['sessionid=abc123def456ghi789jklmnop1234567890='],
+  },
+  '/api/bearer-auth/mutate': {
+    method: 'POST',
+    requestHeaders: { authorization: 'Bearer eyJ.fake.jwt' },
+    cookieJar: [],
+  },
+  '/api/with-csrf-cookie/mutate': {
+    method: 'POST',
+    requestHeaders: {
+      cookie: 'sessionid=abc123def456ghi789jklmnop1234567890=; csrf-token=secret',
+    },
+    cookieJar: [
+      'sessionid=abc123def456ghi789jklmnop1234567890=',
+      'csrf-token=secret',
+    ],
+  },
+};
+
+function httpRequestForObservation(
+  baseUrl: string,
+  route: string,
+  plan: CsrfRouteTestPlan,
+): Promise<{ status: number; setCookies: string[] }> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(`${baseUrl}${route}`);
+      const req = http.request({
+        hostname: parsed.hostname,
+        port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
+        path: parsed.pathname,
+        method: plan.method,
+        headers: plan.requestHeaders,
+        timeout: 5_000,
+      }, (res) => {
+        const setCookieRaw = res.headers['set-cookie'];
+        const setCookies = Array.isArray(setCookieRaw)
+          ? setCookieRaw
+          : typeof setCookieRaw === 'string' ? [setCookieRaw] : [];
+        res.on('data', () => {});
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, setCookies }));
+        res.on('error', () => resolve({ status: 0, setCookies: [] }));
+      });
+      req.on('timeout', () => { req.destroy(); resolve({ status: 0, setCookies: [] }); });
+      req.on('error', () => resolve({ status: 0, setCookies: [] }));
+      req.end();
+    } catch {
+      resolve({ status: 0, setCookies: [] });
+    }
+  });
+}
+
+async function runCsrfMissingHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('csrf_missing_on_mutating_route: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const observations: CsrfObservation[] = [];
+
+  // Map per-observation route key → URL pathname (for cluster page-matching)
+  const routeForObservation = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const plan = CSRF_ROUTE_PLANS[route];
+      if (plan === undefined) {
+        warnings.push(`csrf_missing_on_mutating_route: no test plan for route ${route}; skipping`);
+        continue;
+      }
+      const { status, setCookies } = await httpRequestForObservation(appBaseUrl, route, plan);
+      if (status === 0) continue;
+
+      // Skip non-mutating methods — production detector ignores them too, but the
+      // observation list filters at the projection layer in production. Here we
+      // still emit only mutating methods to detectMissingCsrf.
+      if (plan.method === 'GET') {
+        // No CsrfObservation for GET; cluster will not be created by definition.
+        continue;
+      }
+
+      const fullUrl = `${appBaseUrl}${route}`;
+      observations.push({
+        method: plan.method,
+        url: fullUrl,
+        requestHeaders: { ...plan.requestHeaders },
+        cookieJar: plan.cookieJar,
+        responseSetCookieHeaders: setCookies,
+      });
+      routeForObservation.set(fullUrl, route);
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+
+  const detections = detectMissingCsrf(observations);
+
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'csrf_missing_on_mutating_route';
+  const clusters: BugCluster[] = [];
+
+  for (const detection of detections) {
+    // detection.endpoint is "POST /api/posts/create" — extract just the path
+    const endpoint = detection.endpoint ?? '';
+    const spaceIdx = endpoint.indexOf(' ');
+    const page = spaceIdx === -1 ? endpoint : endpoint.slice(spaceIdx + 1);
+
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'expected_failure', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: detection.rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: ['Require X-CSRF-Token header on mutating routes; or set SameSite=Strict on session cookies'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
+    });
+  }
+
+  return clusters;
+}
 
 // ---------------------------------------------------------------------------
 // open_redirect runner — probes redirect-param routes with evil.test target.
