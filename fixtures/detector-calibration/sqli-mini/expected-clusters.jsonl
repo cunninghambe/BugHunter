@@ -1,0 +1,3 @@
+{"kind":"sql_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/search"},"severity":"critical"}
+{"kind":"sql_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin/reports"},"severity":"critical"}
+{"kind":"sql_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/tasks"},"severity":"critical"}

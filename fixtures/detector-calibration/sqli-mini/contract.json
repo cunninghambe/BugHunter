@@ -1,0 +1,7 @@
+{
+  "fixture": "sqli-mini",
+  "serves": ["sql_injection"],
+  "port": 9972,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
