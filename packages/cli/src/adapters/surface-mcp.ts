@@ -135,6 +135,8 @@ export type SurfaceCallInput = {
   allowExternal?: boolean;
   noAutoRelogin?: boolean;
   pinRevision?: number;
+  /** #181: session cookie to forward to the backend API via SurfaceMCP. */
+  extraCookie?: string;
 };
 
 export type SurfaceCallResult = {
@@ -300,9 +302,6 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
     if (this.runId !== undefined) {
       headers['X-BugHunter-Run'] = this.runId;
     }
-    if (this.defaultCookie !== undefined) {
-      headers['Cookie'] = this.defaultCookie;
-    }
     const res = await fetch(`${this.baseUrl}/mcp`, {
       method: 'POST',
       headers,
@@ -351,7 +350,10 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
   }
 
   async surface_call(args: SurfaceCallInput): Promise<SurfaceCallResult> {
-    return this.mcpCall<SurfaceCallResult>('surface_call', args);
+    const argsWithCookie = this.defaultCookie !== undefined && args.extraCookie === undefined
+      ? { ...args, extraCookie: this.defaultCookie }
+      : args;
+    return this.mcpCall<SurfaceCallResult>('surface_call', argsWithCookie);
   }
 
   async surface_probe(args: { name?: string; toolId?: string; role: string }): Promise<SurfaceProbeResult> {
