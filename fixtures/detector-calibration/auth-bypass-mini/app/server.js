@@ -52,6 +52,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // GET /healthz — public by design, no sensitive data
+  if (method === 'GET' && url === '/healthz') {
+    json(res, 200, { status: 'ok' });
+    return;
+  }
+
+  // GET /api/items — returns 200 but filters by user; anonymous gets empty list.
+  // Not a bypass: no data is leaked. Detector fires at info severity (potential, not confirmed).
+  if (method === 'GET' && url === '/api/items') {
+    const auth = req.headers['authorization'];
+    const userId = auth ? 2 : null;
+    const items = userId === null ? [] : [{ id: 'item-1', userId: 2, name: 'Widget' }];
+    json(res, 200, { items });
+    return;
+  }
+
   // P1: GET /api/admin/users
   // BUG: no auth check — should require admin session/token but doesn't.
   if (method === 'GET' && url === '/api/admin/users') {
