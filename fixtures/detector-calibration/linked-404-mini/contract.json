@@ -1,0 +1,7 @@
+{
+  "fixture": "linked-404-mini",
+  "serves": ["404_for_linked_route"],
+  "port": 9893,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

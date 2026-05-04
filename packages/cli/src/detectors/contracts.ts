@@ -490,4 +490,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Probes mutating routes (POST/PUT/PATCH/DELETE) with cookie/header/auth contexts. Fires when no CSRF token is present and detector exemptions (Bearer auth, SameSite=Strict on session cookie) do not apply.',
   },
+  {
+    kind: '404_for_linked_route',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'linked-404-mini',
+      servesKinds: ['404_for_linked_route'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Extracts internal <a href="/path"> links from each page, probes each, fires per page with ≥1 broken link.',
+  },
 ];

@@ -1,0 +1,8 @@
+{"kind":"404_for_linked_route","expect":"fires","minClusterSize":1,"match":{"page":"/page-with-broken-link"},"severity":"major"}
+{"kind":"404_for_linked_route","expect":"silent","reason":"all linked paths return 200","match":{"page":"/page-with-good-links"}}
+{"kind":"404_for_linked_route","expect":"silent","reason":"fragment-only links do not require server-side resolution","match":{"page":"/page-with-fragments"},"edgeLabel":"fragment-only-link"}
+{"kind":"404_for_linked_route","expect":"silent","reason":"absolute external URL not probed (different origin)","match":{"page":"/page-with-external-link"},"edgeLabel":"external-origin-link"}
+{"kind":"404_for_linked_route","expect":"silent","reason":"mailto:/tel: scheme not HTTP","match":{"page":"/page-with-mailto"},"edgeLabel":"non-http-scheme"}
+{"kind":"404_for_linked_route","expect":"fires","minClusterSize":1,"match":{"page":"/page-with-mixed-links"},"severity":"major","edgeLabel":"mixed-only-flag-broken"}
+{"kind":"404_for_linked_route","expect":"fires","minClusterSize":1,"match":{"page":"/page-malformed"},"severity":"major","edgeLabel":"malformed-html-still-extracts-link"}
+{"kind":"404_for_linked_route","expect":"skipped","reason":"no_response"}

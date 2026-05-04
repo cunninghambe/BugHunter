@@ -97,6 +97,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'missing_state_change',
