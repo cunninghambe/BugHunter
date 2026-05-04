@@ -3,7 +3,7 @@
 // using the cookie jar (including HttpOnly) or URL-change detection.
 
 import type { BrowserMcpAdapter, CookieEntry, TabScope } from '../adapters/browser-mcp.js';
-import type { DescribeAuthResult, SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
+import type { DescribeAuthResult, SurfaceMcpAdapter, SurfaceSummary } from '../adapters/surface-mcp.js';
 import type { StructuredSelector } from '../adapters/browser-mcp-snapshot.js';
 import type { AuthConfig } from '../types.js';
 import { parsePlaywrightHasText } from '../adapters/browser-mcp-snapshot.js';
@@ -856,14 +856,26 @@ export async function loginInTabScope(
   };
 }
 
+/** UI stacks that support browser navigate+evaluate for cookie login. */
+const UI_STACKS = new Set<SurfaceSummary['stack']>(['vite', 'nextjs']);
+
 /**
  * V55.2: Cookie-endpoint login executor.
  * Issues a programmatic POST to the login API endpoint and verifies that the
  * expected session cookie is set on the browser context afterward.
  *
+ * For UI stacks (vite, nextjs): navigates the browser to baseUrl and issues the
+ * POST via in-browser fetch so the browser cookie jar receives Set-Cookie. (#171)
+ *
+ * For API-only stacks (openapi, express, fastapi, django): uses Node-side fetch
+ * to avoid navigating to a URL that returns JSON (which causes NetworkError in
+ * page.evaluate). Captures the Set-Cookie response header and stores it on the
+ * surface adapter via setDefaultCookie so subsequent surface_call invocations
+ * include the session cookie. (#181)
+ *
  * A 4xx from the server returns LoginResult.ok=false with reason='submit_failed'.
  * A 5xx returns reason='login_page_load_failed'.
- * A missing session cookie after a 2xx returns reason='verification_failed'.
+ * A missing session cookie (UI path) after a 2xx returns reason='verification_failed'.
  */
 export async function loginViaCookieEndpoint(
   browser: BrowserMcpAdapter,
@@ -871,6 +883,7 @@ export async function loginViaCookieEndpoint(
   auth: Extract<AuthConfig, { kind: 'cookie' }>,
   role: string,
   baseUrl: string,
+  opts?: { surfaceStack?: SurfaceSummary['stack']; surface?: SurfaceMcpAdapter },
 ): Promise<LoginResult> {
   const creds = auth.credentials[role];
   if (creds === undefined) {
@@ -895,8 +908,21 @@ export async function loginViaCookieEndpoint(
     ? plan.loginEndpoint.url
     : new URL(plan.loginEndpoint.url, baseUrl).toString();
 
-  // Ensure an active browser tab exists before calling evaluate().
-  // loginViaCookieEndpoint uses fetch() in-browser context so a tab must be open.
+  // #181: API-only surfaces (openapi, express, etc.) cannot use the navigate+evaluate
+  // browser path because navigating to an API URL (which returns JSON) leaves the
+  // browser in a state where fetch() inside evaluate() fails with NetworkError.
+  // Use Node-side fetch instead and propagate Set-Cookie to the surface adapter.
+  const { surfaceStack, surface } = opts ?? {};
+  const isUiSurface = surfaceStack === undefined || UI_STACKS.has(surfaceStack);
+
+  if (!isUiSurface) {
+    return loginViaCookieEndpointNodeFetch(
+      plan, body, contentType, endpointUrl, baseUrl, role, surface,
+    );
+  }
+
+  // UI path: navigate the browser to baseUrl so a tab is open, then issue the
+  // POST via in-browser fetch so the browser cookie jar receives Set-Cookie. (#171)
   try {
     await browser.navigate(baseUrl);
   } catch (err) {
@@ -945,6 +971,64 @@ export async function loginViaCookieEndpoint(
   const cookies = await getCookies(browser, baseUrl);
   log.info(`browser_login: cookie_endpoint success`, { role, cookieName: plan.cookieName, cookieCount: cookies.length });
   return { ok: true, cookies, finalUrl: baseUrl };
+}
+
+/**
+ * #181: Node-side POST to the login endpoint for API-only surfaces.
+ * Captures Set-Cookie and propagates it to the surface adapter's default headers
+ * so subsequent surface_call invocations carry the session cookie.
+ */
+async function loginViaCookieEndpointNodeFetch(
+  plan: CookieEndpointPlan,
+  body: string,
+  contentType: string,
+  endpointUrl: string,
+  baseUrl: string,
+  role: string,
+  surface: SurfaceMcpAdapter | undefined,
+): Promise<LoginResult> {
+  let resp: Response;
+  try {
+    resp = await globalThis.fetch(endpointUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+    });
+  } catch (err) {
+    return { ok: false, reason: 'login_page_load_failed', detail: `Node fetch to login endpoint failed: ${String(err)}` };
+  }
+
+  if (resp.status >= 500) {
+    return { ok: false, reason: 'login_page_load_failed', detail: `login endpoint returned ${resp.status}` };
+  }
+  if (!resp.ok) {
+    return { ok: false, reason: 'submit_failed', detail: `login endpoint returned ${resp.status}` };
+  }
+
+  const setCookieHeader = resp.headers.get('set-cookie');
+  if (setCookieHeader === null) {
+    log.warn(`browser_login: cookie_endpoint (node-fetch): no Set-Cookie in response from ${endpointUrl}`);
+    return {
+      ok: false,
+      reason: 'verification_failed',
+      detail: `no Set-Cookie header in response from ${endpointUrl}`,
+    };
+  }
+
+  // Extract the cookie name=value pair (before any attributes like Path, HttpOnly, etc.)
+  const cookieNameValue = setCookieHeader.split(';')[0]?.trim() ?? '';
+  if (!cookieNameValue.startsWith(`${plan.cookieName}=`)) {
+    log.warn(`browser_login: cookie_endpoint (node-fetch): expected cookie "${plan.cookieName}" not in Set-Cookie; got: ${setCookieHeader}`);
+    return {
+      ok: false,
+      reason: 'verification_failed',
+      detail: `expected cookie "${plan.cookieName}" not in Set-Cookie header from ${endpointUrl}`,
+    };
+  }
+
+  surface?.setDefaultCookie?.(cookieNameValue);
+  log.info(`browser_login: cookie_endpoint (node-fetch) success`, { role, cookieName: plan.cookieName });
+  return { ok: true, cookies: [], finalUrl: baseUrl };
 }
 
 /**

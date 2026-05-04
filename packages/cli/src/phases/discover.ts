@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
+import type { SurfaceMcpAdapter, SurfaceSummary } from '../adapters/surface-mcp.js';
 import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import type { BugDetection, BugHunterConfig, DiscoveryOutput, DiscoveredPage, ToolMeta, SkippedItem, VisualBaselineEntry, VisionConfig, CrawlTelemetry, VisionBaselineTelemetry, VisionConsistencyTelemetry } from '../types.js';
 import { runStaticAnalysis } from '../static/runner.js';
@@ -81,7 +81,18 @@ export async function runBrowserLoginPhase(
     } catch {
       plan = cookieEndpointPlanFromConfig(cookieAuth);
     }
-    const result = await loginViaCookieEndpoint(browser, plan, cookieAuth, loginRole, baseUrl);
+
+    // #181: detect API-only surfaces so loginViaCookieEndpoint can skip the
+    // navigate+evaluate browser path and use Node fetch instead.
+    let surfaceStack: SurfaceSummary['stack'] | undefined;
+    try {
+      const self = await surface.surface_describe_self();
+      surfaceStack = self.stack;
+    } catch {
+      // surface_describe_self not available — treat as unknown (defaults to UI path)
+    }
+
+    const result = await loginViaCookieEndpoint(browser, plan, cookieAuth, loginRole, baseUrl, { surfaceStack, surface });
     log.info(`browser_login: cookie_endpoint`, { role: loginRole, kind: 'cookie', ok: result.ok });
     if (result.ok) return { skipped: false, loginRole };
     log.warn(`browser_login: cookie_endpoint failed (role=${loginRole}, reason=${result.reason}): ${result.detail}`);

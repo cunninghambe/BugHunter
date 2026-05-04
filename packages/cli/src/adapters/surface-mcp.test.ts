@@ -1,6 +1,6 @@
 // Tests for BoundSurfaceMcpAdapter (v0.43 multi-surface) and legacy fallback.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   BoundSurfaceMcpAdapter,
   HttpSurfaceMcpAdapter,
@@ -227,6 +227,113 @@ describe('BoundSurfaceMcpAdapter — HttpSurfaceMcpAdapter.getSurfaceName', () =
   it('HttpSurfaceMcpAdapter.getSurfaceName returns undefined', () => {
     const http = new HttpSurfaceMcpAdapter('http://localhost:3140');
     expect(http.getSurfaceName()).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #181: setDefaultCookie — cookie forwarded into surface_call extraCookie arg
+// ---------------------------------------------------------------------------
+
+describe('HttpSurfaceMcpAdapter.setDefaultCookie — #181 cookie forwarding', () => {
+  let globalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    globalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = globalFetch;
+  });
+
+  function makeMcpResponse(body: unknown): Response {
+    const payload = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      result: {
+        content: [{ type: 'text', text: JSON.stringify(body) }],
+        isError: false,
+      },
+    });
+    return new Response(payload, {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  it('surface_call injects extraCookie from setDefaultCookie into the MCP request body', async () => {
+    const capturedBodies: unknown[] = [];
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedBodies.push(JSON.parse(init?.body as string));
+      return makeMcpResponse({ ok: true, durationMs: 1, revisionAtCall: 1 });
+    }) as typeof fetch;
+
+    const adapter = new HttpSurfaceMcpAdapter('http://localhost:3140');
+    adapter.setDefaultCookie('session=abc123');
+    await adapter.surface_call({ role: 'admin', input: {} });
+
+    expect(capturedBodies).toHaveLength(1);
+    const body = capturedBodies[0] as { params: { arguments: Record<string, unknown> } };
+    expect(body.params.arguments['extraCookie']).toBe('session=abc123');
+  });
+
+  it('surface_call without setDefaultCookie sends no extraCookie', async () => {
+    const capturedBodies: unknown[] = [];
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedBodies.push(JSON.parse(init?.body as string));
+      return makeMcpResponse({ ok: true, durationMs: 1, revisionAtCall: 1 });
+    }) as typeof fetch;
+
+    const adapter = new HttpSurfaceMcpAdapter('http://localhost:3140');
+    await adapter.surface_call({ role: 'admin', input: {} });
+
+    const body = capturedBodies[0] as { params: { arguments: Record<string, unknown> } };
+    expect(body.params.arguments['extraCookie']).toBeUndefined();
+  });
+
+  it('caller-supplied extraCookie wins over setDefaultCookie', async () => {
+    const capturedBodies: unknown[] = [];
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedBodies.push(JSON.parse(init?.body as string));
+      return makeMcpResponse({ ok: true, durationMs: 1, revisionAtCall: 1 });
+    }) as typeof fetch;
+
+    const adapter = new HttpSurfaceMcpAdapter('http://localhost:3140');
+    adapter.setDefaultCookie('session=abc123');
+    await adapter.surface_call({ role: 'admin', input: {}, extraCookie: 'session=override' });
+
+    const body = capturedBodies[0] as { params: { arguments: Record<string, unknown> } };
+    expect(body.params.arguments['extraCookie']).toBe('session=override');
+  });
+
+  it('BoundSurfaceMcpAdapter.setDefaultCookie delegates to inner and cookie reaches surface_call', async () => {
+    const capturedBodies: unknown[] = [];
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedBodies.push(JSON.parse(init?.body as string));
+      return makeMcpResponse({ ok: true, durationMs: 1, revisionAtCall: 1 });
+    }) as typeof fetch;
+
+    const http = new HttpSurfaceMcpAdapter('http://localhost:3140');
+    const bound = new BoundSurfaceMcpAdapter(http, 'self-api');
+    bound.setDefaultCookie('session=xyz999');
+    await bound.surface_call({ role: 'admin', input: {} });
+
+    const body = capturedBodies[0] as { params: { arguments: Record<string, unknown> } };
+    expect(body.params.arguments['extraCookie']).toBe('session=xyz999');
+  });
+
+  it('non-surface_call mcpCall requests do NOT include Cookie header (old wrong approach removed)', async () => {
+    const capturedHeaders: Record<string, string>[] = [];
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedHeaders.push((init?.headers as Record<string, string>) ?? {});
+      return makeMcpResponse([]);
+    }) as typeof fetch;
+
+    const adapter = new HttpSurfaceMcpAdapter('http://localhost:3140');
+    adapter.setDefaultCookie('session=abc123');
+    // surface_list_tools is a non-surface_call mcpCall — should NOT have Cookie header
+    await adapter.surface_list_tools();
+
+    expect(capturedHeaders[0]['Cookie']).toBeUndefined();
   });
 });
 

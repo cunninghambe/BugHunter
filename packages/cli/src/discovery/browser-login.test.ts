@@ -1,5 +1,5 @@
 // Unit tests for loginInBrowser — mocked adapters only
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { loginInBrowser, fieldCandidates, looksLikeCssSelector, labelTextCandidates, loginViaCookieEndpoint, cookieEndpointPlanFromConfig } from './browser-login.js';
 import type { CookieEndpointPlan } from './browser-login.js';
 import type { BrowserMcpAdapter, CookieEntry } from '../adapters/browser-mcp.js';
@@ -1020,5 +1020,184 @@ describe('cookieEndpointPlanFromConfig — V55.2', () => {
     expect(plan.loginEndpoint.bodyShape).toBe('json');
     expect(plan.usernameField).toBe('email');
     expect(plan.passwordField).toBe('password');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #181: loginViaCookieEndpoint — API-only (openapi/express) Node-fetch path
+// ---------------------------------------------------------------------------
+
+function makeApiSurface(opts: { setDefaultCookieCalled?: string[] } = {}): SurfaceMcpAdapter {
+  const calls = opts.setDefaultCookieCalled ?? [];
+  return {
+    surface_list_surfaces: vi.fn(),
+    surface_list_tools: vi.fn(),
+    surface_describe_tool: vi.fn(),
+    surface_call: vi.fn(),
+    surface_probe: vi.fn(),
+    surface_sample_inputs: vi.fn(),
+    surface_login_status: vi.fn(),
+    surface_relogin: vi.fn(),
+    surface_routes_for_page: vi.fn(),
+    surface_list_pages: vi.fn(),
+    surface_describe_auth: vi.fn(),
+    surface_describe_self: vi.fn(),
+    surface_list_navigations: vi.fn(),
+    surface_enumerate_routes_runtime: vi.fn(),
+    surface_postprocess_runtime_routes: vi.fn(),
+    setDefaultCookie: vi.fn((cookie: string) => { calls.push(cookie); }),
+  } as unknown as SurfaceMcpAdapter;
+}
+
+function stubNodeFetch(opts: {
+  status?: number;
+  ok?: boolean;
+  setCookieHeader?: string | null;
+  throws?: boolean;
+}): void {
+  const { status = 200, setCookieHeader = `bench_session=sessval; Path=/; HttpOnly` } = opts;
+  const ok = opts.ok ?? (status >= 200 && status < 300);
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    if (opts.throws) throw new Error('network_error');
+    const headers = new Headers();
+    if (setCookieHeader !== null) headers.set('set-cookie', setCookieHeader);
+    return { status, ok, headers };
+  }));
+}
+
+describe('loginViaCookieEndpoint — #181 API-only Node-fetch path', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('openapi stack: does NOT call browser.navigate or browser.evaluate', async () => {
+    stubNodeFetch({});
+    const browser = makeCookieBrowser({ cookies: [SESSION_COOKIE_BENCH] });
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: 'openapi',
+      surface,
+    });
+    expect(result.ok).toBe(true);
+    expect(browser.navigate).not.toHaveBeenCalled();
+    expect(browser.evaluate).not.toHaveBeenCalled();
+  });
+
+  it('express stack: uses Node fetch, returns ok:true when Set-Cookie matches', async () => {
+    stubNodeFetch({ setCookieHeader: 'bench_session=s123; Path=/; HttpOnly' });
+    const browser = makeCookieBrowser();
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: 'express',
+      surface,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('openapi stack: calls setDefaultCookie on surface adapter with name=value pair', async () => {
+    stubNodeFetch({ setCookieHeader: 'bench_session=mysessval; Path=/; HttpOnly; SameSite=Lax' });
+    const cookieCalls: string[] = [];
+    const surface = makeApiSurface({ setDefaultCookieCalled: cookieCalls });
+    const browser = makeCookieBrowser();
+    await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: 'openapi',
+      surface,
+    });
+    expect(cookieCalls).toHaveLength(1);
+    expect(cookieCalls[0]).toBe('bench_session=mysessval');
+  });
+
+  it('openapi stack: returns submit_failed on 4xx response', async () => {
+    stubNodeFetch({ status: 401, ok: false });
+    const browser = makeCookieBrowser();
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: 'openapi',
+      surface,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('submit_failed');
+  });
+
+  it('openapi stack: returns login_page_load_failed on 5xx response', async () => {
+    stubNodeFetch({ status: 500, ok: false });
+    const browser = makeCookieBrowser();
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: 'openapi',
+      surface,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('login_page_load_failed');
+  });
+
+  it('openapi stack: returns login_page_load_failed when fetch throws', async () => {
+    stubNodeFetch({ throws: true });
+    const browser = makeCookieBrowser();
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: 'openapi',
+      surface,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('login_page_load_failed');
+  });
+
+  it('openapi stack: returns verification_failed when Set-Cookie header is absent', async () => {
+    stubNodeFetch({ setCookieHeader: null });
+    const browser = makeCookieBrowser();
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: 'openapi',
+      surface,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('verification_failed');
+  });
+
+  it('openapi stack: returns verification_failed when Set-Cookie has wrong cookie name', async () => {
+    stubNodeFetch({ setCookieHeader: 'other_cookie=val; Path=/' });
+    const browser = makeCookieBrowser();
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: 'openapi',
+      surface,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('verification_failed');
+  });
+
+  it('vite stack: still uses browser navigate+evaluate (UI path unchanged)', async () => {
+    const browser = makeCookieBrowser({ cookies: [SESSION_COOKIE_BENCH] });
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: 'vite',
+      surface,
+    });
+    expect(result.ok).toBe(true);
+    expect(browser.navigate).toHaveBeenCalledWith(BASE_URL);
+    expect(browser.evaluate).toHaveBeenCalled();
+  });
+
+  it('undefined stack: falls back to UI path (navigate+evaluate)', async () => {
+    const browser = makeCookieBrowser({ cookies: [SESSION_COOKIE_BENCH] });
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'admin', BASE_URL, {
+      surfaceStack: undefined,
+      surface,
+    });
+    expect(result.ok).toBe(true);
+    expect(browser.navigate).toHaveBeenCalledWith(BASE_URL);
+  });
+
+  it('openapi stack: role_has_no_credentials still returned before fetch attempt', async () => {
+    const browser = makeCookieBrowser();
+    const surface = makeApiSurface();
+    const result = await loginViaCookieEndpoint(browser, COOKIE_ENDPOINT_PLAN, COOKIE_AUTH, 'unknown-role', BASE_URL, {
+      surfaceStack: 'openapi',
+      surface,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('role_has_no_credentials');
   });
 });

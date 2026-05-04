@@ -135,6 +135,8 @@ export type SurfaceCallInput = {
   allowExternal?: boolean;
   noAutoRelogin?: boolean;
   pinRevision?: number;
+  /** #181: session cookie to forward to the backend API via SurfaceMCP. */
+  extraCookie?: string;
 };
 
 export type SurfaceCallResult = {
@@ -254,12 +256,21 @@ export interface SurfaceMcpAdapter {
 
   /** v0.43+: returns the bound surface name, or undefined for the unbound root adapter. */
   getSurfaceName?(): string | undefined;
+
+  /**
+   * #181: Store a session cookie value to include as a `Cookie:` header on every
+   * subsequent `surface_call` so SurfaceMCP can forward it to the target API.
+   * Used by `loginViaCookieEndpoint` for non-UI (openapi/express) surfaces that
+   * cannot use the navigate+evaluate browser path.
+   */
+  setDefaultCookie?(cookie: string): void;
 }
 
 // HTTP-based implementation targeting a live SurfaceMCP instance.
 export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
   private readonly baseUrl: string;
   private runId: string | undefined;
+  private defaultCookie: string | undefined;
 
   constructor(baseUrl: string) {
     // Strip one trailing /mcp (with optional trailing slash) for backward-compat
@@ -271,6 +282,10 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
   // Critical for V21 cross-user-id mutations to be distinguishable from real traffic.
   setRunId(runId: string): void {
     this.runId = runId;
+  }
+
+  setDefaultCookie(cookie: string): void {
+    this.defaultCookie = cookie;
   }
 
   private async mcpCall<T>(tool: string, args: unknown): Promise<T> {
@@ -335,7 +350,10 @@ export class HttpSurfaceMcpAdapter implements SurfaceMcpAdapter {
   }
 
   async surface_call(args: SurfaceCallInput): Promise<SurfaceCallResult> {
-    return this.mcpCall<SurfaceCallResult>('surface_call', args);
+    const argsWithCookie = this.defaultCookie !== undefined && args.extraCookie === undefined
+      ? { ...args, extraCookie: this.defaultCookie }
+      : args;
+    return this.mcpCall<SurfaceCallResult>('surface_call', argsWithCookie);
   }
 
   async surface_probe(args: { name?: string; toolId?: string; role: string }): Promise<SurfaceProbeResult> {
@@ -400,6 +418,10 @@ export class BoundSurfaceMcpAdapter implements SurfaceMcpAdapter {
 
   getSurfaceName(): string {
     return this.surfaceName;
+  }
+
+  setDefaultCookie(cookie: string): void {
+    this.inner.setDefaultCookie?.(cookie);
   }
 
   // Global — not surface-scoped; pass through unchanged.
