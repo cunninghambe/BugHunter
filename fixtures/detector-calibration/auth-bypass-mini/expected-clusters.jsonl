@@ -1,0 +1,2 @@
+{"kind":"auth_bypass_via_unauthed_route","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin/users","role":"anonymous"},"severity":"critical"}
+{"kind":"auth_bypass_via_unauthed_route","expect":"fires","minClusterSize":1,"match":{"page":"/api/orders","role":"anonymous"},"severity":"critical"}

@@ -1,0 +1,6 @@
+{
+  "name": "auth-bypass-mini-fixture",
+  "version": "1.0.0",
+  "description": "BugHunter detector-calibration fixture for auth_bypass_via_unauthed_route. DO NOT deploy to public networks.",
+  "private": true
+}

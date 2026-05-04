@@ -1,0 +1,2 @@
+{"kind":"vulnerable_dependency_high","expect":"fires","minClusterSize":1,"match":{"signaturePrefix":"lodash"},"severity":"critical"}
+{"kind":"vulnerable_dependency_high","expect":"fires","minClusterSize":1,"match":{"signaturePrefix":"axios"},"severity":"critical"}

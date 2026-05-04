@@ -1,0 +1,2 @@
+{"kind":"sensitive_data_in_url","expect":"fires","minClusterSize":1,"match":{"page":"/reset-password"},"severity":"major"}
+{"kind":"sensitive_data_in_url","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin"},"severity":"major"}

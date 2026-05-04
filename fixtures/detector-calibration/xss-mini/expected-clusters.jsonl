@@ -1,0 +1,3 @@
+{"kind":"xss_reflected","expect":"fires","minClusterSize":1,"match":{"page":"/api/echo"},"severity":"critical"}
+{"kind":"xss_reflected","expect":"fires","minClusterSize":1,"match":{"page":"/api/search"},"severity":"critical"}
+{"kind":"xss_reflected","expect":"fires","minClusterSize":1,"match":{"page":"/api/comments"},"severity":"critical"}
