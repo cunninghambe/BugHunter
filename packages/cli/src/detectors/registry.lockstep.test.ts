@@ -12,6 +12,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DETECTOR_REGISTRY } from './registry.js';
+import { DETECTOR_CONTRACTS } from './contracts.js';
 
 // ---------------------------------------------------------------------------
 // File locations
@@ -194,5 +195,56 @@ describe('DETECTOR_REGISTRY lockstep', () => {
       errors,
       `Wired detectors with no kind-name reference in their detectorSite:\n${errors.join('\n')}`,
     ).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V56 lockstep: DETECTOR_CONTRACTS ↔ harness:true registry rows (advisory in V56.1–V56.5)
+// Gate-flips to mandatory at V56.6 when all wired kinds must have harness:true + contract.
+// ---------------------------------------------------------------------------
+
+describe('V56 DETECTOR_CONTRACTS lockstep (advisory through V56.5)', () => {
+  it('every harness:true registry row has exactly one DETECTOR_CONTRACTS entry', () => {
+    const harnessKinds = DETECTOR_REGISTRY
+      .filter(e => e.status === 'wired' && e.harness === true)
+      .map(e => e.kind);
+
+    const contractKinds = new Set(DETECTOR_CONTRACTS.map(c => c.kind));
+
+    const missing = harnessKinds.filter(k => !contractKinds.has(k));
+    expect(
+      missing,
+      `Registry rows with harness:true that have NO DetectorContract entry: ${missing.join(', ')}. ` +
+      'Add a DetectorContract entry for each, or remove harness:true from the registry row.',
+    ).toHaveLength(0);
+  });
+
+  it('every DETECTOR_CONTRACTS entry has a corresponding harness:true wired registry row', () => {
+    const harnessKinds = new Set(
+      DETECTOR_REGISTRY
+        .filter(e => e.status === 'wired' && e.harness === true)
+        .map(e => e.kind),
+    );
+
+    const orphaned = DETECTOR_CONTRACTS
+      .filter(c => !harnessKinds.has(c.kind))
+      .map(c => c.kind);
+
+    expect(
+      orphaned,
+      `DetectorContract entries with no harness:true wired registry row: ${orphaned.join(', ')}. ` +
+      'Either add harness:true to the registry row, or remove the contract entry.',
+    ).toHaveLength(0);
+  });
+
+  it('DETECTOR_CONTRACTS entries have unique kinds', () => {
+    const kinds = DETECTOR_CONTRACTS.map(c => c.kind);
+    const seen = new Set<string>();
+    const duplicates: string[] = [];
+    for (const kind of kinds) {
+      if (seen.has(kind)) duplicates.push(kind);
+      seen.add(kind);
+    }
+    expect(duplicates, `Duplicate DetectorContract entries: ${duplicates.join(', ')}`).toHaveLength(0);
   });
 });

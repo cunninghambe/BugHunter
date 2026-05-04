@@ -1,0 +1,7 @@
+{
+  "fixture": "<fixture-name>",
+  "serves": ["<bug_kind_1>", "<bug_kind_2>"],
+  "port": 9970,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

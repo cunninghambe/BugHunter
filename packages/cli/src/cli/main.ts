@@ -19,6 +19,8 @@ import { scopeCommand } from './scope.js';
 import { inputsCommand } from './inputs-cmd.js';
 import { configCommand } from './config-cmd.js';
 import { selfTestCommand } from './self-test.js';
+import { tieredSelfTestCommand } from './self-test-tiered.js';
+import { testDetectorCommand } from './test-detector.js';
 import { diffCommand } from './diff.js';
 import { historyCommand } from './history.js';
 import { ingestCommand } from './ingest.js';
@@ -213,12 +215,20 @@ Data integrity invariants (v0.42):
 
 Diagnostics (self-test):
   bughunter self-test [--budget <ms>] [--max-bugs <n>] [--json] [--no-fail-on-flake]
-                      [--keep-run] [--skip-fixture-up]
-                              Runs BugHunter against fixtures/bughunter-self-deliberate-bugs/
+                      [--keep-run] [--skip-fixture-up] [--tier <1|2|3|all>] [--bail]
+                              (no --tier) Runs BugHunter against fixtures/bughunter-self-deliberate-bugs/
                               and asserts every wired BugKind fires (and every deferred kind
                               stays absent) within the wallclock budget.
+                              --tier 1: all per-detector fixture tests (fast, <5min for 30 fixtures)
+                              --tier 2: phase-level smoke against _phase-smoke fixture
+                              --tier 3: full comprehensive-bench self-test (same as no --tier)
+                              --tier all: Tier 1 → 2 → 3 with gating (Tier 1 fail blocks 2/3)
                               Exit 0 = all pass, 1 = miss/false-positive/budget, 2 = setup error.
                               Contributor tool only — must run from a BugHunter repo checkout.
+  bughunter test-detector <kind|all> [--target <url>] [--verbose] [--no-up] [--keep] [--json]
+                              V56: run per-detector fixture tests. Resolves contract for <kind>,
+                              boots fixture, runs harness, compares to expected-clusters.jsonl.
+                              Exit 0 = PASS, 1 = FAIL, 2 = infrastructure error.
 
 Calibration:
   bughunter calibrate --app <path> [--gold <path>] [--out <path>]
@@ -695,14 +705,58 @@ async function main(): Promise<void> {
       }
 
       case 'self-test': {
-        await selfTestCommand({
-          projectDir,
-          budgetMs: typeof flags['budget'] === 'string' ? parseInt(flags['budget'], 10) : undefined,
-          maxBugs: typeof flags['max-bugs'] === 'string' ? parseInt(flags['max-bugs'], 10) : undefined,
-          jsonOutput: flags['json'] === true,
-          failOnFlake: flags['no-fail-on-flake'] === true ? false : true,
-          keepRun: flags['keep-run'] === true,
-          skipFixtureUp: flags['skip-fixture-up'] === true,
+        const tierRaw = flags['tier'];
+        if (tierRaw !== undefined) {
+          // V56: tiered runner — bughunter self-test --tier <1|2|3|all>
+          let tier: 1 | 2 | 3 | 'all';
+          if (tierRaw === 'all') {
+            tier = 'all';
+          } else {
+            const tierNum = parseInt(String(tierRaw), 10);
+            if (tierNum !== 1 && tierNum !== 2 && tierNum !== 3) {
+              process.stderr.write('Usage: bughunter self-test --tier <1|2|3|all>\n');
+              process.exitCode = 3;
+              break;
+            }
+            tier = tierNum;
+          }
+          await tieredSelfTestCommand({
+            tier,
+            bail: flags['bail'] !== false,
+            json: flags['json'] === true,
+            projectDir,
+          });
+        } else {
+          // No --tier flag: back-compat alias to Tier 3 (comprehensive-bench self-test)
+          await selfTestCommand({
+            projectDir,
+            budgetMs: typeof flags['budget'] === 'string' ? parseInt(flags['budget'], 10) : undefined,
+            maxBugs: typeof flags['max-bugs'] === 'string' ? parseInt(flags['max-bugs'], 10) : undefined,
+            jsonOutput: flags['json'] === true,
+            failOnFlake: flags['no-fail-on-flake'] === true ? false : true,
+            keepRun: flags['keep-run'] === true,
+            skipFixtureUp: flags['skip-fixture-up'] === true,
+          });
+        }
+        break;
+      }
+
+      case 'test-detector': {
+        // V56: per-detector fixture test — bughunter test-detector <kind|all> [options]
+        const kindArg = args[0] ?? '';
+        if (kindArg === '' && flags['all'] !== true) {
+          process.stderr.write('Usage: bughunter test-detector <kind|all> [--target <url>] [--verbose] [--no-up] [--keep] [--json] [--all]\n');
+          process.exitCode = 3;
+          break;
+        }
+        await testDetectorCommand({
+          kind: kindArg !== '' ? kindArg : 'all',
+          all: flags['all'] === true || kindArg === 'all',
+          target: typeof flags['target'] === 'string' ? flags['target'] : undefined,
+          verbose: flags['verbose'] === true,
+          noUp: flags['no-up'] === true,
+          keep: flags['keep'] === true,
+          json: flags['json'] === true,
         });
         break;
       }

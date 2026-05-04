@@ -1,0 +1,2 @@
+{"kind":"<bug_kind_1>","expect":"fires","minClusterSize":1,"match":{"page":"/target-route"},"severity":"critical"}
+{"kind":"<bug_kind_2>","expect":"silent","reason":"Not planted in this fixture"}
