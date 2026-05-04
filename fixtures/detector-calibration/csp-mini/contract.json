@@ -1,0 +1,7 @@
+{
+  "fixture": "csp-mini",
+  "serves": ["missing_csp_header"],
+  "port": 9973,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
