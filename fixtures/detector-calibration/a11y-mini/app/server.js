@@ -50,6 +50,48 @@ const ROUTES = {
     // Input degradation: malformed HTML, img without alt
     '<!doctype html><html<><head><title>Malformed</title></head<><body<><img src="/x.png"<><p>Mal</p></body></html>',
   ),
+
+  // form_input_unlabeled routes
+  '/input-no-label': html(
+    200,
+    // Positive: input has neither for-linked label, nor wrapped label, nor aria-label
+    '<!doctype html><html><head><title>No Label</title></head><body><form><input type="text" name="email"></form></body></html>',
+  ),
+  '/input-label-for': html(
+    200,
+    // Negative: <label for="x"><input id="x">
+    '<!doctype html><html><head><title>For Label</title></head><body><form><label for="email">Email</label><input id="email" type="email"></form></body></html>',
+  ),
+  '/input-wrapped-label': html(
+    200,
+    // Edge: <label>Text <input></label>
+    '<!doctype html><html><head><title>Wrapped Label</title></head><body><form><label>Name <input type="text" name="name"></label></form></body></html>',
+  ),
+  '/input-aria-label': html(
+    200,
+    // Edge: aria-label provides accessible name
+    '<!doctype html><html><head><title>Aria Label</title></head><body><form><input type="text" name="search" aria-label="Search query"></form></body></html>',
+  ),
+  '/input-hidden': html(
+    200,
+    // Edge: hidden inputs are not user-facing — silent
+    '<!doctype html><html><head><title>Hidden</title></head><body><form><input type="hidden" name="csrf" value="abc123"></form></body></html>',
+  ),
+  '/input-submit-with-value': html(
+    200,
+    // Edge: submit with value — the button value IS the accessible name
+    '<!doctype html><html><head><title>Submit</title></head><body><form><input type="submit" value="Save changes"></form></body></html>',
+  ),
+  '/multi-input-mixed': html(
+    200,
+    // 2 inputs: one for-linked label, one bare → fire on the bare one
+    '<!doctype html><html><head><title>Mixed</title></head><body><form><label for="a">A</label><input id="a" type="text"><input type="text" name="b"></form></body></html>',
+  ),
+  '/malformed-no-label': html(
+    200,
+    // Input degradation: malformed HTML, input without any label mechanism
+    '<!doctype html><html<><head><title>Malformed</title></head<><body<><form<><input type="text" name="x"<></form></body></html>',
+  ),
 };
 
 const server = http.createServer((req, res) => {

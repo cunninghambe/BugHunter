@@ -5,3 +5,12 @@
 {"kind":"image_missing_alt","expect":"fires","minClusterSize":1,"match":{"page":"/multi-img-mixed"},"severity":"minor","edgeLabel":"mixed-imgs-only-flag-missing"}
 {"kind":"image_missing_alt","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-no-alt"},"severity":"minor","edgeLabel":"malformed-html-still-detects-missing-alt"}
 {"kind":"image_missing_alt","expect":"skipped","reason":"no_response"}
+{"kind":"form_input_unlabeled","expect":"fires","minClusterSize":1,"match":{"page":"/input-no-label"},"severity":"minor"}
+{"kind":"form_input_unlabeled","expect":"silent","reason":"<label for=\"id\"> linked to <input id=\"id\">","match":{"page":"/input-label-for"}}
+{"kind":"form_input_unlabeled","expect":"silent","reason":"<label> wraps the <input>","match":{"page":"/input-wrapped-label"},"edgeLabel":"wrapped-label"}
+{"kind":"form_input_unlabeled","expect":"silent","reason":"aria-label provides accessible name","match":{"page":"/input-aria-label"},"edgeLabel":"aria-label-as-accessible-name"}
+{"kind":"form_input_unlabeled","expect":"silent","reason":"type=\"hidden\" inputs are not user-facing","match":{"page":"/input-hidden"},"edgeLabel":"hidden-input-skip"}
+{"kind":"form_input_unlabeled","expect":"silent","reason":"type=\"submit\" with value attribute — button value is the accessible name","match":{"page":"/input-submit-with-value"},"edgeLabel":"submit-value-as-name"}
+{"kind":"form_input_unlabeled","expect":"fires","minClusterSize":1,"match":{"page":"/multi-input-mixed"},"severity":"minor","edgeLabel":"mixed-inputs-only-flag-bare"}
+{"kind":"form_input_unlabeled","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-no-label"},"severity":"minor","edgeLabel":"malformed-html-still-detects-unlabeled-input"}
+{"kind":"form_input_unlabeled","expect":"skipped","reason":"no_response"}

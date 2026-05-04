@@ -362,4 +362,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects <img> elements lacking an accessible name (no alt, no aria-label, no aria-labelledby). alt="" is allowed (decorative-image convention).',
   },
+  {
+    kind: 'form_input_unlabeled',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'a11y-mini',
+      servesKinds: ['form_input_unlabeled'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects <input> elements without an associated label (for-attribute, wrapped <label>, aria-label, aria-labelledby, or title). type=hidden and submit/button/reset with value are skipped.',
+  },
 ];
