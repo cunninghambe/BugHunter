@@ -691,6 +691,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'seo_h1_missing_or_multiple',

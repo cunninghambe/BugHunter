@@ -64,6 +64,33 @@ const ROUTES = {
     // Tests that attribute order does not matter (content="..." before name="description")
     '<!doctype html><html><head><title>Reversed Attrs</title><meta content="Reversed attribute order works" name="description"></head><body><h1>Hi</h1></body></html>',
   ),
+
+  // seo_canonical_missing routes.
+  // Detector logic: a page lacks canonical AND ≥1 OTHER page in the corpus has it.
+  // /has-canonical seeds the corpus so that lack-of-canonical pages can be flagged.
+  '/has-canonical': html(
+    200,
+    '<!doctype html><html><head><title>Has Canonical</title><link rel="canonical" href="http://example.com/has-canonical"></head><body><h1>Hi</h1></body></html>',
+  ),
+  '/no-canonical': html(
+    200,
+    '<!doctype html><html><head><title>No Canonical</title></head><body><h1>Hi</h1></body></html>',
+  ),
+  '/canonical-attrs-reversed': html(
+    200,
+    // Edge: href="..." appears before rel="canonical" — should still detect as having canonical
+    '<!doctype html><html><head><title>Reversed Canonical</title><link href="http://example.com/x" rel="canonical"></head><body><h1>Hi</h1></body></html>',
+  ),
+  '/canonical-relative-url': html(
+    200,
+    // Edge: relative canonical URL — detector only checks presence, so this is silent
+    '<!doctype html><html><head><title>Relative Canonical</title><link rel="canonical" href="/some-relative-path"></head><body><h1>Hi</h1></body></html>',
+  ),
+  '/malformed-no-canonical': html(
+    200,
+    // Input degradation: malformed HTML; no canonical link present
+    '<!doctype html><html<><head><title>Malformed No Canonical</title<<><body><h1>Hi</h1></body></html>',
+  ),
 };
 
 const server = http.createServer((req, res) => {

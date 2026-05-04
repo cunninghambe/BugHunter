@@ -10,3 +10,9 @@
 {"kind":"seo_meta_description_missing","expect":"silent","reason":"page has a meaningful meta description","match":{"page":"/good-meta-desc"}}
 {"kind":"seo_meta_description_missing","expect":"silent","reason":"page has a meaningful meta description (attribute order reversed)","match":{"page":"/meta-desc-attrs-reversed"}}
 {"kind":"seo_meta_description_missing","expect":"skipped","reason":"no_response"}
+{"kind":"seo_canonical_missing","expect":"fires","minClusterSize":1,"match":{"page":"/no-canonical"},"severity":"minor"}
+{"kind":"seo_canonical_missing","expect":"silent","reason":"page has <link rel=\"canonical\">","match":{"page":"/has-canonical"}}
+{"kind":"seo_canonical_missing","expect":"silent","reason":"canonical link present (attribute order reversed)","match":{"page":"/canonical-attrs-reversed"}}
+{"kind":"seo_canonical_missing","expect":"silent","reason":"canonical link present with relative href","match":{"page":"/canonical-relative-url"}}
+{"kind":"seo_canonical_missing","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-no-canonical"},"severity":"minor","edgeLabel":"malformed-html-still-detects-missing-canonical"}
+{"kind":"seo_canonical_missing","expect":"skipped","reason":"no_response"}
