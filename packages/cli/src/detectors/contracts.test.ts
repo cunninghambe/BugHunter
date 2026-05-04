@@ -138,9 +138,11 @@ describe('DETECTOR_CONTRACTS array', () => {
     expect(DETECTOR_CONTRACTS.length).toBe(original);
   });
 
-  it('V56.1 ships with empty contracts (populated in V56.2+)', () => {
-    // V56.1 is infrastructure only — no contracts yet
-    expect(DETECTOR_CONTRACTS).toHaveLength(0);
+  it('V56.2+ contracts populated for high-value detectors', () => {
+    // V56.1 sentinel ("expect 0") flipped at V56.2 — the lockstep test enforces
+    // 1:1 with `harness: true` registry rows. This assertion just guards against
+    // a regression to "0 contracts" passing silently.
+    expect(DETECTOR_CONTRACTS.length).toBeGreaterThanOrEqual(2);
   });
 
   it('every contract entry has required fields when non-empty', () => {
