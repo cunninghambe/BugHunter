@@ -1,0 +1,8 @@
+{"kind":"cookie_security_flags","expect":"fires","minClusterSize":1,"match":{"page":"/no-flags"},"severity":"major"}
+{"kind":"cookie_security_flags","expect":"silent","reason":"all three flags set (Secure, HttpOnly, SameSite)","match":{"page":"/all-flags"}}
+{"kind":"cookie_security_flags","expect":"fires","minClusterSize":1,"match":{"page":"/missing-httponly"},"severity":"major","edgeLabel":"only-httponly-missing"}
+{"kind":"cookie_security_flags","expect":"fires","minClusterSize":1,"match":{"page":"/missing-samesite"},"severity":"major","edgeLabel":"only-samesite-missing"}
+{"kind":"cookie_security_flags","expect":"silent","reason":"non-session-shaped cookie (short value, no session-name pattern)","match":{"page":"/non-session-cookie"}}
+{"kind":"cookie_security_flags","expect":"silent","reason":"CSRF cookies are exempt from HttpOnly check by name","match":{"page":"/csrf-cookie-no-httponly"},"edgeLabel":"csrf-cookie-httponly-exempt"}
+{"kind":"cookie_security_flags","expect":"silent","reason":"malformed Set-Cookie cannot be parsed; detector skips silently","match":{"page":"/malformed-set-cookie"},"edgeLabel":"malformed-set-cookie-no-crash"}
+{"kind":"cookie_security_flags","expect":"skipped","reason":"no_response"}

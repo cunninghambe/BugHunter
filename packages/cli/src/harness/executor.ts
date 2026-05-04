@@ -279,6 +279,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'cookie_security_flags' && target.fixturePath !== undefined) {
+      const clusters = await runCookieSecurityFlagsHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'permissive_cors' && target.fixturePath !== undefined) {
       const clusters = await runPermissiveCorsHarness(
         target.appBaseUrl,
@@ -1690,6 +1703,163 @@ function buildSensitiveDataInUrlClusters(detectionsByPage: Map<string, string[]>
 // ---------------------------------------------------------------------------
 // Fixture lifecycle helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// cookie_security_flags runner — fires per missing flag on session cookies.
+// ---------------------------------------------------------------------------
+
+const SESSION_COOKIE_PATTERNS = ['session', 'sess', 'sid', 'auth', 'token', 'jwt'];
+const CSRF_COOKIE_PATTERNS = ['csrf', 'xsrf', '_csrf'];
+
+type ParsedCookie = { name: string; value: string; flags: string[] };
+
+function parseSetCookieValue(raw: string): ParsedCookie | null {
+  const parts = raw.split(';').map(p => p.trim());
+  const nameValue = parts[0] ?? '';
+  if (nameValue.length === 0) return null;
+  const eq = nameValue.indexOf('=');
+  if (eq === -1) return null;
+  const name = nameValue.slice(0, eq).trim();
+  const value = nameValue.slice(eq + 1).trim();
+  if (name.length === 0) return null;
+  return { name, value, flags: parts.slice(1).map(p => p.toLowerCase()) };
+}
+
+function isCookieSessionShaped(name: string, value: string): boolean {
+  const lower = name.toLowerCase();
+  if (SESSION_COOKIE_PATTERNS.some(p => lower.includes(p))) return true;
+  return value.length >= 32 && /^[A-Za-z0-9_+/=.~-]+$/.test(value);
+}
+
+function isCookieCsrfShaped(name: string): boolean {
+  const lower = name.toLowerCase();
+  return CSRF_COOKIE_PATTERNS.some(p => lower.includes(p));
+}
+
+function fetchSetCookieHeaders(url: string): Promise<{ status: number; setCookies: string[] }> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(url);
+      const req = http.get({
+        hostname: parsed.hostname,
+        port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
+        path: parsed.pathname + parsed.search,
+        method: 'GET',
+        timeout: 5_000,
+      }, (res) => {
+        const setCookieRaw = res.headers['set-cookie'];
+        const setCookies: string[] = Array.isArray(setCookieRaw)
+          ? setCookieRaw
+          : typeof setCookieRaw === 'string' ? [setCookieRaw] : [];
+        // Drain the body so the socket can close
+        res.on('data', () => {});
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, setCookies }));
+        res.on('error', () => resolve({ status: 0, setCookies: [] }));
+      });
+      req.on('timeout', () => { req.destroy(); resolve({ status: 0, setCookies: [] }); });
+      req.on('error', () => resolve({ status: 0, setCookies: [] }));
+    } catch {
+      resolve({ status: 0, setCookies: [] });
+    }
+  });
+}
+
+async function runCookieSecurityFlagsHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('cookie_security_flags: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  // page → list of "Cookie 'X' missing FLAG" rootCauses
+  const detectionsByPage = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const { status, setCookies } = await fetchSetCookieHeaders(url);
+      if (status === 0) continue;
+
+      const causes: string[] = [];
+      for (const raw of setCookies) {
+        const parsed = parseSetCookieValue(raw);
+        if (parsed === null) continue;
+        if (!isCookieSessionShaped(parsed.name, parsed.value)) continue;
+
+        const hasSecure = parsed.flags.includes('secure');
+        const hasHttpOnly = parsed.flags.includes('httponly');
+        const hasSameSite = parsed.flags.some(f => f.startsWith('samesite'));
+
+        // Skip Secure check on localhost/127.0.0.1 hosts (matches production behaviour).
+        const isLocalhost = appBaseUrl.includes('localhost') || appBaseUrl.includes('127.0.0.1') || appBaseUrl.includes('::1');
+        if (!hasSecure && !isLocalhost) {
+          causes.push(`Cookie '${parsed.name}' missing Secure flag`);
+        }
+        if (!hasHttpOnly && !isCookieCsrfShaped(parsed.name)) {
+          causes.push(`Cookie '${parsed.name}' missing HttpOnly flag`);
+        }
+        if (!hasSameSite) {
+          causes.push(`Cookie '${parsed.name}' missing SameSite flag`);
+        }
+      }
+
+      if (causes.length > 0) {
+        detectionsByPage.set(route, causes);
+        log.info('cookie_security_flags: detection', { route, count: causes.length });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'cookie_security_flags';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, causes] of detectionsByPage) {
+    const occurrences: Occurrence[] = causes.map((_, idx) => ({
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${idx}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    }));
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: causes.join('; '),
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: causes.length,
+      occurrences,
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
+    });
+  }
+
+  return clusters;
+}
 
 // ---------------------------------------------------------------------------
 // permissive_cors runner — probes routes, fires on ACAO:* + ACAC:true.
