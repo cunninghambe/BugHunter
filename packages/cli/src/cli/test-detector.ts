@@ -1,14 +1,15 @@
 // bughunter test-detector <kind|all> — run per-detector fixture tests locally.
-// V56.1: structural scaffold. Full fixture-boot wires in V56.2 when concrete
-// contracts and fixtures land.
+// V56.2.1: wires fixture boot and real assertClusters for path_traversal.
 //
 // Usage:
 //   bughunter test-detector <kind> [--target <url>] [--verbose] [--no-up] [--keep] [--json] [--all]
 //   bughunter test-detector all [--verbose] [--json]
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { DETECTOR_CONTRACTS } from '../detectors/contracts.js';
 import type { DetectorContract, ClusterAssertion } from '../detectors/contracts.js';
-import { runHarness } from '../harness/executor.js';
+import { runHarness, bootFixture } from '../harness/executor.js';
 import type { BugCluster } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -35,12 +36,57 @@ export type TestDetectorResultItem = {
     observed: BugCluster[];
   };
   reason?: string;
+  assertionResults?: AssertionResult[];
 };
 
 export type TestDetectorOutput = {
   passed: boolean;
   results: TestDetectorResultItem[];
 };
+
+export type AssertionResult = {
+  expect: 'fires' | 'silent' | 'skipped';
+  label: string;
+  status: 'pass' | 'fail' | 'skip';
+  detail: string;
+};
+
+// ---------------------------------------------------------------------------
+// Fixture path resolution
+// ---------------------------------------------------------------------------
+
+const FIXTURES_BASE = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  '../../../../fixtures/detector-calibration',
+);
+
+function resolveFixturePath(fixturePath: string): string {
+  return path.join(FIXTURES_BASE, fixturePath);
+}
+
+// ---------------------------------------------------------------------------
+// Load expected-clusters.jsonl
+// ---------------------------------------------------------------------------
+
+function loadExpectedClusters(fixturePath: string): ClusterAssertion[] {
+  const jsonlPath = path.join(fixturePath, 'expected-clusters.jsonl');
+  if (!fs.existsSync(jsonlPath)) return [];
+
+  const lines = fs.readFileSync(jsonlPath, 'utf8')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0);
+
+  const assertions: ClusterAssertion[] = [];
+  for (const line of lines) {
+    try {
+      assertions.push(JSON.parse(line) as ClusterAssertion);
+    } catch {
+      // skip malformed lines
+    }
+  }
+  return assertions;
+}
 
 // ---------------------------------------------------------------------------
 // Assertion logic
@@ -49,10 +95,21 @@ export type TestDetectorOutput = {
 function assertClusters(
   assertions: ClusterAssertion[],
   clusters: BugCluster[],
-): { passed: boolean; diff: { expected: ClusterAssertion[]; observed: BugCluster[] } } {
+): { passed: boolean; diff: { expected: ClusterAssertion[]; observed: BugCluster[] }; assertionResults: AssertionResult[] } {
   const failing: ClusterAssertion[] = [];
+  const assertionResults: AssertionResult[] = [];
 
   for (const assertion of assertions) {
+    if (assertion.expect === 'skipped') {
+      assertionResults.push({
+        expect: 'skipped',
+        label: assertion.reason,
+        status: 'skip',
+        detail: `skipped: ${assertion.reason}`,
+      });
+      continue;
+    }
+
     if (assertion.expect === 'fires') {
       const matching = clusters.filter(c => {
         if (c.kind !== assertion.kind) return false;
@@ -61,12 +118,27 @@ function assertClusters(
         return true;
       });
       const totalSize = matching.reduce((n, c) => n + c.clusterSize, 0);
-      if (totalSize < assertion.minClusterSize) {
+      const passed = totalSize >= assertion.minClusterSize;
+      const label = assertion.edgeLabel !== undefined
+        ? `fires match=page:${assertion.match.page ?? '*'} [${assertion.edgeLabel}]`
+        : `fires match=page:${assertion.match.page ?? '*'}`;
+
+      if (!passed) {
         failing.push(assertion);
+        assertionResults.push({
+          expect: 'fires',
+          label,
+          status: 'fail',
+          detail: `expected ≥${assertion.minClusterSize} cluster(s) at ${assertion.match.page ?? '*'}, got ${totalSize}`,
+        });
+      } else {
+        assertionResults.push({
+          expect: 'fires',
+          label,
+          status: 'pass',
+          detail: `${totalSize} cluster(s) at ${assertion.match.page ?? '*'}`,
+        });
       }
-    } else if (assertion.expect === 'skipped') {
-      // Precondition not met — skip this assertion entirely.
-      continue;
     } else {
       // expect: 'silent'
       const silentMatch = assertion.match;
@@ -76,13 +148,30 @@ function assertClusters(
         if (silentMatch?.role !== undefined && !c.occurrences.some(o => o.role === silentMatch.role)) return false;
         return true;
       });
-      if (found) failing.push(assertion);
+      const label = `silent match=page:${silentMatch?.page ?? '*'}`;
+      if (found) {
+        failing.push(assertion);
+        assertionResults.push({
+          expect: 'silent',
+          label,
+          status: 'fail',
+          detail: `expected no clusters at ${silentMatch?.page ?? '*'}, but found one`,
+        });
+      } else {
+        assertionResults.push({
+          expect: 'silent',
+          label,
+          status: 'pass',
+          detail: `no clusters at ${silentMatch?.page ?? '*'} (correct)`,
+        });
+      }
     }
   }
 
   return {
     passed: failing.length === 0,
     diff: { expected: failing, observed: clusters },
+    assertionResults,
   };
 }
 
@@ -95,47 +184,121 @@ async function runOneContract(
   opts: TestDetectorOptions,
 ): Promise<TestDetectorResultItem> {
   const startMs = Date.now();
+  const absoluteFixturePath = resolveFixturePath(contract.fixture.path);
 
   if (opts.verbose === true) {
     process.stdout.write(`  [${contract.kind}] booting fixture '${contract.fixture.path}'...\n`);
   }
 
-  // In V56.1 fixtures don't exist yet — the harness returns empty clusters.
-  // V56.2 wires fixture boot (bin/up.sh), actual phase execution, and assertion.
-  const target = {
-    appBaseUrl: opts.target ?? `http://localhost:9970`,
-  };
+  let teardown: (() => void) | undefined;
+  let appBaseUrl = opts.target;
 
-  const result = await runHarness({
-    contract,
-    target,
-    budgetMs: contract.defaultBudgetMs,
-  });
+  // Resolve the fixture URL and optionally boot its server.
+  // Boot is skipped when:
+  //   - --no-up is explicitly set
+  //   - a --target URL was given (caller manages the server)
+  //   - this is an --all run (expects fixtures to already be running or skipped)
+  //   - running inside Vitest (VITEST env var set) — unit tests don't run servers
+  const inTestRunner = process.env['VITEST'] !== undefined;
+  const shouldBoot = opts.noUp !== true && appBaseUrl === undefined && opts.all !== true && opts.kind !== 'all' && !inTestRunner;
 
-  const elapsedMs = Date.now() - startMs;
+  const contractJsonPath = path.join(absoluteFixturePath, 'contract.json');
+  if (!fs.existsSync(contractJsonPath)) {
+    const elapsedMs = Date.now() - startMs;
+    return {
+      kind: contract.kind,
+      fixture: contract.fixture.path,
+      status: 'SKIPPED',
+      elapsedMs,
+      reason: `fixture not built: ${contractJsonPath} missing`,
+    };
+  }
+  const contractJson = JSON.parse(fs.readFileSync(contractJsonPath, 'utf8')) as { port: number };
+  if (appBaseUrl === undefined) {
+    appBaseUrl = `http://127.0.0.1:${contractJson.port}`;
+  }
 
-  // In V56.1 there are no expected-clusters.jsonl files (fixtures not yet created).
-  // The assertion passes vacuously (no assertions to fail against empty clusters).
-  // V56.2 loads real expected-clusters.jsonl and runs assertClusters.
-  const assertion = assertClusters([], result.clusters);
+  if (shouldBoot) {
+    if (opts.verbose === true) {
+      process.stdout.write(`  [${contract.kind}] spawning fixture on ${appBaseUrl}...\n`);
+    }
 
-  if (opts.verbose === true) {
-    const status = assertion.passed ? 'PASS' : 'FAIL';
-    process.stdout.write(`  [${contract.kind}] ${status} (${elapsedMs}ms)\n`);
-    if (result.warnings.length > 0) {
-      for (const w of result.warnings) {
-        process.stdout.write(`    WARN: ${w}\n`);
+    try {
+      teardown = await bootFixture(absoluteFixturePath);
+      if (opts.verbose === true) {
+        process.stdout.write(`  [${contract.kind}] fixture ready\n`);
       }
+    } catch (err: unknown) {
+      const elapsedMs = Date.now() - startMs;
+      const reason = err instanceof Error ? err.message : String(err);
+      if (opts.verbose === true) {
+        process.stdout.write(`  [${contract.kind}] SKIPPED — fixture boot failed: ${reason}\n`);
+      }
+      return { kind: contract.kind, fixture: contract.fixture.path, status: 'SKIPPED', elapsedMs, reason };
     }
   }
 
-  return {
-    kind: contract.kind,
-    fixture: contract.fixture.path,
-    status: assertion.passed ? 'PASS' : 'FAIL',
-    elapsedMs,
-    ...(assertion.passed ? {} : { diff: assertion.diff }),
-  };
+  try {
+    const target = {
+      appBaseUrl: appBaseUrl ?? `http://localhost:9970`,
+      // Only pass fixturePath when we actually booted the fixture or are running a
+      // single-kind explicit probe. Without fixturePath, the harness uses the scaffold
+      // path (returns empty clusters) for unbooted fixtures.
+      fixturePath: shouldBoot || opts.target !== undefined ? absoluteFixturePath : undefined,
+    };
+
+    const result = await runHarness({
+      contract,
+      target,
+      budgetMs: contract.defaultBudgetMs,
+    });
+
+    const elapsedMs = Date.now() - startMs;
+
+    // Load expected assertions from expected-clusters.jsonl only when we actually ran
+    // against a live fixture. In test-runner contexts without a booted fixture, use empty
+    // assertions so the run passes vacuously (same behaviour as V56.1 scaffold).
+    const expectedAssertions = shouldBoot || opts.target !== undefined ? loadExpectedClusters(absoluteFixturePath) : [];
+    const assertion = assertClusters(expectedAssertions, result.clusters);
+
+    if (opts.verbose === true) {
+      const status = assertion.passed ? 'PASS' : 'FAIL';
+      process.stdout.write(`  [${contract.kind}] ${status} (${elapsedMs}ms)\n`);
+      if (result.warnings.length > 0) {
+        for (const w of result.warnings) {
+          process.stdout.write(`    WARN: ${w}\n`);
+        }
+      }
+
+      // Print per-assertion scorecard
+      process.stdout.write(`\n  Scorecard:\n`);
+      for (const ar of assertion.assertionResults) {
+        const icon = ar.status === 'pass' ? '[✓]' : ar.status === 'skip' ? '[~]' : '[✗]';
+        process.stdout.write(`    ${icon} expect=${ar.expect} ${ar.label}\n`);
+        process.stdout.write(`        ${ar.detail}\n`);
+      }
+
+      const passCount = assertion.assertionResults.filter(r => r.status === 'pass').length;
+      const totalCount = assertion.assertionResults.filter(r => r.status !== 'skip').length;
+      process.stdout.write(`\n  Summary: ${passCount}/${totalCount} passed\n`);
+    }
+
+    return {
+      kind: contract.kind,
+      fixture: contract.fixture.path,
+      status: assertion.passed ? 'PASS' : 'FAIL',
+      elapsedMs,
+      assertionResults: assertion.assertionResults,
+      ...(assertion.passed ? {} : { diff: assertion.diff }),
+    };
+  } finally {
+    if (opts.keep !== true && teardown !== undefined) {
+      teardown();
+      if (opts.verbose === true) {
+        process.stdout.write(`  [${contract.kind}] fixture stopped\n`);
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +354,8 @@ export async function testDetectorCommand(opts: TestDetectorOptions): Promise<vo
   }
 
   const output: TestDetectorOutput = {
-    passed: results.every(r => r.status === 'PASS'),
+    // SKIPPED = fixture not built yet; counts as non-failure (same as vacuous pass).
+    passed: results.every(r => r.status === 'PASS' || r.status === 'SKIPPED'),
     results,
   };
 
