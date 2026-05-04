@@ -91,6 +91,34 @@ const ROUTES = {
     // Input degradation: malformed HTML; no canonical link present
     '<!doctype html><html<><head><title>Malformed No Canonical</title<<><body><h1>Hi</h1></body></html>',
   ),
+
+  // seo_h1_missing_or_multiple routes. Detector fires when h1Count !== 1.
+  '/no-h1': html(
+    200,
+    '<!doctype html><html><head><title>No H1</title></head><body><p>No header here.</p></body></html>',
+  ),
+  '/good-h1': html(
+    200,
+    '<!doctype html><html><head><title>Good H1</title></head><body><h1>Single H1</h1><p>Body</p></body></html>',
+  ),
+  '/two-h1s': html(
+    200,
+    '<!doctype html><html><head><title>Two H1s</title></head><body><h1>First</h1><p>middle</p><h1>Second</h1></body></html>',
+  ),
+  '/three-h1s': html(
+    200,
+    '<!doctype html><html><head><title>Three H1s</title></head><body><h1>A</h1><h1>B</h1><h1>C</h1></body></html>',
+  ),
+  '/h1-with-attrs': html(
+    200,
+    // Edge: single h1 with class/id attributes — should still match the regex and stay silent
+    '<!doctype html><html><head><title>H1 With Attrs</title></head><body><h1 class="page-title" id="main">Only one</h1></body></html>',
+  ),
+  '/malformed-no-h1': html(
+    200,
+    // Input degradation: malformed HTML, no h1 element
+    '<!doctype html><html><head><title>Malformed</title</head><body<><p>no h1</p></body></html>',
+  ),
 };
 
 const server = http.createServer((req, res) => {
