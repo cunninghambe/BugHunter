@@ -150,6 +150,28 @@ const ROUTES = {
     // Input degradation: malformed HTML, but the noindex meta is still present
     '<!doctype html><html><head><title>Mal</title<<><meta name="robots" content="noindex"<></head><body<><h1>X</h1></body></html>',
   ),
+
+  // seo_title_duplicate_across_routes routes — pairs/groups of pages sharing the same
+  // (case-insensitive, trim-normalised) title, plus negatives.
+  '/dup-a': html(200, '<!doctype html><html><head><title>Duplicate Title Demo</title></head><body><h1>X</h1></body></html>'),
+  '/dup-b': html(200, '<!doctype html><html><head><title>Duplicate Title Demo</title></head><body><h1>X</h1></body></html>'),
+  // Edge: 3-route duplicate group
+  '/trio-a': html(200, '<!doctype html><html><head><title>Trio Title</title></head><body><h1>X</h1></body></html>'),
+  '/trio-b': html(200, '<!doctype html><html><head><title>Trio Title</title></head><body><h1>X</h1></body></html>'),
+  '/trio-c': html(200, '<!doctype html><html><head><title>Trio Title</title></head><body><h1>X</h1></body></html>'),
+  // Edge: titles differ only by case — classifier normalises with toLowerCase
+  '/case-a': html(200, '<!doctype html><html><head><title>Case Test</title></head><body><h1>X</h1></body></html>'),
+  '/case-b': html(200, '<!doctype html><html><head><title>case test</title></head><body><h1>X</h1></body></html>'),
+  // Edge: titles differ only by leading/trailing whitespace — classifier normalises with trim
+  '/ws-a': html(200, '<!doctype html><html><head><title>Whitespace Demo</title></head><body><h1>X</h1></body></html>'),
+  '/ws-b': html(200, '<!doctype html><html><head><title>   Whitespace Demo   </title></head><body><h1>X</h1></body></html>'),
+  // Negative: unique titles, no duplicate
+  '/unique-1': html(200, '<!doctype html><html><head><title>Unique 1</title></head><body><h1>X</h1></body></html>'),
+  '/unique-2': html(200, '<!doctype html><html><head><title>Unique 2</title></head><body><h1>X</h1></body></html>'),
+  // Input degradation: malformed HTML on both pages, both share the same title.
+  // Title closing tag is kept intact (regex requires it) — malformedness is elsewhere.
+  '/mal-dup-a': html(200, '<!doctype html><html<><head<><title>Malformed Dup</title></head<<><body<><h1>X</h1></body></html>'),
+  '/mal-dup-b': html(200, '<!doctype html><html<><head<><title>Malformed Dup</title></head<<><body<><h1>X</h1></body></html>'),
 };
 
 const server = http.createServer((req, res) => {
