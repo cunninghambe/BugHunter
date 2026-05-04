@@ -291,6 +291,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'form_input_unlabeled' && target.fixturePath !== undefined) {
+      const clusters = await runFormInputUnlabeledHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (
       (contract.kind === 'seo_title_missing'
         || contract.kind === 'seo_meta_description_missing'
@@ -1840,6 +1853,155 @@ function buildSeoClusters(
       lastSeenAt: now,
       clusterSize: 1,
       occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// form_input_unlabeled runner — static <input> scanner.
+// Production path uses axe-core (label rule); harness uses focused regex.
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a single attribute value (case-insensitive) from a tag string. Returns
+ * undefined when the attribute is absent.
+ */
+function readTagAttribute(tag: string, name: string): string | undefined {
+  const re = new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i');
+  const m = re.exec(tag);
+  return m === null ? undefined : m[1];
+}
+
+/**
+ * Find every `<input>` tag whose accessible-name acquisition fails, returning the
+ * matched tag strings. Considers: aria-label, aria-labelledby, title, type=hidden,
+ * type=submit/button/reset with value, <label for="id"> match against the input's
+ * id, and `<label>...<input>...</label>` wrapped containment.
+ */
+function findInputsMissingLabel(html: string): string[] {
+  // 1. Collect all `<label for="X">` for-attribute targets.
+  const labelForIds = new Set<string>();
+  const labelForRe = /<label\b[^>]*\bfor\s*=\s*["']([^"']+)["'][^>]*>/gi;
+  let labelMatch: RegExpExecArray | null;
+  while ((labelMatch = labelForRe.exec(html)) !== null) {
+    if (labelMatch[1] !== undefined) labelForIds.add(labelMatch[1]);
+  }
+
+  // 2. Collect every `<label>...</label>` span (start, end indices).
+  const labelSpans: Array<{ start: number; end: number }> = [];
+  const labelOpenRe = /<label\b[^>]*>/gi;
+  const labelCloseRe = /<\/label\s*>/gi;
+  let openMatch: RegExpExecArray | null;
+  while ((openMatch = labelOpenRe.exec(html)) !== null) {
+    labelCloseRe.lastIndex = labelOpenRe.lastIndex;
+    const closeMatch = labelCloseRe.exec(html);
+    if (closeMatch === null) break;
+    labelSpans.push({ start: openMatch.index, end: closeMatch.index + closeMatch[0].length });
+  }
+
+  // 3. Iterate inputs and apply skip rules.
+  const inputRe = /<input\b[^>]*?>/gi;
+  const missing: string[] = [];
+  let inputMatch: RegExpExecArray | null;
+  while ((inputMatch = inputRe.exec(html)) !== null) {
+    const tag = inputMatch[0];
+    const tagPosition = inputMatch.index;
+
+    const type = (readTagAttribute(tag, 'type') ?? 'text').toLowerCase();
+    // Skip non-user-facing or intrinsically labelled types
+    if (type === 'hidden') continue;
+    if (type === 'submit' || type === 'button' || type === 'reset') {
+      const value = readTagAttribute(tag, 'value');
+      if (value !== undefined && value.trim() !== '') continue;
+    }
+
+    if (/\baria-label\s*=/i.test(tag)) continue;
+    if (/\baria-labelledby\s*=/i.test(tag)) continue;
+    if (/\btitle\s*=/i.test(tag)) continue;
+
+    const id = readTagAttribute(tag, 'id');
+    if (id !== undefined && labelForIds.has(id)) continue;
+
+    // Wrapped: input position falls inside any <label>...</label> span
+    const isWrapped = labelSpans.some(s => tagPosition > s.start && tagPosition < s.end);
+    if (isWrapped) continue;
+
+    missing.push(tag);
+  }
+  return missing;
+}
+
+async function runFormInputUnlabeledHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('form_input_unlabeled: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      const missing = findInputsMissingLabel(response.body);
+      if (missing.length > 0) {
+        detectionsByPage.set(route, missing);
+        log.info('form_input_unlabeled: detection', { route, count: missing.length });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'form_input_unlabeled';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, tags] of detectionsByPage) {
+    const occurrences: Occurrence[] = tags.map((tag, idx) => ({
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${idx}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    }));
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: `${tags.length} <input> element(s) on ${page} have no associated label, aria-label, aria-labelledby, or title`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: tags.length,
+      occurrences,
       suspectedFiles: [],
       fixHints: [],
       thirdPartyOrGenerated: false,
