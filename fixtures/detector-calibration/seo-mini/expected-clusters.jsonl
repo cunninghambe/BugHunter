@@ -1,0 +1,6 @@
+{"kind":"seo_title_missing","expect":"fires","minClusterSize":1,"match":{"page":"/no-title"},"severity":"minor"}
+{"kind":"seo_title_missing","expect":"fires","minClusterSize":1,"match":{"page":"/empty-title"},"severity":"minor","edgeLabel":"empty-title-element"}
+{"kind":"seo_title_missing","expect":"fires","minClusterSize":1,"match":{"page":"/whitespace-title"},"severity":"minor","edgeLabel":"whitespace-only-title"}
+{"kind":"seo_title_missing","expect":"silent","reason":"page has a non-empty <title> element","match":{"page":"/good-title"}}
+{"kind":"seo_title_missing","expect":"fires","minClusterSize":1,"match":{"page":"/malformed"},"severity":"minor","edgeLabel":"malformed-html-still-detects-missing-title"}
+{"kind":"seo_title_missing","expect":"skipped","reason":"no_response"}
