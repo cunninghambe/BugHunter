@@ -314,4 +314,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects HTML pages with zero or multiple <h1> elements. Exactly one is required for proper page hierarchy.',
   },
+  {
+    kind: 'seo_robots_blocking_crawl',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'seo-mini',
+      servesKinds: ['seo_robots_blocking_crawl'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects pages disagreeing with crawl policy: meta name="robots" noindex on a crawled page, or robots.txt Disallow:/ blocking the homepage.',
+  },
 ];

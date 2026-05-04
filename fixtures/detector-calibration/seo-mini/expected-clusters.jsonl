@@ -23,3 +23,10 @@
 {"kind":"seo_h1_missing_or_multiple","expect":"silent","reason":"single h1 with class/id attributes is still 1 h1","match":{"page":"/h1-with-attrs"}}
 {"kind":"seo_h1_missing_or_multiple","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-no-h1"},"severity":"minor","edgeLabel":"malformed-html-still-detects-missing-h1"}
 {"kind":"seo_h1_missing_or_multiple","expect":"skipped","reason":"no_response"}
+{"kind":"seo_robots_blocking_crawl","expect":"fires","minClusterSize":1,"match":{"page":"/"},"severity":"minor","edgeLabel":"robots-txt-disallow-root"}
+{"kind":"seo_robots_blocking_crawl","expect":"fires","minClusterSize":1,"match":{"page":"/noindex-meta"},"severity":"minor"}
+{"kind":"seo_robots_blocking_crawl","expect":"fires","minClusterSize":1,"match":{"page":"/noindex-comma"},"severity":"minor","edgeLabel":"meta-robots-noindex-nofollow"}
+{"kind":"seo_robots_blocking_crawl","expect":"silent","reason":"page has no meta robots noindex and is not the homepage","match":{"page":"/no-meta-robots"}}
+{"kind":"seo_robots_blocking_crawl","expect":"silent","reason":"meta robots index/follow does not contain noindex","match":{"page":"/meta-robots-index-only"}}
+{"kind":"seo_robots_blocking_crawl","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-noindex"},"severity":"minor","edgeLabel":"malformed-html-still-detects-noindex-meta"}
+{"kind":"seo_robots_blocking_crawl","expect":"skipped","reason":"no_response"}
