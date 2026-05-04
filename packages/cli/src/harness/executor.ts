@@ -282,7 +282,8 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       (contract.kind === 'seo_title_missing'
         || contract.kind === 'seo_meta_description_missing'
         || contract.kind === 'seo_canonical_missing'
-        || contract.kind === 'seo_h1_missing_or_multiple')
+        || contract.kind === 'seo_h1_missing_or_multiple'
+        || contract.kind === 'seo_robots_blocking_crawl')
       && target.fixturePath !== undefined
     ) {
       const clusters = await runSeoHarness(
@@ -1706,8 +1707,16 @@ async function runSeoHarness(
   const seoPages: SeoPageInput[] = [];
   // Track which routes we observed so cluster-build can resolve page→route.
   const routeForRender = new Map<string, string>();
+  let robotsTxt: string | null = null;
 
   if (phases.includes('execute')) {
+    // Fetch /robots.txt once per run — required by seo_robots_blocking_crawl branch
+    // that detects "Disallow: /" against User-agent: *. Other SEO detectors ignore it.
+    const robotsResp = await httpGet(`${appBaseUrl}/robots.txt`).catch((): ProbeResponse => ({ status: 0, body: '' }));
+    if (robotsResp.status >= 200 && robotsResp.status < 400) {
+      robotsTxt = robotsResp.body;
+    }
+
     for (const route of routes) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (signal.aborted) break;
@@ -1737,7 +1746,7 @@ async function runSeoHarness(
   // Run the shared corpus classifier and filter to the contract's kind.
   const detections = classifySeoCorpus({
     pages: seoPages,
-    robotsTxt: null,
+    robotsTxt,
     origin: appBaseUrl,
   }).filter(d => d.kind === kind);
 

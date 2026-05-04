@@ -119,6 +119,37 @@ const ROUTES = {
     // Input degradation: malformed HTML, no h1 element
     '<!doctype html><html><head><title>Malformed</title</head><body<><p>no h1</p></body></html>',
   ),
+
+  // seo_robots_blocking_crawl routes.
+  // (a) "/" fires because robots.txt has Disallow: / for the homepage.
+  // (b) /noindex-meta fires due to <meta name="robots" content="noindex">.
+  '/': html(
+    200,
+    '<!doctype html><html><head><title>Home</title><meta name="description" content="Home page"><link rel="canonical" href="/"></head><body><h1>Home</h1></body></html>',
+  ),
+  '/noindex-meta': html(
+    200,
+    '<!doctype html><html><head><title>NoIndex</title><meta name="robots" content="noindex"></head><body><h1>X</h1></body></html>',
+  ),
+  '/noindex-comma': html(
+    200,
+    // Edge: combined directive
+    '<!doctype html><html><head><title>NoIndex Combo</title><meta name="robots" content="noindex, nofollow"></head><body><h1>X</h1></body></html>',
+  ),
+  '/no-meta-robots': html(
+    200,
+    '<!doctype html><html><head><title>No Robots Meta</title></head><body><h1>X</h1></body></html>',
+  ),
+  '/meta-robots-index-only': html(
+    200,
+    // Edge: explicit "index, follow" should not fire
+    '<!doctype html><html><head><title>Index OK</title><meta name="robots" content="index, follow"></head><body><h1>X</h1></body></html>',
+  ),
+  '/malformed-noindex': html(
+    200,
+    // Input degradation: malformed HTML, but the noindex meta is still present
+    '<!doctype html><html><head><title>Mal</title<<><meta name="robots" content="noindex"<></head><body<><h1>X</h1></body></html>',
+  ),
 };
 
 const server = http.createServer((req, res) => {
@@ -127,6 +158,14 @@ const server = http.createServer((req, res) => {
   if (pathname === '/__bughunter_reset') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('ok');
+    return;
+  }
+
+  // robots.txt — Disallow: / for User-agent: *.
+  // Used by seo_robots_blocking_crawl detector to flag the homepage as crawl-blocked.
+  if (pathname === '/robots.txt') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('User-agent: *\nDisallow: /\n');
     return;
   }
 
