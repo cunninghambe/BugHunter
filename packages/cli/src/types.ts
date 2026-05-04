@@ -275,6 +275,12 @@ export type Action = {
   palette: PaletteVariant;
   toolId?: string;
   /**
+   * MCP tool name (e.g. 'get_items'). Set alongside toolId for api_call actions so that
+   * executeApiTest can dispatch via surface_call({ name }) when toolId is absent — this
+   * occurs when SurfaceMCP for openapi/express stacks omits toolId from ToolMeta (#178).
+   */
+  toolName?: string;
+  /**
    * Input payload for the action. For `kind: 'submit'`, this MUST be a
    * `Record<string, unknown>` whose keys are HTML field `name` attributes and
    * whose values are coerced to strings by `runFormSubmit`. The runtime guard

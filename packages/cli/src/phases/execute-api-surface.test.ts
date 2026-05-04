@@ -1,5 +1,10 @@
 // #178: runExecute for openapi-stack surface (no browser) must execute planned api tests.
 // Regression guard: 296 tests planned, 0 executed was the smoke #17 symptom.
+//
+// Root cause: executeApiTest had an early-exit that trivially passed (no surface_call) when
+// tc.action.toolId was undefined. SurfaceMCP for openapi/express stacks can omit toolId from
+// ToolMeta at runtime; apiTestCases() now stores tool.name in Action.toolName so the executor
+// can dispatch via surface_call({ name }) instead of silently passing.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runExecute } from './execute.js';
@@ -71,6 +76,30 @@ function makeApiTestCase(id: string, toolId: string): TestCase {
   };
 }
 
+/**
+ * Simulates what apiTestCases() produces for a tool whose SurfaceMCP omits toolId (#178):
+ * toolId is absent but toolName carries the MCP tool name for name-based dispatch.
+ */
+function makeApiTestCaseByName(id: string, toolName: string, page: string): TestCase {
+  return {
+    id,
+    runId: RUN_ID,
+    role: 'user',
+    page,
+    action: {
+      kind: 'api_call',
+      via: 'api',
+      expectedOutcome: 'success',
+      palette: 'happy',
+      // toolId intentionally absent — mirrors SurfaceMCP omitting toolId from ToolMeta
+      toolName,
+      input: {},
+    },
+    expectedOutcome: 'success',
+    palette: 'happy',
+  };
+}
+
 let tmpDir: string;
 
 beforeEach(() => {
@@ -114,6 +143,45 @@ describe('runExecute — openapi-stack surface (no browser)', () => {
     expect(result.abortReason).toBeUndefined();
     // surface_call should have been called once per test
     expect(surface.surface_call).toHaveBeenCalledTimes(5);
+  });
+
+  it('dispatches surface_call via name when toolId is absent — catches the 296-planned/0-executed regression (#178)', async () => {
+    // Reproduces the exact failure mode: SurfaceMCP omits toolId from ToolMeta for openapi stacks.
+    // apiTestCases() stores tool.name in Action.toolName; executeApiTest must use it for dispatch.
+    // Without the fix, executeApiTest trivially passed these cases (no surface_call invocation).
+    const testCases = [
+      makeApiTestCaseByName('tc-n1', 'list_items',  '/api/items'),
+      makeApiTestCaseByName('tc-n2', 'get_user',    '/api/users/1'),
+      makeApiTestCaseByName('tc-n3', 'create_item', '/api/items'),
+      makeApiTestCaseByName('tc-n4', 'update_item', '/api/items/1'),
+      makeApiTestCaseByName('tc-n5', 'delete_item', '/api/items/1'),
+    ];
+
+    const surface = makeMinimalSurface();
+    const opts: ExecuteOptions = {
+      testCases,
+      runState: makeRunState(tmpDir),
+      surface,
+      maxBugs: 50,
+      maxRuntimeMs: 60_000,
+      concurrency: 1,
+      apiConcurrency: 5,
+      onClusterFound: () => 0,
+      appBaseUrl: 'http://localhost:3100',
+    };
+
+    const result = await runExecute(opts);
+
+    expect(result.results).toHaveLength(5);
+    expect(result.abortReason).toBeUndefined();
+    // All 5 must produce real surface_call invocations — not the trivial-pass early-exit
+    expect(surface.surface_call).toHaveBeenCalledTimes(5);
+    // Each call should dispatch by name, not toolId
+    for (const call of (surface.surface_call as ReturnType<typeof vi.fn>).mock.calls) {
+      const args = call[0] as { toolId?: string; name?: string };
+      expect(args.toolId).toBeUndefined();
+      expect(args.name).toBeDefined();
+    }
   });
 
   it('skips ui tests silently when no browser is provided but still runs api tests', async () => {
