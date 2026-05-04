@@ -252,6 +252,18 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'vulnerable_dependency_high' && target.fixturePath !== undefined) {
+      const clusters = runVulnerableDependencyHighHarness(
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'hardcoded_credentials_in_source' && target.fixturePath !== undefined) {
       const clusters = runHardcodedCredsHarness(
         target.fixturePath,
@@ -1598,8 +1610,31 @@ function buildSensitiveDataInUrlClusters(detectionsByPage: Map<string, string[]>
 export async function bootFixture(fixturePath: string, timeoutMs = 30_000): Promise<() => void> {
   const contractPath = path.join(fixturePath, 'contract.json');
   const contractRaw = fs.readFileSync(contractPath, 'utf8');
-  const contract = JSON.parse(contractRaw) as { port: number };
+  const contract = JSON.parse(contractRaw) as { port: number | null };
   const port = contract.port;
+
+  // Static-analysis fixtures (port: null) have no server to boot.
+  // Run up.sh synchronously (materialises any generated artefacts like package-lock.json)
+  // then return immediately — no port readiness check needed.
+  if (port === null) {
+    const upScript = path.join(fixturePath, 'bin', 'up.sh');
+    if (fs.existsSync(upScript)) {
+      const result = child_process.spawnSync('bash', [upScript], {
+        cwd: fixturePath,
+        encoding: 'utf8',
+        timeout: timeoutMs,
+      });
+      if (result.status !== 0) {
+        log.warn(`[fixture] up.sh exited ${String(result.status)}: ${result.stderr}`);
+      }
+    }
+    return () => {
+      const downScript = path.join(fixturePath, 'bin', 'down.sh');
+      if (fs.existsSync(downScript)) {
+        child_process.spawnSync('bash', [downScript], { cwd: fixturePath });
+      }
+    };
+  }
 
   // If the port is already open, the fixture is already running (e.g. from a previous
   // run or a pre-started process). Use it as-is without spawning up.sh.
@@ -1779,6 +1814,212 @@ function buildHardcodedCredsClusters(findings: CredFinding[], fixturePath: strin
   }
 
   return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// vulnerable_dependency_high runner (static analysis — npm audit or static map)
+// ---------------------------------------------------------------------------
+
+/** Packages with known high/critical CVEs and the version boundary below which they fire. */
+const STATIC_VULN_MAP: Array<{ name: string; fixedVersion: string; severity: 'critical' | 'major'; cve: string }> = [
+  { name: 'lodash',  fixedVersion: '4.17.21', severity: 'critical', cve: 'CVE-2019-10744 / CVE-2021-23337' },
+  { name: 'axios',   fixedVersion: '1.6.0',   severity: 'major',    cve: 'CVE-2021-3749 / CVE-2023-45857' },
+];
+
+/** Compare semver strings — returns true if a < b. */
+function semverLt(a: string, b: string): boolean {
+  const parse = (v: string): number[] => v.replace(/[^0-9.]/g, '').split('.').map(n => {
+    const x = parseInt(n, 10);
+    return Number.isNaN(x) ? 0 : x;
+  });
+  const av = parse(a);
+  const bv = parse(b);
+  for (let i = 0; i < Math.max(av.length, bv.length); i++) {
+    const diff = (av[i] ?? 0) - (bv[i] ?? 0);
+    if (diff !== 0) return diff < 0;
+  }
+  return false;
+}
+
+type VulnFinding = { pkgName: string; version: string; severity: 'critical' | 'major'; cve: string; isDirect: boolean };
+
+/** Run npm audit --json in appDir and parse high/critical findings. Returns null on tool failure. */
+function runNpmAudit(appDir: string, warnings: string[]): VulnFinding[] | null {
+  const result = child_process.spawnSync('npm', ['audit', '--json', '--audit-level=none'], {
+    cwd: appDir,
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+
+  if (result.error !== undefined) {
+    warnings.push(`vulnerable_dependency_high: npm audit failed: ${result.error.message}`);
+    return null;
+  }
+
+  const raw = result.stdout;
+  if (raw.trim().length === 0) {
+    warnings.push('vulnerable_dependency_high: npm audit produced empty output');
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    warnings.push('vulnerable_dependency_high: npm audit output was not valid JSON');
+    return null;
+  }
+
+  const findings: VulnFinding[] = [];
+  const HIGH_SEVERITIES = new Set(['high', 'critical']);
+
+  if (
+    parsed !== null &&
+    typeof parsed === 'object' &&
+    'vulnerabilities' in parsed &&
+    parsed.vulnerabilities !== null &&
+    typeof parsed.vulnerabilities === 'object'
+  ) {
+    for (const [pkgName, vuln] of Object.entries(parsed.vulnerabilities as Record<string, unknown>)) {
+      if (vuln === null || typeof vuln !== 'object') continue;
+      const v = vuln as Record<string, unknown>;
+      const sev = typeof v['severity'] === 'string' ? v['severity'].toLowerCase() : '';
+      if (!HIGH_SEVERITIES.has(sev)) continue;
+      findings.push({
+        pkgName,
+        version: typeof v['range'] === 'string' ? v['range'] : 'unknown',
+        severity: sev === 'critical' ? 'critical' : 'major',
+        cve: pkgName,
+        isDirect: v['isDirect'] === true,
+      });
+    }
+  } else if (
+    parsed !== null &&
+    typeof parsed === 'object' &&
+    'advisories' in parsed &&
+    parsed.advisories !== null &&
+    typeof parsed.advisories === 'object'
+  ) {
+    for (const [, advisory] of Object.entries(parsed.advisories as Record<string, unknown>)) {
+      if (advisory === null || typeof advisory !== 'object') continue;
+      const a = advisory as Record<string, unknown>;
+      const sev = typeof a['severity'] === 'string' ? a['severity'].toLowerCase() : '';
+      if (!HIGH_SEVERITIES.has(sev)) continue;
+      const pkgName = typeof a['module_name'] === 'string' ? a['module_name'] :
+                      typeof a['name'] === 'string' ? a['name'] : 'unknown';
+      findings.push({
+        pkgName,
+        version: typeof a['vulnerable_versions'] === 'string' ? a['vulnerable_versions'] : 'unknown',
+        severity: sev === 'critical' ? 'critical' : 'major',
+        cve: pkgName,
+        isDirect: true,
+      });
+    }
+  }
+
+  return findings;
+}
+
+/** Static fallback — check declared deps in package.json against STATIC_VULN_MAP. */
+function staticVulnScan(pkgJsonPath: string, warnings: string[]): VulnFinding[] {
+  if (!fs.existsSync(pkgJsonPath)) {
+    warnings.push(`vulnerable_dependency_high: package.json not found at ${pkgJsonPath}`);
+    return [];
+  }
+
+  let pkg: unknown;
+  try {
+    pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+  } catch {
+    warnings.push(`vulnerable_dependency_high: failed to parse ${pkgJsonPath}`);
+    return [];
+  }
+
+  if (pkg === null || typeof pkg !== 'object') return [];
+  const p = pkg as Record<string, unknown>;
+  const deps: Partial<Record<string, string>> = {
+    ...((p['dependencies'] as Record<string, string> | undefined) ?? {}),
+    ...((p['devDependencies'] as Record<string, string> | undefined) ?? {}),
+  };
+
+  const findings: VulnFinding[] = [];
+  for (const { name, fixedVersion, severity, cve } of STATIC_VULN_MAP) {
+    const declared = deps[name];
+    if (declared === undefined) continue;
+    const version = declared.replace(/^[^0-9]*/, '');
+    if (semverLt(version, fixedVersion)) {
+      findings.push({ pkgName: name, version: declared, severity, cve, isDirect: true });
+    }
+  }
+  return findings;
+}
+
+function buildVulnDepCluster(finding: VulnFinding, fixturePath: string): BugCluster {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'vulnerable_dependency_high';
+  const page = 'package.json';
+  const occurrence: Occurrence = {
+    occurrenceId: `harness-${kind}-${finding.pkgName}-${Date.now()}`,
+    role: 'anonymous',
+    page,
+    action: {
+      kind: 'api_call',
+      via: 'api',
+      expectedOutcome: 'expected_failure',
+      palette: 'edge',
+    },
+    fullArtifacts: false as const,
+    timestamp: now,
+  };
+
+  return {
+    id: `harness-${kind}-${finding.pkgName}`,
+    runId: 'harness',
+    kind,
+    rootCause: `${finding.pkgName}@${finding.version}: ${finding.cve} (${finding.severity})`,
+    firstSeenAt: now,
+    lastSeenAt: now,
+    clusterSize: 1,
+    occurrences: [occurrence],
+    suspectedFiles: [path.join(fixturePath, 'app', 'package.json')],
+    fixHints: [`Upgrade ${finding.pkgName} to a patched version`],
+    thirdPartyOrGenerated: false,
+    severity: finding.severity,
+  };
+}
+
+function runVulnerableDependencyHighHarness(
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): BugCluster[] {
+  const appDir = path.join(fixturePath, 'app');
+
+  if (!fs.existsSync(appDir)) {
+    warnings.push('vulnerable_dependency_high: app/ directory not found in fixture');
+    return [];
+  }
+
+  let findings: VulnFinding[] | null = null;
+
+  if (phases.includes('execute')) {
+    findings = runNpmAudit(appDir, warnings);
+
+    if (findings === null) {
+      const pkgJsonPath = path.join(appDir, 'package.json');
+      findings = staticVulnScan(pkgJsonPath, warnings);
+    }
+    phasesRun.push('execute');
+  }
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  if (findings === null || findings.length === 0) return [];
+
+  return findings.map(f => buildVulnDepCluster(f, fixturePath));
 }
 
 function buildResult(
