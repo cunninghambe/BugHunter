@@ -1,1 +1,5 @@
 {"kind":"hardcoded_credentials_in_source","expect":"fires","minClusterSize":1,"match":{"page":"generated/src/lib/auth.ts"},"severity":"critical"}
+{"kind":"hardcoded_credentials_in_source","expect":"silent","reason":"process.env.STRIPE_KEY is proper env-var indirection — no literal secret value in source","match":{"page":"generated/src/lib/auth-safe.ts"}}
+{"kind":"hardcoded_credentials_in_source","expect":"fires","minClusterSize":1,"match":{"page":"generated/src/lib/auth-comment.ts"},"severity":"critical","edgeLabel":"stripe-test-key-in-comment"}
+{"kind":"hardcoded_credentials_in_source","expect":"silent","reason":"@@STRIPE_KEY@@ is a deployment template placeholder — does not match the sk_test_/sk_live_ gitleaks regex","match":{"page":"templates/auth-template-placeholder.ts.tpl"},"edgeLabel":"template-with-placeholder"}
+{"kind":"hardcoded_credentials_in_source","expect":"skipped","reason":"fixture_not_built"}

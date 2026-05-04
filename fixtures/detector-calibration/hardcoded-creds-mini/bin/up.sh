@@ -28,13 +28,30 @@ AWS_VAL="AKIAIOSFODNN7EXAMPLE"
 
 mkdir -p "$GENERATED_DIR/src/lib"
 
-# Substitute placeholders in the template
+# P1+P2: Substitute placeholders — main file with hardcoded credentials (fires)
 sed \
   -e "s|@@STRIPE_KEY@@|${STRIPE_VAL}|g" \
   -e "s|@@AWS_ACCESS_KEY@@|${AWS_VAL}|g" \
   "$FIXTURE_ROOT/templates/auth.ts.tpl" \
   > "$GENERATED_DIR/src/lib/auth.ts"
 
-log "Generated $GENERATED_DIR/src/lib/auth.ts with planted credentials."
+# Negative: env-var file — no hardcoded value, gitleaks silent
+cp "$FIXTURE_ROOT/templates/auth-safe.ts.tpl" \
+   "$GENERATED_DIR/src/lib/auth-safe.ts"
+
+# Edge: credential in a comment — gitleaks still fires (comments are scannable)
+sed \
+  -e "s|@@STRIPE_KEY@@|${STRIPE_VAL}|g" \
+  "$FIXTURE_ROOT/templates/auth-comment.ts.tpl" \
+  > "$GENERATED_DIR/src/lib/auth-comment.ts"
+
+# Note: templates/auth-template-placeholder.ts.tpl is intentionally NOT expanded
+# here — it stays as a committed template file scanned directly by gitleaks as
+# part of the templates/ directory. Its @@STRIPE_KEY@@ placeholder is not a
+# real secret pattern and should not fire. See expected-clusters.jsonl.
+
+log "Generated $GENERATED_DIR/src/lib/auth.ts (hardcoded creds — fires)."
+log "Generated $GENERATED_DIR/src/lib/auth-safe.ts (env-var — silent)."
+log "Generated $GENERATED_DIR/src/lib/auth-comment.ts (cred in comment — fires)."
 log "Run gitleaks against: $GENERATED_DIR"
 log "(This fixture has no server — harness scans the generated source tree.)"
