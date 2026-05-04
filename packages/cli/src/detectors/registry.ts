@@ -241,6 +241,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'idor_horizontal',
@@ -454,6 +455,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V16_PEN_TESTING.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   // — § v0.7 XSS kinds —
   {
@@ -474,6 +476,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V07_XSS.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'xss_stored',
@@ -832,6 +835,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'postMessage listener missing event.origin guard.',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'shadow_dom_a11y_violation',

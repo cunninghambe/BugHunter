@@ -1,0 +1,7 @@
+{
+  "fixture": "script-checks-mini",
+  "serves": ["iframe_postmessage_unguarded", "xss_dom", "swallowed_error_empty_catch", "jwt_weak_alg"],
+  "port": 9863,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
