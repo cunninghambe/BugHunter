@@ -1,0 +1,2 @@
+{"kind":"missing_csp_header","expect":"fires","minClusterSize":1,"match":{"page":"/"},"severity":"major"}
+{"kind":"missing_csp_header","expect":"fires","minClusterSize":1,"match":{"page":"/admin"},"severity":"major"}

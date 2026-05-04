@@ -216,6 +216,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'hardcoded_credentials_in_source',
