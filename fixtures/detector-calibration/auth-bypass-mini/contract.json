@@ -1,0 +1,8 @@
+{
+  "fixture": "auth-bypass-mini",
+  "serves": ["auth_bypass_via_unauthed_route"],
+  "port": 9976,
+  "boots": "bash bin/up.sh",
+  "roles": ["anonymous", "admin"],
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

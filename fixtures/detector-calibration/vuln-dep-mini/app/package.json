@@ -1,0 +1,10 @@
+{
+  "name": "vuln-dep-mini-fixture",
+  "version": "1.0.0",
+  "description": "BugHunter detector-calibration fixture. Intentionally pins vulnerable dependency versions to trigger vulnerable_dependency_high detection. DO NOT use in production.",
+  "private": true,
+  "dependencies": {
+    "lodash": "4.17.4",
+    "axios": "0.21.0"
+  }
+}
