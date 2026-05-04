@@ -2,5 +2,5 @@
 {"kind":"auth_bypass_via_unauthed_route","expect":"fires","minClusterSize":1,"match":{"page":"/api/orders","role":"anonymous"},"severity":"critical"}
 {"kind":"auth_bypass_via_unauthed_route","expect":"silent","match":{"page":"/healthz","role":"anonymous"},"reason":"route_in_publicAllowList — /healthz is intentionally public and returns no sensitive data"}
 {"kind":"auth_bypass_via_unauthed_route","expect":"silent","edgeLabel":"route-requires-auth-and-fails-correctly","match":{"page":"/api/me","role":"anonymous"},"reason":"route returns 401 on anonymous access — auth check is working correctly"}
-{"kind":"auth_bypass_via_unauthed_route","expect":"fires","edgeLabel":"route-allows-anon-but-returns-empty","match":{"page":"/api/items","role":"anonymous"},"severity":"info","reason":"route returns 200 with empty filtered body — not a confirmed exploit but warrants review"}
+{"kind":"auth_bypass_via_unauthed_route","expect":"fires","edgeLabel":"route-allows-anon-but-returns-empty","minClusterSize":1,"match":{"page":"/api/items","role":"anonymous"},"severity":"info","reason":"route returns 200 with empty filtered body — not a confirmed exploit but warrants review"}
 {"kind":"auth_bypass_via_unauthed_route","expect":"skipped","reason":"no_anonymous_role","condition":"contract.roles does not include 'anonymous'"}
