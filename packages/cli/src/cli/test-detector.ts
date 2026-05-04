@@ -115,6 +115,7 @@ function assertClusters(
         if (c.kind !== assertion.kind) return false;
         if (assertion.match.page !== undefined && !c.occurrences.some(o => o.page === assertion.match.page)) return false;
         if (assertion.match.role !== undefined && !c.occurrences.some(o => o.role === assertion.match.role)) return false;
+        if (assertion.match.signaturePrefix !== undefined && !c.id.includes(assertion.match.signaturePrefix)) return false;
         return true;
       });
       const totalSize = matching.reduce((n, c) => n + c.clusterSize, 0);
@@ -214,9 +215,7 @@ async function runOneContract(
     };
   }
   const contractJson = JSON.parse(fs.readFileSync(contractJsonPath, 'utf8')) as { port: number };
-  if (appBaseUrl === undefined) {
-    appBaseUrl = `http://127.0.0.1:${contractJson.port}`;
-  }
+  appBaseUrl ??= `http://127.0.0.1:${contractJson.port}`;
 
   if (shouldBoot) {
     if (opts.verbose === true) {
@@ -240,7 +239,7 @@ async function runOneContract(
 
   try {
     const target = {
-      appBaseUrl: appBaseUrl ?? `http://localhost:9970`,
+      appBaseUrl,
       // Only pass fixturePath when we actually booted the fixture or are running a
       // single-kind explicit probe. Without fixturePath, the harness uses the scaffold
       // path (returns empty clusters) for unbooted fixtures.
