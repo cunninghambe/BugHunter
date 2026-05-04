@@ -1,0 +1,8 @@
+{"kind":"stack_trace_leak_in_response","expect":"fires","minClusterSize":1,"match":{"page":"/error-with-stack"},"severity":"major"}
+{"kind":"stack_trace_leak_in_response","expect":"fires","minClusterSize":1,"match":{"page":"/error-anonymous-frames"},"severity":"major","edgeLabel":"anonymous-frame-only-pattern"}
+{"kind":"stack_trace_leak_in_response","expect":"silent","reason":"5xx with sanitized error message — no stack pattern","match":{"page":"/error-clean"}}
+{"kind":"stack_trace_leak_in_response","expect":"silent","reason":"2xx response — detector only inspects 5xx","match":{"page":"/200-with-stack-text"},"edgeLabel":"2xx-skip"}
+{"kind":"stack_trace_leak_in_response","expect":"silent","reason":"4xx response — detector only inspects 5xx","match":{"page":"/400-with-stack"},"edgeLabel":"4xx-skip"}
+{"kind":"stack_trace_leak_in_response","expect":"fires","minClusterSize":1,"match":{"page":"/error-file-path-only"},"severity":"major","edgeLabel":"file-path-frame-only-pattern"}
+{"kind":"stack_trace_leak_in_response","expect":"fires","minClusterSize":1,"match":{"page":"/error-truncated"},"severity":"major","edgeLabel":"truncated-body-still-detects"}
+{"kind":"stack_trace_leak_in_response","expect":"skipped","reason":"no_response"}
