@@ -250,4 +250,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Replays API routes as anonymous to detect endpoints that should require auth but return 200 with non-empty bodies.',
   },
+  {
+    kind: 'seo_title_missing',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'seo-mini',
+      servesKinds: ['seo_title_missing'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects HTML pages with no <title> element or empty/whitespace-only title text.',
+  },
 ];

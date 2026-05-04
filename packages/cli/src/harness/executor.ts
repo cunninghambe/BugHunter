@@ -16,6 +16,8 @@ import { generatePenPayloads, generateCanaries, canaryAppearsAsHtml, canaryAppea
 import type { PenPayload, CanaryPayload } from '../security/injection-palette.js';
 import { detectPathTraversal, detectCommandInjection, detectSqlInjectionError, detectSqlInjectionBoolean, BOOLEAN_DELTA_THRESHOLD } from '../security/pen-detectors.js';
 import type { ProbeResponse } from '../security/pen-detectors.js';
+import { classifySeoCorpus } from '../classify/seo.js';
+import type { SeoPageInput } from '../classify/seo.js';
 import { log } from '../log.js';
 
 // ---------------------------------------------------------------------------
@@ -267,6 +269,20 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
     if (contract.kind === 'hardcoded_credentials_in_source' && target.fixturePath !== undefined) {
       const clusters = runHardcodedCredsHarness(
         target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'seo_title_missing' && target.fixturePath !== undefined) {
+      const clusters = await runSeoHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.kind,
         contract.requires.phases,
         phasesRun,
         combinedSignal,
@@ -1601,6 +1617,170 @@ function buildSensitiveDataInUrlClusters(detectionsByPage: Map<string, string[]>
 // ---------------------------------------------------------------------------
 // Fixture lifecycle helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// SEO runner — scrape HTML pages, classify with classifySeoCorpus, filter by kind.
+// One runner serves multiple SEO BugKinds (V56.3 batch grows incrementally).
+// ---------------------------------------------------------------------------
+
+type SeoProbeRoute = string;
+
+function loadSeoProbeRoutes(fixturePath: string): SeoProbeRoute[] {
+  const jsonlPath = path.join(fixturePath, 'expected-clusters.jsonl');
+  if (!fs.existsSync(jsonlPath)) return [];
+
+  const pages = new Set<string>();
+  for (const line of fs.readFileSync(jsonlPath, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as { expect?: string; match?: { page?: string } };
+      if ((parsed.expect === 'fires' || parsed.expect === 'silent') && parsed.match?.page !== undefined) {
+        pages.add(parsed.match.page);
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+  return [...pages];
+}
+
+/**
+ * Extract a single tag's text/attribute from raw HTML using non-strict regex.
+ * Tolerant of malformed markup: returns null when the tag is genuinely absent
+ * but does not throw on bad HTML structure.
+ */
+function extractSeoFields(html: string): {
+  title: string | null;
+  metaDescription: string | null;
+  canonicalHref: string | null;
+  h1Count: number;
+  metaRobots: string | null;
+} {
+  const titleMatch = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const title = titleMatch !== null ? titleMatch[1] ?? '' : null;
+
+  const metaDescMatch = /<meta[^>]+name=["']description["'][^>]*?content=["']([^"']*)["']/i.exec(html)
+    ?? /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["']/i.exec(html);
+  const metaDescription = metaDescMatch !== null ? metaDescMatch[1] ?? '' : null;
+
+  const canonicalMatch = /<link[^>]+rel=["']canonical["'][^>]*?href=["']([^"']*)["']/i.exec(html)
+    ?? /<link[^>]+href=["']([^"']*)["'][^>]+rel=["']canonical["']/i.exec(html);
+  const canonicalHref = canonicalMatch !== null ? canonicalMatch[1] ?? '' : null;
+
+  const h1Matches = html.match(/<h1\b[^>]*>/gi);
+  const h1Count = h1Matches !== null ? h1Matches.length : 0;
+
+  const robotsMatch = /<meta[^>]+name=["']robots["'][^>]*?content=["']([^"']*)["']/i.exec(html)
+    ?? /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']robots["']/i.exec(html);
+  const metaRobots = robotsMatch !== null ? robotsMatch[1] ?? '' : null;
+
+  return { title, metaDescription, canonicalHref, h1Count, metaRobots };
+}
+
+async function runSeoHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  kind: BugKind,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push(`${kind}: fixture port not reachable during validate phase`);
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const seoPages: SeoPageInput[] = [];
+  // Track which routes we observed so cluster-build can resolve page→route.
+  const routeForRender = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      const fields = extractSeoFields(response.body);
+      seoPages.push({
+        pageRoute: route,
+        title: fields.title,
+        metaDescription: fields.metaDescription,
+        canonicalHref: fields.canonicalHref,
+        h1Count: fields.h1Count,
+        metaRobots: fields.metaRobots,
+      });
+      routeForRender.set(route, route);
+      log.info(`${kind}: probe`, { route, title: fields.title, h1Count: fields.h1Count });
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+
+  // Run the shared corpus classifier and filter to the contract's kind.
+  const detections = classifySeoCorpus({
+    pages: seoPages,
+    robotsTxt: null,
+    origin: appBaseUrl,
+  }).filter(d => d.kind === kind);
+
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildSeoClusters(kind, detections);
+}
+
+function buildSeoClusters(
+  kind: BugKind,
+  detections: ReturnType<typeof classifySeoCorpus>,
+): BugCluster[] {
+  const now = new Date().toISOString();
+  const clusters: BugCluster[] = [];
+
+  for (const detection of detections) {
+    const page = detection.pageRoute ?? '*';
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'success',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: detection.rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'minor',
+    });
+  }
+
+  return clusters;
+}
 
 /**
  * Spawn bin/up.sh from the fixture directory, wait until the server port is
