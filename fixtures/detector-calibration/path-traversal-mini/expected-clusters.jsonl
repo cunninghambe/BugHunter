@@ -1,2 +1,7 @@
 {"kind":"path_traversal","expect":"fires","minClusterSize":1,"match":{"page":"/api/files/"},"severity":"critical"}
 {"kind":"path_traversal","expect":"fires","minClusterSize":1,"match":{"page":"/api/download"},"severity":"critical"}
+{"kind":"path_traversal","expect":"silent","reason":"path.resolve()+startsWith(uploadsDir) blocks all traversal — safe route correctly rejects ../","match":{"page":"/api/files-safe/"}}
+{"kind":"path_traversal","expect":"fires","minClusterSize":1,"match":{"page":"/api/files/"},"severity":"critical","edgeLabel":"direct-traversal"}
+{"kind":"path_traversal","expect":"fires","minClusterSize":1,"match":{"page":"/api/files/"},"severity":"critical","edgeLabel":"url-encoded-traversal"}
+{"kind":"path_traversal","expect":"fires","minClusterSize":1,"match":{"page":"/api/files/"},"severity":"critical","edgeLabel":"null-byte-truncation-attempt","note":"Modern Node.js (v14+) strips the null byte before path resolution — path.join treats the payload as a literal filename containing %00, which does not escape the traversal; the vulnerable join+readFile still fires. Old Node behavior (pre-v0.12) would truncate at the null byte. Outcome: fires on all supported Node versions because join does not decode %00, so the traversal sequences (../../etc/passwd) are still present in the resolved path."}
+{"kind":"path_traversal","expect":"skipped","reason":"fixture_uploads_missing"}

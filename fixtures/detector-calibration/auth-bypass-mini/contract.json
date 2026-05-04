@@ -4,5 +4,7 @@
   "port": 9976,
   "boots": "bash bin/up.sh",
   "roles": ["anonymous", "admin"],
-  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" },
+  "publicAllowList": ["/healthz", "/health"],
+  "_publicAllowList_note": "Routes in publicAllowList are intentionally unauthenticated and return no sensitive data. Detector must remain silent for these routes even when anonymous access returns 200."
 }
