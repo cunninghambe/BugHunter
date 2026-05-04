@@ -666,4 +666,52 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Sends N bogus-credential POSTs to each login route. Fires when no 429/423 status is observed within the cap (15).',
   },
+  {
+    kind: 'i18n_date_format_ambiguous',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'i18n-text-checks-mini',
+      servesKinds: ['i18n_date_format_ambiguous'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Fires when response body contains ambiguous slash-separated date (MM/DD/YYYY or DD/MM/YYYY) without an ISO 8601 or month-name disambiguator.',
+  },
+  {
+    kind: 'i18n_pluralization_broken',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'i18n-text-checks-mini',
+      servesKinds: ['i18n_pluralization_broken'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Fires on "1 <plural-noun>" patterns where the noun ends in s but is not a known singular-s noun (boss, glass, etc.).',
+  },
+  {
+    kind: 'i18n_currency_format_broken',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'i18n-text-checks-mini',
+      servesKinds: ['i18n_currency_format_broken'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Fires when currency-amount string ($USD/€EUR/£GBP/¥JPY) renders with decimals not matching the currency convention (USD/EUR/GBP=2; JPY=0).',
+  },
 ];

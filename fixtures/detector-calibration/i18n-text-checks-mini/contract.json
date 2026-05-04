@@ -1,0 +1,7 @@
+{
+  "fixture": "i18n-text-checks-mini",
+  "serves": ["i18n_date_format_ambiguous", "i18n_pluralization_broken", "i18n_currency_format_broken"],
+  "port": 9843,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

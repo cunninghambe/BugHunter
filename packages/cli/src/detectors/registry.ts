@@ -1006,6 +1006,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'i18n_hardcoded_string',
@@ -1024,6 +1025,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'i18n_currency_format_broken',
@@ -1033,6 +1035,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'i18n_timezone_display_wrong',
