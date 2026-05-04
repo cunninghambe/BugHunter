@@ -1,0 +1,8 @@
+{"kind":"open_redirect","expect":"fires","minClusterSize":1,"match":{"page":"/login"},"severity":"major"}
+{"kind":"open_redirect","expect":"fires","minClusterSize":1,"match":{"page":"/auth"},"severity":"major","edgeLabel":"next-param-synonym"}
+{"kind":"open_redirect","expect":"silent","reason":"route validates redirect target against allowlist","match":{"page":"/login-safe"}}
+{"kind":"open_redirect","expect":"silent","reason":"route does not honour redirect parameter at all","match":{"page":"/about"}}
+{"kind":"open_redirect","expect":"silent","reason":"200 OK echoing redirect param in body — no Location header","match":{"page":"/echo"},"edgeLabel":"echo-not-redirect"}
+{"kind":"open_redirect","expect":"silent","reason":"302 to fixed location regardless of param","match":{"page":"/login-fixed-redirect"},"edgeLabel":"fixed-redirect-target"}
+{"kind":"open_redirect","expect":"fires","minClusterSize":1,"match":{"page":"/login-malformed-location"},"severity":"major","edgeLabel":"malformed-location-still-contains-evil-test"}
+{"kind":"open_redirect","expect":"skipped","reason":"no_response"}

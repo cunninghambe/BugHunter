@@ -1,0 +1,7 @@
+{
+  "fixture": "open-redirect-mini",
+  "serves": ["open_redirect"],
+  "port": 9913,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

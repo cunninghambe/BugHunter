@@ -458,4 +458,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects 5xx responses whose body matches Error/at-frame patterns indicative of a leaked server-side stack trace.',
   },
+  {
+    kind: 'open_redirect',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'open-redirect-mini',
+      servesKinds: ['open_redirect'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Probes routes with redirect-param synonyms (?redirect=, ?next=, ?return_to=, etc.) pointed at evil.test. Fires when a 3xx Location header echoes the attacker-controlled URL.',
+  },
 ];
