@@ -12,8 +12,8 @@ import * as net from 'node:net';
 import * as path from 'node:path';
 import type { DetectorContract, DetectorRequires, RequiredPhase } from '../detectors/contracts.js';
 import type { BugCluster, BugKind, Occurrence } from '../types.js';
-import { generatePenPayloads } from '../security/injection-palette.js';
-import type { PenPayload } from '../security/injection-palette.js';
+import { generatePenPayloads, generateCanaries, canaryAppearsAsHtml, canaryAppearsAsAttribute } from '../security/injection-palette.js';
+import type { PenPayload, CanaryPayload } from '../security/injection-palette.js';
 import { detectPathTraversal, detectCommandInjection } from '../security/pen-detectors.js';
 import type { ProbeResponse } from '../security/pen-detectors.js';
 import { log } from '../log.js';
@@ -192,6 +192,18 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
 
     if (contract.kind === 'command_injection' && target.fixturePath !== undefined) {
       const clusters = await runCommandInjectionHarness(
+        target.appBaseUrl,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'xss_reflected' && target.fixturePath !== undefined) {
+      const clusters = await runXssReflectedHarness(
         target.appBaseUrl,
         contract.requires.phases,
         phasesRun,
@@ -809,6 +821,160 @@ function buildCommandInjectionClusters(detectionsByField: Map<string, string[]>)
       runId: 'harness',
       kind,
       rootCause: rootCauses[0] ?? `command_injection detected at /api/admin/health field=${field}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: rootCauses.length,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'critical',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// xss_reflected runner
+// ---------------------------------------------------------------------------
+
+type XssProbeTarget = {
+  /** Page label — must match expected-clusters.jsonl match.page exactly. */
+  page: string;
+  /** Build the probe URL from base + encoded payload. */
+  buildUrl: (base: string, encodedPayload: string) => string;
+  /** If true, reflection here should NOT produce a cluster (safe route). */
+  expectSilent: boolean;
+};
+
+const XSS_PROBE_TARGETS: XssProbeTarget[] = [
+  {
+    page: '/api/search',
+    buildUrl: (base, v) => `${base}/api/search?q=${v}`,
+    expectSilent: false,
+  },
+  {
+    page: '/api/echo-safe',
+    buildUrl: (base, v) => `${base}/api/echo-safe?msg=${v}`,
+    expectSilent: true,
+  },
+  {
+    page: '/api/link',
+    buildUrl: (base, v) => `${base}/api/link?url=${v}`,
+    expectSilent: false,
+  },
+  {
+    page: '/api/greet',
+    buildUrl: (base, v) => `${base}/api/greet?name=${v}`,
+    expectSilent: false,
+  },
+];
+
+/**
+ * Returns true when the canary appears unescaped (as real HTML) in the body.
+ * Checks both html-body context and attribute-context patterns.
+ */
+function xssCanaryReflectedRaw(body: string, nonce: string): boolean {
+  return canaryAppearsAsHtml(body, nonce) || canaryAppearsAsAttribute(body, nonce);
+}
+
+async function runXssReflectedHarness(
+  appBaseUrl: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('xss_reflected: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+  if (phases.includes('discover')) phasesRun.push('discover');
+  if (phases.includes('plan')) phasesRun.push('plan');
+
+  if (signal.aborted) return [];
+
+  const canaries: CanaryPayload[] = generateCanaries('minimal');
+  // Map page → list of confirmed root-cause strings
+  const detectionsByPage = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const probe of XSS_PROBE_TARGETS) {
+      if (signal.aborted) break;
+
+      for (const canary of canaries) {
+        if (signal.aborted) break;
+        const encoded = encodeURIComponent(canary.value);
+        const url = probe.buildUrl(appBaseUrl, encoded);
+
+        const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+        if (response.status === 0) continue;
+
+        const reflected = xssCanaryReflectedRaw(response.body, canary.nonce);
+
+        if (probe.expectSilent) {
+          if (reflected) {
+            warnings.push(
+              `xss_reflected: false-positive on ${probe.page} variant=${canary.variant} — safe route should HTML-escape payloads`,
+            );
+          }
+          continue;
+        }
+
+        if (reflected) {
+          const causes = detectionsByPage.get(probe.page) ?? [];
+          causes.push(
+            `XSS (${canary.variant}): canary __bh_xss_${canary.nonce} reflected as raw HTML at ${probe.page} — user input not escaped before insertion into response body`,
+          );
+          detectionsByPage.set(probe.page, causes);
+          log.info('harness: xss_reflected detection', { page: probe.page, variant: canary.variant });
+          // One confirmed detection per page is sufficient; skip remaining canaries for this probe.
+          break;
+        }
+      }
+    }
+
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildXssClusters(detectionsByPage);
+}
+
+function buildXssClusters(detectionsByPage: Map<string, string[]>): BugCluster[] {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'xss_reflected';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCauses] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'expected_failure',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: rootCauses[0] ?? `xss_reflected detected at ${page}`,
       firstSeenAt: now,
       lastSeenAt: now,
       clusterSize: rootCauses.length,
