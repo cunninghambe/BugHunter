@@ -1,0 +1,2 @@
+{"kind":"path_traversal","expect":"fires","minClusterSize":1,"match":{"page":"/api/files/"},"severity":"critical"}
+{"kind":"path_traversal","expect":"fires","minClusterSize":1,"match":{"page":"/api/download"},"severity":"critical"}

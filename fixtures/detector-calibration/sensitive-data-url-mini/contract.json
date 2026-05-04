@@ -1,0 +1,7 @@
+{
+  "fixture": "sensitive-data-url-mini",
+  "serves": ["sensitive_data_in_url"],
+  "port": 9975,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
