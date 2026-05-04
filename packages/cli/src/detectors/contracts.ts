@@ -394,4 +394,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects <button> and <a href> elements with no accessible name (empty text content and no aria-label, aria-labelledby, title, or <img alt> inside).',
   },
+  {
+    kind: 'i18n_hardcoded_string',
+    requires: {
+      phases: ['execute', 'classify', 'cluster'],
+      tools: ['static-analysis'],
+      surface: 'static-source',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'i18n-hardcoded-strings-mini',
+      servesKinds: ['i18n_hardcoded_string'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Runs the heuristic hardcoded-string scanner against the fixture\'s generated source tree. Detects user-facing strings not wrapped in t() / <Trans>.',
+  },
 ];

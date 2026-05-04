@@ -1,0 +1,7 @@
+{"kind":"i18n_hardcoded_string","expect":"fires","minClusterSize":1,"match":{"page":"generated/src/hardcoded.ts"},"severity":"minor"}
+{"kind":"i18n_hardcoded_string","expect":"silent","reason":"all user-facing strings wrapped in t() / useTranslation()","match":{"page":"generated/src/translated.ts"}}
+{"kind":"i18n_hardcoded_string","expect":"silent","reason":"strings excluded by callsite/short/numeric/import filters","match":{"page":"generated/src/excluded-callsites.ts"},"edgeLabel":"excluded-by-filter-rules"}
+{"kind":"i18n_hardcoded_string","expect":"silent","reason":"// i18n-allow directive suppresses the next line","match":{"page":"generated/src/i18n-allow-directive.ts"},"edgeLabel":"i18n-allow-suppression"}
+{"kind":"i18n_hardcoded_string","expect":"fires","minClusterSize":1,"match":{"page":"generated/src/jsx-text.tsx"},"severity":"minor","edgeLabel":"jsx-text-node-detection"}
+{"kind":"i18n_hardcoded_string","expect":"fires","minClusterSize":1,"match":{"page":"generated/src/malformed.ts"},"severity":"minor","edgeLabel":"malformed-typescript-still-detects"}
+{"kind":"i18n_hardcoded_string","expect":"skipped","reason":"fixture_not_built"}

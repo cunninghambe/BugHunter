@@ -1,0 +1,8 @@
+{
+  "fixture": "i18n-hardcoded-strings-mini",
+  "serves": ["i18n_hardcoded_string"],
+  "port": null,
+  "boots": "bash bin/up.sh",
+  "scanTarget": "generated/",
+  "resetCommand": { "kind": "script", "path": "bin/reset.sh" }
+}
