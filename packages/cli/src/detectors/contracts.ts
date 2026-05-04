@@ -506,4 +506,36 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Extracts internal <a href="/path"> links from each page, probes each, fires per page with ≥1 broken link.',
   },
+  {
+    kind: 'network_5xx',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'network-status-mini',
+      servesKinds: ['network_5xx'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Probes each route, fires when status >= 500 or status === 0 (connectivity failure).',
+  },
+  {
+    kind: 'network_4xx_unexpected',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'network-status-mini',
+      servesKinds: ['network_4xx_unexpected'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Probes each route, fires on 4xx status. Expected-vs-unexpected distinction is encoded in the fixture\'s expected-clusters.jsonl per route.',
+  },
 ];

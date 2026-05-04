@@ -79,6 +79,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'network_4xx_unexpected',
@@ -88,6 +89,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: '404_for_linked_route',
