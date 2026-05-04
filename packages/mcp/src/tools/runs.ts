@@ -19,6 +19,8 @@ const RunsListInputSchema = z.object({
     .describe('Max runs to return; default 20 most recent'),
   since: z.string().datetime().optional()
     .describe('ISO-8601 cutoff; only return runs started at or after this'),
+  runMode: z.enum(['full-scan', 'detector-call']).optional()
+    .describe('V56: filter by run mode. full-scan = standard bughunter run; detector-call = bughunt_run_detector invocations'),
 });
 
 const RunSummaryInputSchema = z.object({
@@ -31,6 +33,8 @@ type RunListItem = {
   project: string;
   startedAt: string;
   phase: string;
+  /** V56: 'full-scan' | 'detector-call'; undefined for pre-V56 runs (tolerate missing). */
+  runMode?: 'full-scan' | 'detector-call';
   bugsFiled?: number;
   byKind?: Record<string, number>;
 };
@@ -54,11 +58,15 @@ function readRunListItem(projectDir: string, runId: string): RunListItem | null 
       bugsFiled = state.clusterCount;
     }
 
+    // V56: read runMode with back-compat default of 'full-scan' for pre-V56 records
+    const runMode = state.runMode ?? 'full-scan';
+
     return {
       runId,
       project: projectDir,
       startedAt: state.startedAt,
       phase: state.phase,
+      runMode,
       bugsFiled,
       byKind,
     };
@@ -90,6 +98,12 @@ export function registerRunsListTool(server: McpServer): void {
 
         if (since !== undefined) {
           items = items.filter(item => new Date(item.startedAt).getTime() >= since);
+        }
+
+        // V56: filter by runMode (pre-V56 records without runMode default to 'full-scan')
+        if (args.runMode !== undefined) {
+          const modeFilter = args.runMode;
+          items = items.filter(item => (item.runMode ?? 'full-scan') === modeFilter);
         }
 
         // Sort descending by startedAt

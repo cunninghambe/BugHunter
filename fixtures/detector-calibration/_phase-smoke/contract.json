@@ -1,0 +1,8 @@
+{
+  "fixture": "_phase-smoke",
+  "serves": [],
+  "port": 9960,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" },
+  "_note": "Meta-fixture (underscore prefix) used by Tier 2 phase-level smoke. Not a detector fixture. V56.1 ships infrastructure; full app lands in V56.2."
+}

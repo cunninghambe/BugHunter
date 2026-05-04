@@ -18,6 +18,7 @@ import { registerFixCoordTools, reconcileFixJobs } from './tools/fix-coord.js';
 import { registerConfigSetTool } from './tools/config-set.js';
 import { registerMinimizeTools } from './tools/minimize.js';
 import { registerBaselineTools } from './tools/baseline.js';
+import { registerRunDetectorTool } from './tools/run-detector.js';
 
 const PORT = parseInt(process.env.BUGHUNTER_MCP_PORT ?? '3103', 10);
 const AUTH_DISABLED = process.env.BUGHUNTER_MCP_REQUIRE_AUTH === '0';
@@ -53,6 +54,9 @@ export function createApp(): express.Express {
     registerConfigSetTool(server);
     registerMinimizeTools(server);
     registerBaselineTools(server);
+
+    // V56 write-side: per-detector MCP primitive
+    registerRunDetectorTool(server);
 
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => { transport.close().catch(() => {}); });

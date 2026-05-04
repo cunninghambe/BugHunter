@@ -38,6 +38,73 @@ Depends on:
 
 The skill is the smooth UX; the CLI is the load-bearing thing.
 
+## Per-detector MCP tool (V56)
+
+BugHunter exposes a third invocation path: `bughunt_run_detector`, a write-side MCP tool that runs a single detector (or list of detectors) against a target right now and returns clusters — without a full 17-hour scan.
+
+**When to use it:**
+- "Did my XSS fix take?" → run only `xss_reflected` against the patched URL
+- "Recheck CSP after a header change" → target only `missing_csp_header`
+- "Re-run all IDOR detectors after an auth refactor" → pass an array of kinds
+
+**Examples (MCP call via `POST /mcp`):**
+
+Single-kind invocation:
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "bughunt_run_detector",
+    "arguments": {
+      "kind": "missing_csp_header",
+      "target": { "appBaseUrl": "http://localhost:3000", "surfaceMcpUrl": "http://localhost:3200" },
+      "budgetMs": 30000
+    }
+  }
+}
+```
+
+Multi-kind (IDOR category) with cookie auth:
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "bughunt_run_detector",
+    "arguments": {
+      "kind": ["idor_horizontal", "idor_horizontal_read", "idor_vertical_role_escalate"],
+      "target": {
+        "appBaseUrl": "http://localhost:3000",
+        "surfaceMcpUrl": "http://localhost:3200",
+        "browserMcpUrl": "http://localhost:9377",
+        "auth": { "kind": "cookie", "cookie": "session=abc123" }
+      },
+      "budgetMs": 60000
+    }
+  }
+}
+```
+
+Scoped to specific route with persistence:
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "bughunt_run_detector",
+    "arguments": {
+      "kind": "xss_reflected",
+      "target": { "appBaseUrl": "http://localhost:3000", "browserMcpUrl": "http://localhost:9377" },
+      "scope": { "routes": ["/search"], "maxTests": 50 },
+      "project": "/path/to/project",
+      "budgetMs": 30000
+    }
+  }
+}
+```
+
+**Output includes:** `clusters[]`, `telemetry.budgetExceeded`, `telemetry.perDetectorElapsed`, `warnings[]`.
+
+**Note:** V56.1 ships the infrastructure. `bughunt_run_detector` returns `unknown_detector_kind` for all kinds until V56.2 populates `DETECTOR_CONTRACTS` with the first 10 detectors.
+
 ## Companion projects
 
 - [SurfaceMCP](https://github.com/cunninghambe/SurfaceMCP) — the API surface

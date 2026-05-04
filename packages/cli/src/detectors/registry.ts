@@ -34,6 +34,12 @@ export type DetectorRegistryEntry = {
   note?: string;
   /** v0.29: per-kind severity default used when no detection-level severity is set. */
   defaultSeverity?: Severity;
+  /**
+   * V56: true once a DetectorContract entry exists for this kind.
+   * Lockstep test enforces 1:1 between harness:true rows and DETECTOR_CONTRACTS entries.
+   * Optional during the V56.1–V56.5 migration window; required for all wired kinds at V56.6.
+   */
+  harness?: boolean;
 };
 
 export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [

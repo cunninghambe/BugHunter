@@ -1,10 +1,11 @@
 // bughunt_clusters — list bug clusters with filtering and cursor pagination.
 // CLI parity: bughunter inspect <runId> (filtered list view).
 
+import * as fs from 'node:fs';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toolOk, toolErr } from '../envelope.js';
-import { resolveProjectDir, resolveRun, readClustersPage, runPaths } from '../io/runs.js';
+import { resolveProjectDir, resolveRun, readClustersPage, runPaths, listRunIds } from '../io/runs.js';
 import { encodeCursor, decodeCursor, computeFilterHash } from '../cursor.js';
 import { NotFoundError, InvalidArgumentError } from '../io/runs.js';
 import type { BugCluster } from 'bughunter/src/types.js';
@@ -25,6 +26,8 @@ const InputSchema = z.object({
   minClusterSize: z.number().int().min(1).optional().describe('Minimum number of occurrences in cluster'),
   limit: z.number().int().min(1).max(200).default(50).describe('Page size; default 50, max 200'),
   cursor: z.string().optional().describe('Opaque pagination token from previous call'),
+  runMode: z.enum(['full-scan', 'detector-call']).optional()
+    .describe('V56: filter to runs initiated by a specific mode. full-scan = standard bughunter run; detector-call = bughunt_run_detector invocations. Pre-V56 runs without this field are treated as full-scan.'),
 });
 
 // V29 adds severity to BugCluster; treat it as optional for forward-compatibility on pre-V29 data.
@@ -69,7 +72,30 @@ export function registerClustersTool(server: McpServer): void {
     async (args) => {
       try {
         const projectDir = resolveProjectDir(args.project);
-        const { runId } = resolveRun(projectDir, args.runId);
+
+        // V56: if runMode filter is set and no runId provided, find latest run of that mode
+        let resolvedRunId = args.runId;
+        if (resolvedRunId === undefined && args.runMode !== undefined) {
+          const allIds = listRunIds(projectDir).sort();
+          const targetMode = args.runMode;
+          // Walk from newest to oldest, find first run with matching mode
+          for (const id of [...allIds].reverse()) {
+            const paths = runPaths(projectDir, id);
+            if (fs.existsSync(paths.stateFile)) {
+              const raw = JSON.parse(fs.readFileSync(paths.stateFile, 'utf-8')) as { runMode?: string };
+              const mode = raw.runMode ?? 'full-scan';
+              if (mode === targetMode) {
+                resolvedRunId = id;
+                break;
+              }
+            }
+          }
+          if (resolvedRunId === undefined) {
+            return toolErr('not_found', `No runs with runMode '${targetMode}' found in project ${projectDir}`);
+          }
+        }
+
+        const { runId } = resolveRun(projectDir, resolvedRunId);
 
         // severity filter requires V29 — detect by checking cluster data at runtime
         // Per spec: return not_implemented if severity is supplied and V29 hasn't landed

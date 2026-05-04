@@ -1382,6 +1382,13 @@ export type RunState = {
    * Not persisted to state.json — reconstructed from discoveredIds on resume.
    */
   roleFixtures?: Map<string, Map<string, Set<string>>>;
+  /**
+   * V56: how this run was initiated.
+   * 'full-scan'     — standard bughunter run / self-test (default; back-compat with pre-V56 records)
+   * 'detector-call' — created by bughunt_run_detector MCP tool targeting a specific BugKind
+   * Read path tolerates missing field and defaults to 'full-scan'.
+   */
+  runMode?: 'full-scan' | 'detector-call';
 };
 
 export type BrowserLoginConfig = {
