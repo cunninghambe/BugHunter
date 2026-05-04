@@ -346,4 +346,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects ≥2 distinct routes that share the same (case-insensitive, trim-normalised) <title> text.',
   },
+  {
+    kind: 'image_missing_alt',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'a11y-mini',
+      servesKinds: ['image_missing_alt'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects <img> elements lacking an accessible name (no alt, no aria-label, no aria-labelledby). alt="" is allowed (decorative-image convention).',
+  },
 ];
