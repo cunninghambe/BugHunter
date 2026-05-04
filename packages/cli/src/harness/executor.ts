@@ -280,6 +280,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'open_redirect' && target.fixturePath !== undefined) {
+      const clusters = await runOpenRedirectHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'stack_trace_leak_in_response' && target.fixturePath !== undefined) {
       const clusters = await runStackTraceLeakHarness(
         target.appBaseUrl,
@@ -1717,6 +1730,118 @@ function buildSensitiveDataInUrlClusters(detectionsByPage: Map<string, string[]>
 // ---------------------------------------------------------------------------
 // Fixture lifecycle helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// open_redirect runner — probes redirect-param routes with evil.test target.
+// ---------------------------------------------------------------------------
+
+const OPEN_REDIRECT_PROBE_PARAMS = ['redirect', 'return_to', 'returnTo', 'next', 'url', 'continue', 'redirectUrl'];
+
+function fetchLocationHeader(url: string): Promise<{ status: number; location: string }> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(url);
+      const req = http.get({
+        hostname: parsed.hostname,
+        port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
+        path: parsed.pathname + parsed.search,
+        method: 'GET',
+        timeout: 5_000,
+      }, (res) => {
+        const loc = res.headers['location'];
+        const location = typeof loc === 'string' ? loc : '';
+        res.on('data', () => {});
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, location }));
+        res.on('error', () => resolve({ status: 0, location: '' }));
+      });
+      req.on('timeout', () => { req.destroy(); resolve({ status: 0, location: '' }); });
+      req.on('error', () => resolve({ status: 0, location: '' }));
+    } catch {
+      resolve({ status: 0, location: '' });
+    }
+  });
+}
+
+async function runOpenRedirectHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('open_redirect: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+
+      // Probe each redirect-param synonym; first match wins.
+      let firedParam: string | undefined;
+      for (const param of OPEN_REDIRECT_PROBE_PARAMS) {
+        const probeUrl = `${appBaseUrl}${route}?${encodeURIComponent(param)}=https%3A%2F%2Fevil.test`;
+        const { status, location } = await fetchLocationHeader(probeUrl);
+        if (status >= 300 && status < 400 && location.includes('evil.test')) {
+          firedParam = param;
+          break;
+        }
+      }
+
+      if (firedParam !== undefined) {
+        detectionsByPage.set(route, `Open redirect via '${firedParam}' parameter on ${route} — Location header echoes attacker-controlled URL`);
+        log.info('open_redirect: detection', { route, param: firedParam });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'open_redirect';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCause] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'expected_failure', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: ['Validate redirect targets against an allowlist or reject external URLs entirely'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
+    });
+  }
+
+  return clusters;
+}
 
 // ---------------------------------------------------------------------------
 // stack_trace_leak_in_response runner — body scan on 5xx responses.
