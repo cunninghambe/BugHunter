@@ -64,6 +64,9 @@ function assertClusters(
       if (totalSize < assertion.minClusterSize) {
         failing.push(assertion);
       }
+    } else if (assertion.expect === 'skipped') {
+      // Precondition not met — skip this assertion entirely.
+      continue;
     } else {
       // expect: 'silent'
       const silentMatch = assertion.match;
