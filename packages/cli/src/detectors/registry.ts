@@ -649,11 +649,14 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   // — § v0.12 click-evaluate kinds —
   {
     kind: 'interactive_element_missing_accessible_name',
-    status: 'deferred',
+    status: 'wired',
+    detectorSite: 'packages/cli/src/phases/execute.ts:848',
+    runnerSite: 'packages/cli/src/phases/click-runner.ts',
     inputSource: 'production',
     specReference: 'SPEC_V12_CLICK_ACCESSIBLE_NAME.md',
     defaultSeverity: 'minor',
-    note: 'Deferred: execute.ts:538 emit path is conditional on a11y probe being attached; probe is not satisfied by default config, so the kind never fires in production runs. Prerequisite: a11y probe attached to click runner. See SWEEP_AUDIT_2026-05-03.md.',
+    harness: true,
+    note: 'V56.3 promoted from deferred. Production click-runner emit path requires a11y probe (still gated). Harness provides an independent static-scan path scanning <button>/<a href> for missing accessible name. V33 self-test fixture: a11y-bad/no-name.',
   },
   // — § v0.6 SEO hygiene kinds (wired) —
   {

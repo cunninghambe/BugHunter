@@ -378,4 +378,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects <input> elements without an associated label (for-attribute, wrapped <label>, aria-label, aria-labelledby, or title). type=hidden and submit/button/reset with value are skipped.',
   },
+  {
+    kind: 'interactive_element_missing_accessible_name',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'a11y-mini',
+      servesKinds: ['interactive_element_missing_accessible_name'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects <button> and <a href> elements with no accessible name (empty text content and no aria-label, aria-labelledby, title, or <img alt> inside).',
+  },
 ];
