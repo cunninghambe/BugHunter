@@ -257,7 +257,10 @@ async function runOneContract(
     // Load expected assertions from expected-clusters.jsonl only when we actually ran
     // against a live fixture. In test-runner contexts without a booted fixture, use empty
     // assertions so the run passes vacuously (same behaviour as V56.1 scaffold).
-    const expectedAssertions = shouldBoot || opts.target !== undefined ? loadExpectedClusters(absoluteFixturePath) : [];
+    // When a fixture serves multiple kinds, filter assertions to only those matching the
+    // contract's kind — otherwise running detector A would incorrectly check detector B's lines.
+    const allAssertions = shouldBoot || opts.target !== undefined ? loadExpectedClusters(absoluteFixturePath) : [];
+    const expectedAssertions = allAssertions.filter(a => a.kind === contract.kind);
     const assertion = assertClusters(expectedAssertions, result.clusters);
 
     if (opts.verbose === true) {

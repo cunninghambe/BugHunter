@@ -41,6 +41,29 @@ const ROUTES = {
     200,
     '<!doctype html><html><head><meta charset="utf-8"<><body><h1>Malformed</h1></body></html>',
   ),
+
+  // seo_meta_description_missing routes
+  '/no-meta-desc': html(
+    200,
+    '<!doctype html><html><head><title>No Meta Desc</title></head><body><h1>Hi</h1></body></html>',
+  ),
+  '/empty-meta-desc': html(
+    200,
+    '<!doctype html><html><head><title>Empty Desc</title><meta name="description" content=""></head><body><h1>Hi</h1></body></html>',
+  ),
+  '/whitespace-meta-desc': html(
+    200,
+    '<!doctype html><html><head><title>WS Desc</title><meta name="description" content="   "></head><body><h1>Hi</h1></body></html>',
+  ),
+  '/good-meta-desc': html(
+    200,
+    '<!doctype html><html><head><title>Good Desc</title><meta name="description" content="A real meaningful description of this page."></head><body><h1>Hi</h1></body></html>',
+  ),
+  '/meta-desc-attrs-reversed': html(
+    200,
+    // Tests that attribute order does not matter (content="..." before name="description")
+    '<!doctype html><html><head><title>Reversed Attrs</title><meta content="Reversed attribute order works" name="description"></head><body><h1>Hi</h1></body></html>',
+  ),
 };
 
 const server = http.createServer((req, res) => {

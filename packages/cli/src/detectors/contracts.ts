@@ -266,4 +266,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects HTML pages with no <title> element or empty/whitespace-only title text.',
   },
+  {
+    kind: 'seo_meta_description_missing',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'seo-mini',
+      servesKinds: ['seo_meta_description_missing'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects HTML pages with no <meta name="description"> element or empty/whitespace content attribute.',
+  },
 ];
