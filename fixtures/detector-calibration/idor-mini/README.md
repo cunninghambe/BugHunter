@@ -35,9 +35,9 @@ Enforces ownership on every method (GET, PUT, DELETE). Alice reading `alice-prot
 200 (legitimate own-data access, no IDOR). Alice reading `bob-protected-1` returns 403.
 
 This route covers two assertion shapes:
-- `read-with-403-on-mutate-only` fires: alice reading bob-protected-1 via GET → 403 means the
-  read IS checked, but the harness discovers this through cross-role replay.
-- Negative `silent`: alice reading alice-protected-1 → 200, no IDOR.
+- `read-with-403-on-mutate-only` (negative): alice reading bob-protected-1 via GET → 403.
+  The route correctly blocks cross-user reads; detector must NOT fire a read-IDOR here.
+- `silent` (own resource): alice reading alice-protected-1 → 200, legitimate access, no IDOR.
 
 Note: PUT/DELETE on this route also enforce ownership, so there is no mutation IDOR either.
 
@@ -53,12 +53,12 @@ Bearer-token auth. Two seed tokens:
 |---|---|---|---|
 | Fires (P1) | `fires` | — | `GET /api/orders/bob-order-1` as alice |
 | Fires (P2) | `fires` | — | `GET /api/users/bob/profile` as alice |
-| Negative | `silent` | — | `GET /api/orders/alice-order-1` as alice (own resource) |
-| Anonymous | `silent` | — | any `/api/*` without Bearer token |
+| Negative (own resource) | `silent` | — | `GET /api/orders/alice-order-1` as alice |
+| Anonymous rejected | `silent` | — | any `/api/*` without Bearer token |
 | Numeric ID iteration | `fires` | `numeric-id-iteration` | `GET /api/orders/1002` as alice |
 | UUID iteration | `fires` | `uuid-iteration` | `GET /api/orders/uuid/01HW9X…` as alice |
-| Read-IDOR on cross-user protected | `fires` | `read-with-403-on-mutate-only` | `GET /api/orders/protected/bob-protected-1` as alice → 403 means ownership IS checked, but the route is still a calibration point |
-| Own protected (no IDOR) | `silent` | `read-with-403-on-mutate-only` | `GET /api/orders/protected/alice-protected-1` as alice → 200 |
+| Read-403-mutate (cross-user) | `fires` | `read-with-403-on-mutate-only` | `GET /api/orders/protected/bob-protected-1` as alice |
+| Read-403-mutate (own resource) | `silent` | `read-with-403-on-mutate-only` | `GET /api/orders/protected/alice-protected-1` as alice |
 | Input degradation | `skipped` | — | fixture run with only 1 role configured |
 
 ## Port
