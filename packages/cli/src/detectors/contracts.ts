@@ -79,4 +79,101 @@ export type DetectorContract = {
 
 /** Frozen registry of contracts. Lockstep test enforces 1:1 with `harness: true` rows in DETECTOR_REGISTRY.
  *  V56.1 ships empty — V56.2 populates the first 10 detectors. */
-export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [];
+export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
+  {
+    kind: 'sensitive_data_in_url',
+    requires: {
+      phases: ['discover', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'sensitive-data-url-mini',
+      servesKinds: ['sensitive_data_in_url'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects sensitive parameters (token, api_key, password, etc.) present in observed URLs during crawl.',
+  },
+  {
+    kind: 'hardcoded_credentials_in_source',
+    requires: {
+      phases: ['execute', 'classify', 'cluster'],
+      tools: ['static-analysis'],
+      surface: 'static-source',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'hardcoded-creds-mini',
+      servesKinds: ['hardcoded_credentials_in_source'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Runs gitleaks against the target source tree to detect hardcoded secrets and API keys.',
+  },
+  {
+    kind: 'path_traversal',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'path-traversal-mini',
+      servesKinds: ['path_traversal'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects file read via unsanitized user-controlled path segments (route param and query-string variants).',
+  },
+  {
+    kind: 'missing_csp_header',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'csp-mini',
+      servesKinds: ['missing_csp_header'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects absence of enforced Content-Security-Policy header (including routes that only set CSP-Report-Only).',
+  },
+  {
+    kind: 'xss_reflected',
+    requires: {
+      phases: ['validate', 'discover', 'plan', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'xss-mini',
+      servesKinds: ['xss_reflected'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects reflected XSS by injecting payloads into GET params and POST bodies and observing unescaped reflection in HTML responses.',
+  },
+  {
+    kind: 'sql_injection',
+    requires: {
+      phases: ['validate', 'discover', 'plan', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'sqli-mini',
+      servesKinds: ['sql_injection'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects SQL injection by sending error-eliciting payloads and observing database error messages or anomalous response behaviour.',
+  },
+];
