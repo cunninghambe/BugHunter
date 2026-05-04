@@ -1538,13 +1538,22 @@ async function executeApiTest(
     createdAt: nowIso(clock),
   };
 
+  // Resolve the call identifier: prefer toolId (HTTP route key), fall back to toolName
+  // (MCP tool name) when SurfaceMCP omits toolId from ToolMeta — observed on openapi/express
+  // stacks where toolId is absent at runtime despite the TypeScript type requiring it (#178).
+  const callToolId = tc.action.toolId !== undefined && tc.action.toolId !== ''
+    ? tc.action.toolId
+    : undefined;
+  const callToolName = callToolId === undefined ? (tc.action.toolName ?? undefined) : undefined;
+  const hasCallTarget = callToolId !== undefined || callToolName !== undefined;
+
   let result: TestResult;
   try {
-    if (tc.action.toolId === undefined || tc.action.toolId === '') {
+    if (!hasCallTarget) {
       result = { testId: tc.id, occurrenceId, passed: true, bugs: [], durationMs: 0 };
     } else {
       const callResult = await surface.surface_call({
-        toolId: tc.action.toolId,
+        ...(callToolId !== undefined ? { toolId: callToolId } : { name: callToolName }),
         role: tc.role,
         input: tc.action.input ?? {},
         noAutoRelogin: tc.action.palette !== 'happy',
@@ -1552,9 +1561,7 @@ async function executeApiTest(
       capturedCall = callResult;
 
       // Harvest resource IDs from successful responses for IDOR cross-user phase.
-      // tc.action.toolId is always set in this branch (checked above)
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const toolIdForHarvest = tc.action.toolId!;
+      const toolIdForHarvest = callToolId ?? callToolName ?? '';
       if (callResult.ok === true && discoveredIds !== undefined) {
         const ids = extractIdsFromBody(callResult.body);
         if (ids.length > 0) {
@@ -1568,7 +1575,7 @@ async function executeApiTest(
         const bodyStr = typeof callResult.body === 'string'
           ? callResult.body
           : JSON.stringify(callResult.body ?? '');
-        const xssDetection = detectXssReflection(bodyStr, nonce, tc.page, tc.action.toolId ?? '', 'json_body');
+        const xssDetection = detectXssReflection(bodyStr, nonce, tc.page, callToolId ?? callToolName ?? '', 'json_body');
         if (xssDetection !== null) bugs.push(xssDetection);
       }
 
@@ -1577,16 +1584,16 @@ async function executeApiTest(
         const status = callResult.status ?? 0;
         if (status >= 400 && status < 500) {
           if (!isMutatorValidationRejection(tc, callResult)) {
-            const meta = toolMap?.get(tc.action.toolId);
+            const meta = callToolId !== undefined ? toolMap?.get(callToolId) : undefined;
             const endpoint = meta !== undefined
               ? `${meta.method} ${normalizePath(meta.path)}`
-              : tc.action.toolId;
+              : (callToolId ?? callToolName);
             if (meta === undefined) {
-              log.debug(`toolMap miss for toolId ${tc.action.toolId}; using bare id as endpoint`);
+              log.debug(`toolMap miss for toolId ${callToolId ?? callToolName}; using bare id as endpoint`);
             }
             bugs.push({
               kind: 'surface_call_failed',
-              rootCause: `surface_call failed with status ${status} for tool ${tc.action.toolId}`,
+              rootCause: `surface_call failed with status ${status} for tool ${callToolId ?? callToolName}`,
               endpoint,
               status,
               responseBodyShape: callResult.error?.message,
@@ -1602,7 +1609,7 @@ async function executeApiTest(
       if (callResult.status !== undefined) {
         const req: NetworkRequest = {
           method: 'POST',
-          path: tc.action.toolId,
+          path: callToolId ?? callToolName ?? '',
           status: callResult.status,
           duration: callResult.durationMs,
         };
@@ -1656,7 +1663,7 @@ async function executeApiTest(
           const shrunkInput = buildShrunkInput(tc, value);
           try {
             const callResult = await surface.surface_call({
-              toolId: tc.action.toolId ?? '',
+              ...(callToolId !== undefined ? { toolId: callToolId } : { name: callToolName }),
               role: tc.role,
               input: shrunkInput,
               noAutoRelogin: true,
