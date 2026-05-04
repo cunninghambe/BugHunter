@@ -1,4 +1,7 @@
-{"kind":"command_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin/health"},"severity":"critical"}
-{"kind":"command_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin/health"},"severity":"critical"}
+{"kind":"command_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin/health"},"severity":"critical","edgeLabel":"shell-metachar-direct"}
+{"kind":"command_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin/health"},"severity":"critical","edgeLabel":"command-substitution"}
+{"kind":"command_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin/health"},"severity":"critical","edgeLabel":"argument-injection-via-flag"}
+{"kind":"command_injection","expect":"silent","reason":"execFile with array args passes target as a literal argument — shell is never invoked, metacharacters are not expanded","match":{"page":"/api/admin/health-safe"}}
 {"kind":"command_injection","expect":"silent","reason":"missing both target and domain fields — server returns 400, no shell exec occurs","match":{"page":"/api/admin/health"}}
 {"kind":"command_injection","expect":"silent","reason":"GET request to /api/admin/health returns 404 — only POST triggers the vulnerable exec path","match":{"page":"/api/admin/health"}}
+{"kind":"command_injection","expect":"skipped","reason":"fixture_unreachable"}

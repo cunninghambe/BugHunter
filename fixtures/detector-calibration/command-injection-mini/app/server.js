@@ -6,7 +6,7 @@
 'use strict';
 
 const http = require('node:http');
-const { exec } = require('node:child_process');
+const { exec, execFile } = require('node:child_process');
 const url = require('node:url');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 9979;
@@ -72,6 +72,22 @@ const server = http.createServer(async (req, res) => {
     }
 
     json(res, 400, { error: 'missing target or domain field' });
+    return;
+  }
+
+  // SAFE: /api/admin/health-safe — execFile with array args; shell never invoked.
+  if (pathname === '/api/admin/health-safe' && req.method === 'POST') {
+    const body = await readBody(req);
+
+    if (typeof body.target === 'string') {
+      // SAFE: execFile passes args as an array — no shell expansion, no injection.
+      execFile('ping', ['-c', '1', body.target], { timeout: 5000 }, (err, stdout, stderr) => {
+        json(res, 200, { output: stdout + stderr, error: err ? err.message : null });
+      });
+      return;
+    }
+
+    json(res, 400, { error: 'missing target field' });
     return;
   }
 
