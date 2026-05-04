@@ -208,4 +208,36 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects direct shell string concatenation in POST body fields (target, domain) via nonce echo-back from exec output.',
   },
+  {
+    kind: 'vulnerable_dependency_high',
+    requires: {
+      phases: ['execute', 'classify', 'cluster'],
+      tools: ['static-analysis'],
+      surface: 'static-source',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'vuln-dep-mini',
+      servesKinds: ['vulnerable_dependency_high'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Runs npm audit against the target package.json to detect high/critical severity CVE advisories.',
+  },
+  {
+    kind: 'auth_bypass_via_unauthed_route',
+    requires: {
+      phases: ['discover', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'specific', roles: ['anonymous', 'admin'] },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'auth-bypass-mini',
+      servesKinds: ['auth_bypass_via_unauthed_route'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Replays API routes as anonymous to detect endpoints that should require auth but return 200 with non-empty bodies.',
+  },
 ];

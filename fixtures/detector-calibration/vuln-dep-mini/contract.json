@@ -1,0 +1,8 @@
+{
+  "fixture": "vuln-dep-mini",
+  "serves": ["vulnerable_dependency_high"],
+  "port": null,
+  "boots": "bash bin/up.sh",
+  "scanTarget": "app/",
+  "resetCommand": { "kind": "script", "path": "bin/reset.sh" }
+}
