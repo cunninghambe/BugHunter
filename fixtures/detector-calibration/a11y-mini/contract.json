@@ -1,0 +1,7 @@
+{
+  "fixture": "a11y-mini",
+  "serves": ["image_missing_alt"],
+  "port": 9953,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

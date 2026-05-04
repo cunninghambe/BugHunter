@@ -1,0 +1,7 @@
+{"kind":"image_missing_alt","expect":"fires","minClusterSize":1,"match":{"page":"/img-no-alt"},"severity":"minor"}
+{"kind":"image_missing_alt","expect":"silent","reason":"<img> has alt attribute with descriptive text","match":{"page":"/img-with-alt"}}
+{"kind":"image_missing_alt","expect":"silent","reason":"alt=\"\" is the decorative-image convention — intentional, not a bug","match":{"page":"/img-empty-alt"},"edgeLabel":"empty-alt-decorative"}
+{"kind":"image_missing_alt","expect":"silent","reason":"aria-label provides accessible name in absence of alt","match":{"page":"/img-aria-label"},"edgeLabel":"aria-label-as-accessible-name"}
+{"kind":"image_missing_alt","expect":"fires","minClusterSize":1,"match":{"page":"/multi-img-mixed"},"severity":"minor","edgeLabel":"mixed-imgs-only-flag-missing"}
+{"kind":"image_missing_alt","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-no-alt"},"severity":"minor","edgeLabel":"malformed-html-still-detects-missing-alt"}
+{"kind":"image_missing_alt","expect":"skipped","reason":"no_response"}

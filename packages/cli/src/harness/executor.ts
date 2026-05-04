@@ -278,6 +278,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'image_missing_alt' && target.fixturePath !== undefined) {
+      const clusters = await runImageMissingAltHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (
       (contract.kind === 'seo_title_missing'
         || contract.kind === 'seo_meta_description_missing'
@@ -1827,6 +1840,110 @@ function buildSeoClusters(
       lastSeenAt: now,
       clusterSize: 1,
       occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// image_missing_alt runner — static <img> scanner.
+// Production path uses axe-core via browser-mcp; the harness uses a focused
+// regex scan against the response body so calibration is fast and deterministic
+// without a browser dependency.
+// ---------------------------------------------------------------------------
+
+/**
+ * Find every `<img>` tag in `html` whose attributes contain neither `alt=...` nor
+ * `aria-label=...` nor `aria-labelledby=...`. Returns the matched `<img>` tag strings.
+ * `alt=""` (decorative-image convention) counts as having an alt attribute and is silent.
+ */
+function findImagesMissingAlt(html: string): string[] {
+  const imgRe = /<img\b[^>]*?>/gi;
+  const missing: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = imgRe.exec(html)) !== null) {
+    const tag = match[0];
+    const hasAlt = /\balt\s*=/i.test(tag);
+    const hasAriaLabel = /\baria-label\s*=/i.test(tag);
+    const hasAriaLabelledBy = /\baria-labelledby\s*=/i.test(tag);
+    if (!hasAlt && !hasAriaLabel && !hasAriaLabelledBy) {
+      missing.push(tag);
+    }
+  }
+  return missing;
+}
+
+async function runImageMissingAltHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('image_missing_alt: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  // Map page → list of <img> tag strings missing alt
+  const detectionsByPage = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      const missing = findImagesMissingAlt(response.body);
+      if (missing.length > 0) {
+        detectionsByPage.set(route, missing);
+        log.info('image_missing_alt: detection', { route, count: missing.length });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'image_missing_alt';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, tags] of detectionsByPage) {
+    const occurrences: Occurrence[] = tags.map((tag, idx) => ({
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${idx}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    }));
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: `${tags.length} <img> element(s) on ${page} are missing alt/aria-label`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: tags.length,
+      occurrences,
       suspectedFiles: [],
       fixHints: [],
       thirdPartyOrGenerated: false,
