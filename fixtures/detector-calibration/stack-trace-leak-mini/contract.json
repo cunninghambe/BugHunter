@@ -1,0 +1,7 @@
+{
+  "fixture": "stack-trace-leak-mini",
+  "serves": ["stack_trace_leak_in_response"],
+  "port": 9923,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

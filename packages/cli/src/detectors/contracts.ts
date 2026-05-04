@@ -442,4 +442,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects session-shaped Set-Cookie values missing Secure / HttpOnly / SameSite flags. CSRF cookies are exempt from HttpOnly check; Secure check skipped on localhost.',
   },
+  {
+    kind: 'stack_trace_leak_in_response',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'stack-trace-leak-mini',
+      servesKinds: ['stack_trace_leak_in_response'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects 5xx responses whose body matches Error/at-frame patterns indicative of a leaked server-side stack trace.',
+  },
 ];

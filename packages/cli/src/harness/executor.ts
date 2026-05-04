@@ -19,6 +19,7 @@ import type { ProbeResponse } from '../security/pen-detectors.js';
 import { classifySeoCorpus } from '../classify/seo.js';
 import type { SeoPageInput } from '../classify/seo.js';
 import { runHardcodedStringsScanner } from '../static/tools/hardcoded-strings.js';
+import { analyzeResponseBody } from '../security/header-probe.js';
 import { log } from '../log.js';
 
 // ---------------------------------------------------------------------------
@@ -269,6 +270,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
 
     if (contract.kind === 'hardcoded_credentials_in_source' && target.fixturePath !== undefined) {
       const clusters = runHardcodedCredsHarness(
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'stack_trace_leak_in_response' && target.fixturePath !== undefined) {
+      const clusters = await runStackTraceLeakHarness(
+        target.appBaseUrl,
         target.fixturePath,
         contract.requires.phases,
         phasesRun,
@@ -1703,6 +1717,87 @@ function buildSensitiveDataInUrlClusters(detectionsByPage: Map<string, string[]>
 // ---------------------------------------------------------------------------
 // Fixture lifecycle helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// stack_trace_leak_in_response runner — body scan on 5xx responses.
+// ---------------------------------------------------------------------------
+
+async function runStackTraceLeakHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('stack_trace_leak_in_response: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      // Detector only fires on 5xx — match production behaviour.
+      if (response.status < 500) continue;
+
+      const detections = analyzeResponseBody(response.body, route);
+      if (detections.length > 0) {
+        detectionsByPage.set(route, detections[0]?.rootCause ?? `Stack trace leaked in ${route}`);
+        log.info('stack_trace_leak_in_response: detection', { route, status: response.status });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'stack_trace_leak_in_response';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCause] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'expected_failure', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: ['Strip stack traces from production error responses; log them server-side instead'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
+    });
+  }
+
+  return clusters;
+}
 
 // ---------------------------------------------------------------------------
 // cookie_security_flags runner — fires per missing flag on session cookies.
