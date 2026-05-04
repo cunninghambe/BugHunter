@@ -14,3 +14,12 @@
 {"kind":"form_input_unlabeled","expect":"fires","minClusterSize":1,"match":{"page":"/multi-input-mixed"},"severity":"minor","edgeLabel":"mixed-inputs-only-flag-bare"}
 {"kind":"form_input_unlabeled","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-no-label"},"severity":"minor","edgeLabel":"malformed-html-still-detects-unlabeled-input"}
 {"kind":"form_input_unlabeled","expect":"skipped","reason":"no_response"}
+{"kind":"interactive_element_missing_accessible_name","expect":"fires","minClusterSize":1,"match":{"page":"/button-no-name"},"severity":"minor"}
+{"kind":"interactive_element_missing_accessible_name","expect":"silent","reason":"<button> has visible text content","match":{"page":"/button-with-text"}}
+{"kind":"interactive_element_missing_accessible_name","expect":"silent","reason":"aria-label provides accessible name","match":{"page":"/button-aria-label"},"edgeLabel":"aria-label-as-name"}
+{"kind":"interactive_element_missing_accessible_name","expect":"silent","reason":"<img> with non-empty alt inside <button> provides accessible name","match":{"page":"/button-icon-with-img-alt"},"edgeLabel":"img-alt-inside-button"}
+{"kind":"interactive_element_missing_accessible_name","expect":"fires","minClusterSize":1,"match":{"page":"/link-no-name"},"severity":"minor","edgeLabel":"empty-anchor-with-href"}
+{"kind":"interactive_element_missing_accessible_name","expect":"silent","reason":"<a> has visible text content","match":{"page":"/link-with-text"}}
+{"kind":"interactive_element_missing_accessible_name","expect":"fires","minClusterSize":1,"match":{"page":"/multi-mixed-interactive"},"severity":"minor","edgeLabel":"mixed-buttons-only-flag-bare"}
+{"kind":"interactive_element_missing_accessible_name","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-no-name"},"severity":"minor","edgeLabel":"malformed-html-still-detects-empty-button"}
+{"kind":"interactive_element_missing_accessible_name","expect":"skipped","reason":"no_response"}

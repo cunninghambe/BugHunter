@@ -304,6 +304,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'interactive_element_missing_accessible_name' && target.fixturePath !== undefined) {
+      const clusters = await runInteractiveElementMissingNameHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (
       (contract.kind === 'seo_title_missing'
         || contract.kind === 'seo_meta_description_missing'
@@ -1853,6 +1866,119 @@ function buildSeoClusters(
       lastSeenAt: now,
       clusterSize: 1,
       occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// interactive_element_missing_accessible_name runner — static <button>/<a> scanner.
+// Production path uses click-runner via browser-mcp; harness uses static scan.
+// ---------------------------------------------------------------------------
+
+/**
+ * Find every `<button>` and `<a>` whose accessible-name acquisition fails. Returns
+ * the matched outer-tag strings. Considers: aria-label, aria-labelledby, title,
+ * visible text content, and `<img alt="...">` inside the element.
+ */
+function findInteractiveElementsMissingName(html: string): string[] {
+  const missing: string[] = [];
+  // Only enumerate <button> and <a>. Skip <a> tags that lack href (not user-actionable).
+  const blockRe = /<(button|a)\b([^>]*)>([\s\S]*?)<\/\1\s*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = blockRe.exec(html)) !== null) {
+    const tagName = match[1]?.toLowerCase() ?? '';
+    const attrs = match[2] ?? '';
+    const inner = match[3] ?? '';
+
+    if (tagName === 'a' && !/\bhref\s*=/i.test(attrs)) continue;
+
+    if (/\baria-label\s*=\s*["'][^"']+["']/i.test(attrs)) continue;
+    if (/\baria-labelledby\s*=/i.test(attrs)) continue;
+    if (/\btitle\s*=\s*["'][^"']+["']/i.test(attrs)) continue;
+
+    // <img alt="non-empty"> inside provides accessible name
+    if (/<img\b[^>]*\balt\s*=\s*["']([^"']+)["'][^>]*>/i.test(inner)) continue;
+
+    // Strip all tags and check if any non-whitespace text remains
+    const visibleText = inner.replace(/<[^>]*>/g, '').trim();
+    if (visibleText !== '') continue;
+
+    missing.push(`<${tagName}${attrs}>${inner}</${tagName}>`);
+  }
+  return missing;
+}
+
+async function runInteractiveElementMissingNameHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('interactive_element_missing_accessible_name: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      const missing = findInteractiveElementsMissingName(response.body);
+      if (missing.length > 0) {
+        detectionsByPage.set(route, missing);
+        log.info('interactive_element_missing_accessible_name: detection', { route, count: missing.length });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'interactive_element_missing_accessible_name';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, tags] of detectionsByPage) {
+    const occurrences: Occurrence[] = tags.map((_, idx) => ({
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${idx}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    }));
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: `${tags.length} interactive element(s) on ${page} have no accessible name (no text, no aria-label, no aria-labelledby, no title, no img alt)`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: tags.length,
+      occurrences,
       suspectedFiles: [],
       fixHints: [],
       thirdPartyOrGenerated: false,

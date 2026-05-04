@@ -101,6 +101,11 @@
       "port": 5781,
       "route": "/no-label"
     },
+    "interactive_element_missing_accessible_name": {
+      "fixture": "a11y-bad",
+      "port": 5781,
+      "route": "/no-name"
+    },
     "seo_title_missing": {
       "fixture": "seo-bad",
       "port": 5782,
@@ -484,7 +489,6 @@
     "forced_colors_failure",
     "idempotency_key_violation",
     "infinite_loading",
-    "interactive_element_missing_accessible_name",
     "memory_leak_attributed",
     "memory_leak_suspected",
     "multi_user_inconsistent_snapshot",

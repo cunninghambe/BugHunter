@@ -92,6 +92,48 @@ const ROUTES = {
     // Input degradation: malformed HTML, input without any label mechanism
     '<!doctype html><html<><head><title>Malformed</title></head<><body<><form<><input type="text" name="x"<></form></body></html>',
   ),
+
+  // interactive_element_missing_accessible_name routes
+  '/button-no-name': html(
+    200,
+    // Positive: <button> with empty content and no aria-label
+    '<!doctype html><html><head><title>No Name</title></head><body><button></button></body></html>',
+  ),
+  '/button-with-text': html(
+    200,
+    // Negative: visible text content
+    '<!doctype html><html><head><title>With Text</title></head><body><button>Click me</button></body></html>',
+  ),
+  '/button-aria-label': html(
+    200,
+    // Edge: aria-label provides accessible name without visible text
+    '<!doctype html><html><head><title>Aria</title></head><body><button aria-label="Close dialog"></button></body></html>',
+  ),
+  '/button-icon-with-img-alt': html(
+    200,
+    // Edge: button content is an <img> with non-empty alt — alt becomes the accessible name
+    '<!doctype html><html><head><title>Icon</title></head><body><button><img src="/save.png" alt="Save"></button></body></html>',
+  ),
+  '/link-no-name': html(
+    200,
+    // Positive: anchor with href but no text and no aria-label
+    '<!doctype html><html><head><title>No Link Name</title></head><body><a href="/x"></a></body></html>',
+  ),
+  '/link-with-text': html(
+    200,
+    // Negative: visible text
+    '<!doctype html><html><head><title>Link Text</title></head><body><a href="/x">Home</a></body></html>',
+  ),
+  '/multi-mixed-interactive': html(
+    200,
+    // 2 buttons: one labeled, one bare — should fire on the bare one
+    '<!doctype html><html><head><title>Mixed</title></head><body><button>OK</button><button></button></body></html>',
+  ),
+  '/malformed-no-name': html(
+    200,
+    // Input degradation: malformed HTML, button has no name
+    '<!doctype html><html<><head><title>Mal</title></head<><body<><button<></button></body></html>',
+  ),
 };
 
 const server = http.createServer((req, res) => {

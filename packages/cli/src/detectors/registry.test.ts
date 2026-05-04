@@ -12,17 +12,17 @@ describe('DETECTOR_REGISTRY', () => {
     expect(DETECTOR_REGISTRY.length).toBe(127);
   });
 
-  it('deferred kinds include the 8 flipped in audit honesty pass (SWEEP_AUDIT_2026-05-03)', () => {
+  it('deferred kinds include the originally-flagged audit kinds (SWEEP_AUDIT_2026-05-03)', () => {
     const deferred = DETECTOR_REGISTRY.filter(e => e.status === 'deferred');
-    expect(deferred.length).toBeGreaterThanOrEqual(30);
+    expect(deferred.length).toBeGreaterThanOrEqual(29);
     const deferredKinds = new Set(deferred.map(e => e.kind));
-    // 8 newly deferred from audit (3 request-hygiene kinds kept wired: audit fix #6 merged)
+    // V56.3 promoted interactive_element_missing_accessible_name back to wired (harness path);
+    // remaining audit-flagged kinds stay deferred until their production paths are fixed.
     expect(deferredKinds.has('excessive_re_renders')).toBe(true);
     expect(deferredKinds.has('unbounded_list_render')).toBe(true);
     expect(deferredKinds.has('oversized_bundle')).toBe(true);
     expect(deferredKinds.has('memory_leak_suspected')).toBe(true);
     expect(deferredKinds.has('memory_leak_attributed')).toBe(true);
-    expect(deferredKinds.has('interactive_element_missing_accessible_name')).toBe(true);
     expect(deferredKinds.has('multi_user_inconsistent_snapshot')).toBe(true);
     expect(deferredKinds.has('clock_skew_token_invalid')).toBe(true);
     expect(deferredKinds.has('clock_overflow')).toBe(true);
@@ -31,9 +31,9 @@ describe('DETECTOR_REGISTRY', () => {
     expect(deferredKinds.has('clock_timezone_display')).toBe(true);
   });
 
-  it('has 93 wired entries (after audit honesty flip of 8 kinds, SWEEP_AUDIT_2026-05-03)', () => {
+  it('has 94 wired entries (V56.3: +1 promoted interactive_element_missing_accessible_name)', () => {
     const wired = DETECTOR_REGISTRY.filter(e => e.status === 'wired');
-    expect(wired).toHaveLength(93);
+    expect(wired).toHaveLength(94);
   });
 
   it('has 0 dead entries', () => {
