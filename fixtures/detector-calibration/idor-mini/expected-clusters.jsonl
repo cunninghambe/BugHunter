@@ -2,3 +2,8 @@
 {"kind":"idor_horizontal_read","expect":"fires","minClusterSize":1,"match":{"page":"/api/users/","role":"alice"},"severity":"critical"}
 {"kind":"idor_horizontal_read","expect":"silent","reason":"alice reading her own order is a legitimate access — no IDOR","match":{"page":"/api/orders/alice-order-1","role":"alice"}}
 {"kind":"idor_horizontal_read","expect":"silent","reason":"unauthenticated request is rejected 401 before any IDOR can occur","match":{"role":"anonymous"}}
+{"kind":"idor_horizontal_read","expect":"fires","minClusterSize":1,"match":{"page":"/api/orders/","role":"alice"},"severity":"critical","edgeLabel":"numeric-id-iteration"}
+{"kind":"idor_horizontal_read","expect":"fires","minClusterSize":1,"match":{"page":"/api/orders/uuid/","role":"alice"},"severity":"critical","edgeLabel":"uuid-iteration"}
+{"kind":"idor_horizontal_read","expect":"fires","minClusterSize":1,"match":{"page":"/api/orders/protected/","role":"alice"},"severity":"critical","edgeLabel":"read-with-403-on-mutate-only"}
+{"kind":"idor_horizontal_read","expect":"silent","reason":"/api/orders/protected/:id enforces ownership on GET — alice reading alice-protected-1 is a correct 200, no IDOR","match":{"page":"/api/orders/protected/alice-protected-1","role":"alice"},"edgeLabel":"read-with-403-on-mutate-only"}
+{"kind":"idor_horizontal_read","expect":"skipped","reason":"insufficient_roles"}
