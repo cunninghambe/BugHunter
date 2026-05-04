@@ -1,0 +1,3 @@
+# generated/ contains planted credential strings for gitleaks fixture testing.
+# These files must NOT be committed — they are produced at test-time by bin/up.sh.
+generated/

@@ -1,0 +1,8 @@
+{
+  "fixture": "hardcoded-creds-mini",
+  "serves": ["hardcoded_credentials_in_source"],
+  "port": null,
+  "boots": "bash bin/up.sh",
+  "scanTarget": "generated/",
+  "resetCommand": { "kind": "script", "path": "bin/reset.sh" }
+}
