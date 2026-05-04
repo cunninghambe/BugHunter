@@ -239,6 +239,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'sensitive_data_in_url' && target.fixturePath !== undefined) {
+      const clusters = await runSensitiveDataInUrlHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     // Structural scaffold for all other detectors (V56.2+ populates incrementally).
     for (const phase of contract.requires.phases) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -1349,6 +1362,212 @@ function buildCspClusters(
       fixHints: [],
       thirdPartyOrGenerated: false,
       severity,
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// sensitive_data_in_url runner
+// ---------------------------------------------------------------------------
+
+/**
+ * Sensitive query-parameter names that must never appear in a URL.
+ * Checked case-insensitively against all query parameter keys.
+ */
+const SENSITIVE_QUERY_PARAMS = new Set([
+  'token', 'api_key', 'apikey', 'password', 'passwd', 'pass',
+  'auth', 'secret', 'session', 'sessionid', 'session_id',
+  'access_token', 'refresh_token', 'private_key', 'client_secret',
+]);
+
+/**
+ * Path-segment sentinels: when a URL path segment matches one of these words,
+ * the immediately following segment is treated as a sensitive value in transit.
+ * Example: /api/v1/key/<value>/items — the segment "key" flags <value>.
+ */
+const SENSITIVE_PATH_SENTINELS = new Set([
+  'key', 'token', 'auth', 'secret', 'password', 'session', 'apikey', 'api_key',
+]);
+
+/** Extracts absolute href links from an HTML body relative to a base URL. */
+function extractLinks(html: string, baseUrl: string): string[] {
+  const seen = new Set<string>();
+  const links: string[] = [];
+  const hrefRe = /href=["']([^"'#][^"']*)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = hrefRe.exec(html)) !== null) {
+    const raw = match[1];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (raw === undefined) continue;
+    try {
+      const abs = new URL(raw, baseUrl).href;
+      // Stay on the same origin and exclude fragments (they never hit the server)
+      if (!abs.startsWith(new URL(baseUrl).origin)) continue;
+      if (!seen.has(abs)) {
+        seen.add(abs);
+        links.push(abs);
+      }
+    } catch {
+      // skip unparseable hrefs
+    }
+  }
+  return links;
+}
+
+
+
+type SensitiveViolation = {
+  rootCause: string;
+  /** The page key to use for clustering — pathname for query-param violations,
+   *  sentinel-prefix (e.g. /api/v1/key/) for path-segment violations. */
+  page: string;
+};
+
+/**
+ * Checks a URL for sensitive data exposure.
+ * Returns a SensitiveViolation when found, or undefined when the URL is clean.
+ */
+function sensitiveUrlViolation(urlStr: string): SensitiveViolation | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    return undefined;
+  }
+
+  // Query-parameter check
+  for (const [key] of parsed.searchParams) {
+    if (SENSITIVE_QUERY_PARAMS.has(key.toLowerCase())) {
+      return {
+        page: parsed.pathname,
+        rootCause: `sensitive parameter '${key}' exposed in URL query string at ${parsed.pathname}`,
+      };
+    }
+  }
+
+  // Path-segment sentinel check: flag the segment after any sentinel word.
+  // The page key is the path prefix up to and including the sentinel (e.g. /api/v1/key/).
+  const rawSegments = parsed.pathname.split('/');
+  // rawSegments[0] is '' (before the leading slash)
+  for (let i = 1; i < rawSegments.length - 1; i++) {
+    const seg = rawSegments[i];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (seg !== undefined && SENSITIVE_PATH_SENTINELS.has(seg.toLowerCase())) {
+      const value = rawSegments[i + 1];
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (value !== undefined && value.length > 0) {
+        const sentinelPrefix = `${rawSegments.slice(0, i + 1).join('/')}/`;
+        return {
+          page: sentinelPrefix,
+          rootCause: `sensitive path segment '${seg}/<value>' exposes credential in URL at ${parsed.pathname}`,
+        };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+async function runSensitiveDataInUrlHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  void fixturePath; // contract.json port already encoded in appBaseUrl
+
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('sensitive_data_in_url: fixture port not reachable during validate phase');
+    });
+  }
+
+  if (signal.aborted) return [];
+
+  // discover phase: crawl the index page and collect all linked URLs
+  const discoveredUrls: string[] = [];
+  if (phases.includes('discover')) {
+    const indexResponse = await httpGet(appBaseUrl).catch((): ProbeResponse => ({ status: 0, body: '' }));
+    if (indexResponse.status !== 0) {
+      const links = extractLinks(indexResponse.body, appBaseUrl);
+      // Include the index page itself plus all discovered links
+      discoveredUrls.push(appBaseUrl, ...links);
+    }
+    phasesRun.push('discover');
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (signal.aborted) return [];
+
+  // execute phase: probe each discovered URL for sensitive params
+  const detectionsByPage = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const url of discoveredUrls) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+
+      // Fetch the URL to confirm it's reachable (validates the route exists)
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      const violation = sensitiveUrlViolation(url);
+      if (violation !== undefined) {
+        const causes = detectionsByPage.get(violation.page) ?? [];
+        causes.push(violation.rootCause);
+        detectionsByPage.set(violation.page, causes);
+        log.info('harness: sensitive_data_in_url detection', { page: violation.page, url });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildSensitiveDataInUrlClusters(detectionsByPage);
+}
+
+function buildSensitiveDataInUrlClusters(detectionsByPage: Map<string, string[]>): BugCluster[] {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'sensitive_data_in_url';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCauses] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'expected_failure',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: rootCauses[0] ?? `sensitive_data_in_url detected at ${page}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: rootCauses.length,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
     });
   }
 
