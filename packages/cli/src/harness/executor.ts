@@ -283,6 +283,25 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
     }
 
     if (
+      (contract.kind === 'subresource_integrity_violation'
+        || contract.kind === 'coop_coep_violation'
+        || contract.kind === 'trusted_types_violation')
+      && target.fixturePath !== undefined
+    ) {
+      const clusters = await runBrowserPlatformStaticHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.kind,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (
       (contract.kind === 'network_5xx' || contract.kind === 'network_4xx_unexpected')
       && target.fixturePath !== undefined
     ) {
@@ -1856,6 +1875,141 @@ async function runNetworkStatusHarness(
       fixHints: [],
       thirdPartyOrGenerated: false,
       severity: kind === 'network_5xx' ? 'major' : 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// browser-platform static-heuristic runners.
+// Production paths require browser runtime (camofox); the harness implements
+// a focused static check matching the most-common-case 80% detection.
+// ---------------------------------------------------------------------------
+
+/** Find external <script src="..."> and <link rel="stylesheet" href="..."> elements
+ *  (different origin) that lack an `integrity="..."` attribute. */
+function findExternalSubresourcesMissingIntegrity(html: string, baseOrigin: string): string[] {
+  const missing: string[] = [];
+  const tagRe = /<(script|link)\b[^>]*?>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = tagRe.exec(html)) !== null) {
+    const tag = match[0];
+    const tagName = match[1]?.toLowerCase() ?? '';
+    let urlAttr: string | undefined;
+    if (tagName === 'script') {
+      const m = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(tag);
+      urlAttr = m === null ? undefined : m[1];
+    } else if (tagName === 'link') {
+      // Only flag rel="stylesheet" (script-like risk) — other rels (icon, manifest) skip.
+      if (!/\brel\s*=\s*["']stylesheet["']/i.test(tag)) continue;
+      const m = /\bhref\s*=\s*["']([^"']+)["']/i.exec(tag);
+      urlAttr = m === null ? undefined : m[1];
+    }
+    if (urlAttr === undefined) continue;
+    const isExternal = /^https?:\/\//i.test(urlAttr) || urlAttr.startsWith('//');
+    if (!isExternal) continue;
+    // Skip if same origin
+    try {
+      const target = new URL(urlAttr, baseOrigin);
+      if (target.origin === baseOrigin) continue;
+    } catch { /* fall through */ }
+    if (/\bintegrity\s*=/i.test(tag)) continue;
+    missing.push(tag);
+  }
+  return missing;
+}
+
+async function runBrowserPlatformStaticHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  kind: 'subresource_integrity_violation' | 'coop_coep_violation' | 'trusted_types_violation',
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push(`${kind}: fixture port not reachable during validate phase`);
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const baseOrigin = (() => { try { return new URL(appBaseUrl).origin; } catch { return appBaseUrl; } })();
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGetWithHeaders(url).catch((): ProbeResponseWithHeaders => ({ status: 0, body: '', headers: {} }));
+      if (response.status === 0) continue;
+
+      if (kind === 'subresource_integrity_violation') {
+        const missing = findExternalSubresourcesMissingIntegrity(response.body, baseOrigin);
+        if (missing.length > 0) {
+          detectionsByPage.set(route, `${missing.length} external subresource(s) on ${route} missing integrity attribute`);
+        }
+      } else if (kind === 'coop_coep_violation') {
+        // Detect if SharedArrayBuffer is INSTANTIATED (new SharedArrayBuffer(...)),
+        // not just referenced via typeof. Then check for COOP/COEP isolation headers.
+        const sabInstantiated = /new\s+SharedArrayBuffer\s*\(/i.test(response.body);
+        if (!sabInstantiated) continue;
+        const coop = (response.headers['cross-origin-opener-policy'] ?? '').toLowerCase();
+        const coep = (response.headers['cross-origin-embedder-policy'] ?? '').toLowerCase();
+        const isolated = coop === 'same-origin' && (coep === 'require-corp' || coep === 'credentialless');
+        if (!isolated) {
+          detectionsByPage.set(route, `${route} instantiates SharedArrayBuffer but COOP/COEP headers do not enable cross-origin isolation`);
+        }
+      } else {
+        // trusted_types_violation
+        const csp = response.headers['content-security-policy'] ?? '';
+        const cspLower = csp.toLowerCase();
+        const requiresTT = cspLower.includes('require-trusted-types-for');
+        const declaresTT = /\btrusted-types\s+\S+/i.test(csp);
+        if (requiresTT && !declaresTT) {
+          detectionsByPage.set(route, `${route} CSP requires Trusted Types but declares no policy — runtime DOM-XSS sinks will throw`);
+        }
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCause] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
     });
   }
 

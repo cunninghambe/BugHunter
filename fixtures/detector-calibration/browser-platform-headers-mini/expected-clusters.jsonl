@@ -1,0 +1,16 @@
+{"kind":"subresource_integrity_violation","expect":"fires","minClusterSize":1,"match":{"page":"/sri-external-no-integrity"},"severity":"major"}
+{"kind":"subresource_integrity_violation","expect":"silent","reason":"<script integrity=\"...\" crossorigin> satisfies SRI","match":{"page":"/sri-external-with-integrity"}}
+{"kind":"subresource_integrity_violation","expect":"silent","reason":"same-origin scripts do not require SRI","match":{"page":"/sri-same-origin-script"},"edgeLabel":"same-origin-skip"}
+{"kind":"subresource_integrity_violation","expect":"fires","minClusterSize":1,"match":{"page":"/sri-external-stylesheet-no-integrity"},"severity":"major","edgeLabel":"external-stylesheet-no-integrity"}
+{"kind":"subresource_integrity_violation","expect":"fires","minClusterSize":1,"match":{"page":"/sri-malformed"},"severity":"major","edgeLabel":"malformed-html-still-detects-missing-integrity"}
+{"kind":"subresource_integrity_violation","expect":"skipped","reason":"no_response"}
+{"kind":"coop_coep_violation","expect":"fires","minClusterSize":1,"match":{"page":"/coop-coep-sab-no-headers"},"severity":"major"}
+{"kind":"coop_coep_violation","expect":"silent","reason":"COOP and COEP headers set correctly","match":{"page":"/coop-coep-with-headers"}}
+{"kind":"coop_coep_violation","expect":"silent","reason":"page does not use SharedArrayBuffer — no isolation required","match":{"page":"/coop-coep-no-sab-usage"}}
+{"kind":"coop_coep_violation","expect":"silent","reason":"typeof SharedArrayBuffer feature detection does not require isolation","match":{"page":"/coop-coep-sab-typeof-only"},"edgeLabel":"typeof-feature-detection-exempt"}
+{"kind":"coop_coep_violation","expect":"skipped","reason":"no_response"}
+{"kind":"trusted_types_violation","expect":"fires","minClusterSize":1,"match":{"page":"/tt-require-without-policy"},"severity":"major"}
+{"kind":"trusted_types_violation","expect":"silent","reason":"trusted-types policy explicitly declared alongside require-trusted-types-for","match":{"page":"/tt-policy-declared"}}
+{"kind":"trusted_types_violation","expect":"silent","reason":"CSP has no Trusted Types directive — feature not in use","match":{"page":"/tt-no-directive"}}
+{"kind":"trusted_types_violation","expect":"silent","reason":"trusted-types 'default' policy is acceptable","match":{"page":"/tt-default-policy"},"edgeLabel":"default-policy-keyword"}
+{"kind":"trusted_types_violation","expect":"skipped","reason":"no_response"}
