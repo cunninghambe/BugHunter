@@ -1,0 +1,8 @@
+{"kind":"sql_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/search"},"severity":"critical"}
+{"kind":"sql_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin/reports"},"severity":"critical"}
+{"kind":"sql_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/tasks"},"severity":"critical"}
+{"kind":"sql_injection","expect":"silent","reason":"parameterized query (db.prepare().all()) prevents injection — safe route correctly rejects all payloads","match":{"page":"/api/search-safe"}}
+{"kind":"sql_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/search"},"severity":"critical","edgeLabel":"error-based-string-context"}
+{"kind":"sql_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/admin/reports"},"severity":"critical","edgeLabel":"error-based-numeric-context"}
+{"kind":"sql_injection","expect":"fires","minClusterSize":1,"match":{"page":"/api/search"},"severity":"critical","edgeLabel":"boolean-row-count-difference"}
+{"kind":"sql_injection","expect":"skipped","reason":"missing_surface"}

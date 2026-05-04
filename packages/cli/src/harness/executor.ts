@@ -14,7 +14,7 @@ import type { DetectorContract, DetectorRequires, RequiredPhase } from '../detec
 import type { BugCluster, BugKind, Occurrence } from '../types.js';
 import { generatePenPayloads, generateCanaries, canaryAppearsAsHtml, canaryAppearsAsAttribute } from '../security/injection-palette.js';
 import type { PenPayload, CanaryPayload } from '../security/injection-palette.js';
-import { detectPathTraversal, detectCommandInjection } from '../security/pen-detectors.js';
+import { detectPathTraversal, detectCommandInjection, detectSqlInjectionError, detectSqlInjectionBoolean, BOOLEAN_DELTA_THRESHOLD } from '../security/pen-detectors.js';
 import type { ProbeResponse } from '../security/pen-detectors.js';
 import { log } from '../log.js';
 
@@ -204,6 +204,18 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
 
     if (contract.kind === 'xss_reflected' && target.fixturePath !== undefined) {
       const clusters = await runXssReflectedHarness(
+        target.appBaseUrl,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'sql_injection' && target.fixturePath !== undefined) {
+      const clusters = await runSqlInjectionHarness(
         target.appBaseUrl,
         contract.requires.phases,
         phasesRun,
@@ -821,6 +833,194 @@ function buildCommandInjectionClusters(detectionsByField: Map<string, string[]>)
       runId: 'harness',
       kind,
       rootCause: rootCauses[0] ?? `command_injection detected at /api/admin/health field=${field}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: rootCauses.length,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'critical',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// sql_injection runner
+// ---------------------------------------------------------------------------
+
+type SqlProbeTarget = {
+  /** Page label — must match expected-clusters.jsonl match.page exactly. */
+  page: string;
+  /** Build the probe URL from base + encoded payload value. */
+  buildUrl: (base: string, encodedValue: string) => string;
+  /** Parameter name injected (used in rootCause message). */
+  paramName: string;
+  /** If true, this route should NOT produce a cluster (safe route). */
+  expectSilent: boolean;
+};
+
+const SQL_PROBE_TARGETS: SqlProbeTarget[] = [
+  {
+    page: '/api/search',
+    buildUrl: (base, v) => `${base}/api/search?q=${v}`,
+    paramName: 'q',
+    expectSilent: false,
+  },
+  {
+    page: '/api/admin/reports',
+    buildUrl: (base, v) => `${base}/api/admin/reports?filter=${v}`,
+    paramName: 'filter',
+    expectSilent: false,
+  },
+  {
+    page: '/api/tasks',
+    buildUrl: (base, v) => `${base}/api/tasks?label=${v}`,
+    paramName: 'label',
+    expectSilent: false,
+  },
+  {
+    page: '/api/search-safe',
+    buildUrl: (base, v) => `${base}/api/search-safe?q=${v}`,
+    paramName: 'q',
+    expectSilent: true,
+  },
+];
+
+async function runSqlInjectionHarness(
+  appBaseUrl: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('sql_injection: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+  if (phases.includes('discover')) phasesRun.push('discover');
+  if (phases.includes('plan')) phasesRun.push('plan');
+  if (signal.aborted) return [];
+
+  const sqlPayloads = generatePenPayloads(['sql']);
+  // Separate error-based vs boolean payloads for different detection strategies.
+  const errorPayloads = sqlPayloads.filter(p => p.variant.startsWith('error_') || p.variant === 'union_select_marker');
+  const booleanTruePayloads = sqlPayloads.filter(p => p.variant === 'boolean_true');
+  const booleanFalsePayloads = sqlPayloads.filter(p => p.variant === 'boolean_false');
+
+  // Map: page → list of confirmed root-cause strings
+  const detectionsByPage = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const probe of SQL_PROBE_TARGETS) {
+      if (signal.aborted) break;
+
+      // Fetch baseline (empty/benign query) for boolean-difference comparison.
+      const baselineUrl = probe.buildUrl(appBaseUrl, encodeURIComponent(''));
+      const baselineResponse = await httpGet(baselineUrl).catch((): ProbeResponse => ({ status: 0, body: '' }));
+
+      // Error-based probes: look for nonce in SQL error message.
+      for (const payload of errorPayloads) {
+        if (signal.aborted) break;
+        const url = probe.buildUrl(appBaseUrl, encodeURIComponent(payload.value));
+        const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+        if (response.status === 0) continue;
+
+        const result = detectSqlInjectionError(payload, response, probe.paramName, probe.page);
+        if (result.ok) {
+          if (probe.expectSilent) {
+            warnings.push(`sql_injection: false-positive on ${probe.page} variant=${payload.variant} — safe route should reject payloads`);
+          } else {
+            const causes = detectionsByPage.get(probe.page) ?? [];
+            causes.push(result.detection.rootCause);
+            detectionsByPage.set(probe.page, causes);
+            log.info('harness: sql_injection error-based detection', { page: probe.page, variant: payload.variant });
+            // One confirmed error-based detection per page is sufficient.
+            break;
+          }
+        }
+      }
+
+      if (signal.aborted) break;
+
+      // Boolean-based probes: compare true-variant row count vs false-variant vs baseline.
+      if (!probe.expectSilent && baselineResponse.status !== 0) {
+        for (let i = 0; i < booleanTruePayloads.length; i++) {
+          const truePayload = booleanTruePayloads[i];
+          const falsePayload = booleanFalsePayloads[i];
+          if (truePayload === undefined || falsePayload === undefined) break;
+          if (signal.aborted) break;
+
+          const trueUrl = probe.buildUrl(appBaseUrl, encodeURIComponent(truePayload.value));
+          const falseUrl = probe.buildUrl(appBaseUrl, encodeURIComponent(falsePayload.value));
+          const [trueResponse, falseResponse] = await Promise.all([
+            httpGet(trueUrl).catch((): ProbeResponse => ({ status: 0, body: '' })),
+            httpGet(falseUrl).catch((): ProbeResponse => ({ status: 0, body: '' })),
+          ]);
+
+          if (trueResponse.status === 0 || falseResponse.status === 0) continue;
+
+          const result = detectSqlInjectionBoolean(
+            truePayload,
+            trueResponse,
+            falseResponse,
+            baselineResponse,
+            probe.paramName,
+            probe.page,
+            BOOLEAN_DELTA_THRESHOLD,
+          );
+          if (result.ok && !detectionsByPage.has(probe.page)) {
+            const causes = detectionsByPage.get(probe.page) ?? [];
+            causes.push(result.detection.rootCause);
+            detectionsByPage.set(probe.page, causes);
+            log.info('harness: sql_injection boolean-based detection', { page: probe.page });
+          }
+        }
+      }
+    }
+
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildSqlInjectionClusters(detectionsByPage);
+}
+
+function buildSqlInjectionClusters(detectionsByPage: Map<string, string[]>): BugCluster[] {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'sql_injection';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCauses] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'expected_failure',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: rootCauses[0] ?? `sql_injection detected at ${page}`,
       firstSeenAt: now,
       lastSeenAt: now,
       clusterSize: rootCauses.length,
