@@ -1,0 +1,7 @@
+{
+  "fixture": "csrf-missing-mini",
+  "serves": ["csrf_missing_on_mutating_route"],
+  "port": 9903,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

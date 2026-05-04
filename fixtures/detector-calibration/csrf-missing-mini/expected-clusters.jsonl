@@ -1,0 +1,8 @@
+{"kind":"csrf_missing_on_mutating_route","expect":"fires","minClusterSize":1,"match":{"page":"/api/posts/create"},"severity":"major"}
+{"kind":"csrf_missing_on_mutating_route","expect":"fires","minClusterSize":1,"match":{"page":"/api/users/update"},"severity":"major","edgeLabel":"put-method-mutating"}
+{"kind":"csrf_missing_on_mutating_route","expect":"silent","reason":"SameSite=Strict on session cookie is its own CSRF defense","match":{"page":"/api/strict-session/mutate"},"edgeLabel":"samesite-strict-exempt"}
+{"kind":"csrf_missing_on_mutating_route","expect":"silent","reason":"GET is not a mutating method","match":{"page":"/api/read-only"},"edgeLabel":"non-mutating-method-skip"}
+{"kind":"csrf_missing_on_mutating_route","expect":"silent","reason":"X-CSRF-Token request header satisfies the detector","match":{"page":"/api/with-csrf-header/mutate"},"edgeLabel":"csrf-header-present"}
+{"kind":"csrf_missing_on_mutating_route","expect":"silent","reason":"Authorization: Bearer auth is not CSRF-vulnerable","match":{"page":"/api/bearer-auth/mutate"},"edgeLabel":"bearer-auth-exempt"}
+{"kind":"csrf_missing_on_mutating_route","expect":"silent","reason":"CSRF cookie present in cookieJar","match":{"page":"/api/with-csrf-cookie/mutate"},"edgeLabel":"csrf-cookie-present"}
+{"kind":"csrf_missing_on_mutating_route","expect":"skipped","reason":"no_response"}

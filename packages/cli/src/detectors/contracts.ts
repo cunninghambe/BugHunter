@@ -474,4 +474,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Probes routes with redirect-param synonyms (?redirect=, ?next=, ?return_to=, etc.) pointed at evil.test. Fires when a 3xx Location header echoes the attacker-controlled URL.',
   },
+  {
+    kind: 'csrf_missing_on_mutating_route',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'csrf-missing-mini',
+      servesKinds: ['csrf_missing_on_mutating_route'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Probes mutating routes (POST/PUT/PATCH/DELETE) with cookie/header/auth contexts. Fires when no CSRF token is present and detector exemptions (Bearer auth, SameSite=Strict on session cookie) do not apply.',
+  },
 ];
