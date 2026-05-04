@@ -278,7 +278,11 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
-    if (contract.kind === 'seo_title_missing' && target.fixturePath !== undefined) {
+    if (
+      (contract.kind === 'seo_title_missing'
+        || contract.kind === 'seo_meta_description_missing')
+      && target.fixturePath !== undefined
+    ) {
       const clusters = await runSeoHarness(
         target.appBaseUrl,
         target.fixturePath,
