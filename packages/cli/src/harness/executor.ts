@@ -283,7 +283,8 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
         || contract.kind === 'seo_meta_description_missing'
         || contract.kind === 'seo_canonical_missing'
         || contract.kind === 'seo_h1_missing_or_multiple'
-        || contract.kind === 'seo_robots_blocking_crawl')
+        || contract.kind === 'seo_robots_blocking_crawl'
+        || contract.kind === 'seo_title_duplicate_across_routes')
       && target.fixturePath !== undefined
     ) {
       const clusters = await runSeoHarness(
@@ -1763,6 +1764,45 @@ function buildSeoClusters(
   const clusters: BugCluster[] = [];
 
   for (const detection of detections) {
+    // seo_title_duplicate_across_routes is cross-page: detection.pageRoute is null but
+    // seoContext.affectedRoutes lists every page that shares the duplicate title. Emit one
+    // cluster with one occurrence per affected route so match.page assertions can target any.
+    const isDuplicateTitleDetection =
+      detection.kind === 'seo_title_duplicate_across_routes'
+      && detection.seoContext?.affectedRoutes !== undefined
+      && detection.seoContext.affectedRoutes.length > 0;
+
+    if (isDuplicateTitleDetection) {
+      const routes = detection.seoContext!.affectedRoutes!;
+      const slug = (detection.seoContext!.observedValue ?? 'duplicate')
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-+|-+$/g, '')
+        .toLowerCase();
+      const occurrences: Occurrence[] = routes.map((route, idx) => ({
+        occurrenceId: `harness-${kind}-${slug}-${idx}-${Date.now()}`,
+        role: 'anonymous',
+        page: route,
+        action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+        fullArtifacts: false as const,
+        timestamp: now,
+      }));
+      clusters.push({
+        id: `harness-${kind}-${slug}`,
+        runId: 'harness',
+        kind,
+        rootCause: detection.rootCause,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        clusterSize: routes.length,
+        occurrences,
+        suspectedFiles: [],
+        fixHints: [],
+        thirdPartyOrGenerated: false,
+        severity: 'minor',
+      });
+      continue;
+    }
+
     const page = detection.pageRoute ?? '*';
     const occurrence: Occurrence = {
       occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,

@@ -330,4 +330,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects pages disagreeing with crawl policy: meta name="robots" noindex on a crawled page, or robots.txt Disallow:/ blocking the homepage.',
   },
+  {
+    kind: 'seo_title_duplicate_across_routes',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'seo-mini',
+      servesKinds: ['seo_title_duplicate_across_routes'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects ≥2 distinct routes that share the same (case-insensitive, trim-normalised) <title> text.',
+  },
 ];

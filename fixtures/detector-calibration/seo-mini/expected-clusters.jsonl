@@ -30,3 +30,17 @@
 {"kind":"seo_robots_blocking_crawl","expect":"silent","reason":"meta robots index/follow does not contain noindex","match":{"page":"/meta-robots-index-only"}}
 {"kind":"seo_robots_blocking_crawl","expect":"fires","minClusterSize":1,"match":{"page":"/malformed-noindex"},"severity":"minor","edgeLabel":"malformed-html-still-detects-noindex-meta"}
 {"kind":"seo_robots_blocking_crawl","expect":"skipped","reason":"no_response"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":2,"match":{"page":"/dup-a"},"severity":"minor"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":2,"match":{"page":"/dup-b"},"severity":"minor"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":3,"match":{"page":"/trio-a"},"severity":"minor","edgeLabel":"three-route-duplicate-group"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":3,"match":{"page":"/trio-b"},"severity":"minor","edgeLabel":"three-route-duplicate-group"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":3,"match":{"page":"/trio-c"},"severity":"minor","edgeLabel":"three-route-duplicate-group"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":2,"match":{"page":"/case-a"},"severity":"minor","edgeLabel":"case-insensitive-match"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":2,"match":{"page":"/case-b"},"severity":"minor","edgeLabel":"case-insensitive-match"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":2,"match":{"page":"/ws-a"},"severity":"minor","edgeLabel":"whitespace-trim-match"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":2,"match":{"page":"/ws-b"},"severity":"minor","edgeLabel":"whitespace-trim-match"}
+{"kind":"seo_title_duplicate_across_routes","expect":"silent","reason":"unique title not duplicated anywhere in corpus","match":{"page":"/unique-1"}}
+{"kind":"seo_title_duplicate_across_routes","expect":"silent","reason":"unique title not duplicated anywhere in corpus","match":{"page":"/unique-2"}}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":2,"match":{"page":"/mal-dup-a"},"severity":"minor","edgeLabel":"malformed-html-still-detects-duplicate-titles"}
+{"kind":"seo_title_duplicate_across_routes","expect":"fires","minClusterSize":2,"match":{"page":"/mal-dup-b"},"severity":"minor","edgeLabel":"malformed-html-still-detects-duplicate-titles"}
+{"kind":"seo_title_duplicate_across_routes","expect":"skipped","reason":"no_response"}
