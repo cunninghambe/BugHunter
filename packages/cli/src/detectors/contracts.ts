@@ -49,7 +49,7 @@ export type ClusterAssertion =
       minClusterSize: number;
       match: { page?: string; role?: string; signaturePrefix?: string };
       severity: 'critical' | 'major' | 'minor' | 'info';
-      /** Optional label for edge-case variants (e.g. "stripe-test-key-in-comment"). */
+      /** Optional label for edge-case variants (e.g. "shell-metachar-direct", "command-substitution"). */
       edgeLabel?: string;
     }
   | {
@@ -61,22 +61,10 @@ export type ClusterAssertion =
       edgeLabel?: string;
     }
   | {
-      /** Harness skips this assertion entirely when preconditions are unmet. */
+      /** Harness skips this assertion when the fixture is unreachable or a precondition is unmet. */
       kind: BugKind;
       expect: 'skipped';
-      reason:
-        | 'insufficient_roles'
-        | 'missing_tool'
-        | 'missing_surface'
-        | 'fixture_not_built'
-        | 'no_pages_to_probe'
-        | 'fixture_unreachable'
-        | 'no_response'
-        | 'fixture_db_missing'
-        | 'fixture_uploads_missing'
-        | 'no_anonymous_role'
-        | 'tool_not_found:npm-audit'
-        | (string & {});
+      reason: 'fixture_unreachable' | 'insufficient_roles' | 'missing_tool' | 'missing_surface';
     };
 
 /** Fixture pointer for this detector. May be shared across N detectors. */
@@ -221,14 +209,14 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
       tools: ['surface-mcp'],
       surface: 'api',
       role: { kind: 'none' },
-      pageContext: { kind: 'specific-routes', routes: ['/api/admin/health'] },
+      pageContext: { kind: 'specific-routes', routes: ['/api/admin/health', '/api/admin/health-safe'] },
     },
     fixture: {
       path: 'command-injection-mini',
       servesKinds: ['command_injection'],
     },
     defaultBudgetMs: 30_000,
-    note: 'Detects direct shell string concatenation in POST body fields (target, domain) via nonce echo-back from exec output.',
+    note: 'Detects shell string concatenation via nonce echo-back; /api/admin/health-safe uses execFile and must stay silent.',
   },
   {
     kind: 'vulnerable_dependency_high',
