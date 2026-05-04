@@ -105,7 +105,7 @@ const server = http.createServer((req, res) => {
     if (req.method === 'PUT' || req.method === 'DELETE') { json(res, 200, { ok: true }); return; }
   }
 
-  // P1: GET /api/orders/:id (numeric and named IDs)
+  // P1: GET /api/orders/:id (named and numeric IDs)
   // PLANT: no ownership check — any authenticated user can read any order.
   const orderMatch = pathname.match(/^\/api\/orders\/([^/]+)$/);
   if (orderMatch && req.method === 'GET') {
