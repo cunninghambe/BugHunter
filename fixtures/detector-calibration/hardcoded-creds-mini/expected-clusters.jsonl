@@ -1,0 +1,1 @@
+{"kind":"hardcoded_credentials_in_source","expect":"fires","minClusterSize":1,"match":{"page":"generated/src/lib/auth.ts"},"severity":"critical"}

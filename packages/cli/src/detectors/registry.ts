@@ -161,6 +161,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'permissive_cors',
@@ -197,6 +198,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'stack_trace_leak_in_response',
@@ -222,6 +224,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'swallowed_error_empty_catch',
@@ -258,6 +261,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V21_IDOR.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'idor_horizontal_mutate',
@@ -410,6 +414,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V16_PEN_TESTING.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'command_injection',
@@ -419,6 +424,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V16_PEN_TESTING.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'path_traversal',
@@ -428,6 +434,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V16_PEN_TESTING.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'jwt_weak_alg',
@@ -447,6 +454,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V07_XSS.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'xss_dom',
