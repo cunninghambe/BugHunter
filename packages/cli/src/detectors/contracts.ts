@@ -586,4 +586,68 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Static-heuristic harness. Detects CSP that has `require-trusted-types-for` directive but no `trusted-types <policy>` declaration — every DOM-XSS sink will throw at runtime.',
   },
+  {
+    kind: 'iframe_postmessage_unguarded',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'script-checks-mini',
+      servesKinds: ['iframe_postmessage_unguarded'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Scans response HTML for window.addEventListener("message", ...) handlers that do not check event.origin.',
+  },
+  {
+    kind: 'xss_dom',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'script-checks-mini',
+      servesKinds: ['xss_dom'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Scans response HTML for DOM XSS sinks (innerHTML, document.write, etc.) assigning non-literal values.',
+  },
+  {
+    kind: 'swallowed_error_empty_catch',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'script-checks-mini',
+      servesKinds: ['swallowed_error_empty_catch'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Scans response HTML for empty catch (e) {} blocks that silently swallow errors.',
+  },
+  {
+    kind: 'jwt_weak_alg',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'script-checks-mini',
+      servesKinds: ['jwt_weak_alg'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Decodes JWT-shaped tokens found in response bodies and fires when alg is "none" or HS-family symmetric.',
+  },
 ];

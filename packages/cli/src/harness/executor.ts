@@ -283,6 +283,26 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
     }
 
     if (
+      (contract.kind === 'iframe_postmessage_unguarded'
+        || contract.kind === 'xss_dom'
+        || contract.kind === 'swallowed_error_empty_catch'
+        || contract.kind === 'jwt_weak_alg')
+      && target.fixturePath !== undefined
+    ) {
+      const clusters = await runScriptContentStaticHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.kind,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (
       (contract.kind === 'subresource_integrity_violation'
         || contract.kind === 'coop_coep_violation'
         || contract.kind === 'trusted_types_violation')
@@ -1875,6 +1895,194 @@ async function runNetworkStatusHarness(
       fixHints: [],
       thirdPartyOrGenerated: false,
       severity: kind === 'network_5xx' ? 'major' : 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// script-content static-heuristic runners.
+// Production paths use browser/static analysers; harness uses focused regex.
+// Serves: iframe_postmessage_unguarded, xss_dom, swallowed_error_empty_catch, jwt_weak_alg.
+// ---------------------------------------------------------------------------
+
+/** Detect message handlers in script content that DO NOT check event.origin. */
+function findUnguardedPostMessageHandlers(html: string): boolean {
+  // Find every addEventListener('message', handlerBody) — capture the handler body.
+  const re = /addEventListener\s*\(\s*['"]message['"]\s*,\s*((?:function\s*\([^)]*\)|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>))/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) {
+    // Locate the handler body span — find matching opening brace, then balanced match.
+    const startIdx = match.index;
+    // Look ahead in `html` for the end of this handler. Find next `{` then balance.
+    const afterPrefix = html.indexOf('{', startIdx);
+    if (afterPrefix === -1) continue;
+    let depth = 0;
+    let endIdx = afterPrefix;
+    for (let i = afterPrefix; i < html.length; i++) {
+      const ch = html[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) { endIdx = i; break; }
+      }
+    }
+    const handlerBody = html.slice(afterPrefix, endIdx + 1);
+    // Heuristic: handler is guarded if it references e.origin / event.origin / .origin
+    if (!/\borigin\s*[!=]==?/i.test(handlerBody)) return true;
+  }
+  return false;
+}
+
+/** Detect XSS-DOM patterns: innerHTML / outerHTML / document.write of non-literal input. */
+function findXssDomSinks(html: string): boolean {
+  const sinkRe = /(innerHTML|outerHTML|document\.write|document\.writeln|insertAdjacentHTML)\s*(?:\(|=)\s*([^;)]{0,100})/gi;
+  let match: RegExpExecArray | null;
+  while ((match = sinkRe.exec(html)) !== null) {
+    const arg = (match[2] ?? '').trim();
+    // Trivially-safe assignments: string literal (single quote, double quote, backtick with no ${})
+    if (/^['"]/.test(arg) || /^`[^`$]*`/.test(arg)) continue;
+    // Still flagged: location.search/hash/pathname, params.get(), variable, function call
+    if (
+      /location\.(search|hash|pathname|href)/i.test(arg)
+      || /params\.get\b/i.test(arg)
+      || /\.value\b/i.test(arg)
+      || /^[A-Za-z_$][\w$]*\s*[\(.]/.test(arg)
+    ) return true;
+    // Variable name alone — assume tainted
+    if (/^[A-Za-z_$][\w$]*\s*$/.test(arg)) return true;
+  }
+  return false;
+}
+
+/** Detect empty `catch (e) {}` blocks (whitespace/newlines only inside the braces). */
+function findEmptyCatchBlocks(html: string): boolean {
+  const re = /catch\s*\([^)]*\)\s*\{\s*\}/g;
+  return re.test(html);
+}
+
+/** Decode a JWT-like token's header payload and return its `alg` value, or null. */
+function readJwtAlg(token: string): string | null {
+  const dotIdx = token.indexOf('.');
+  if (dotIdx === -1) return null;
+  const headerB64 = token.slice(0, dotIdx);
+  try {
+    const decoded = Buffer.from(headerB64, 'base64url').toString('utf8');
+    const parsed = JSON.parse(decoded) as { alg?: string };
+    return typeof parsed.alg === 'string' ? parsed.alg : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Find any JWT-shaped token in `html` and check its alg. Returns the weak alg if any. */
+function findWeakJwtAlg(html: string): string | null {
+  // Match base64url.base64url.base64url[ optional ] — JWT signature can be empty for alg=none.
+  const jwtRe = /\b(eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = jwtRe.exec(html)) !== null) {
+    const token = match[1] ?? '';
+    const alg = readJwtAlg(token);
+    if (alg === null) continue;
+    const upper = alg.toUpperCase();
+    if (upper === 'NONE' || upper === 'HS256' || upper === 'HS384' || upper === 'HS512') {
+      return alg;
+    }
+  }
+  return null;
+}
+
+async function runScriptContentStaticHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  kind: 'iframe_postmessage_unguarded' | 'xss_dom' | 'swallowed_error_empty_catch' | 'jwt_weak_alg',
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push(`${kind}: fixture port not reachable during validate phase`);
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      let rootCause: string | undefined;
+      if (kind === 'iframe_postmessage_unguarded') {
+        if (findUnguardedPostMessageHandlers(response.body)) {
+          rootCause = `${route} registers a window.message handler with no event.origin check — unguarded message receiver`;
+        }
+      } else if (kind === 'xss_dom') {
+        if (findXssDomSinks(response.body)) {
+          rootCause = `${route} writes a non-literal value into a DOM XSS sink (innerHTML / document.write)`;
+        }
+      } else if (kind === 'swallowed_error_empty_catch') {
+        if (findEmptyCatchBlocks(response.body)) {
+          rootCause = `${route} has an empty catch block — error is swallowed silently`;
+        }
+      } else {
+        // jwt_weak_alg
+        const weak = findWeakJwtAlg(response.body);
+        if (weak !== null) {
+          rootCause = `${route} contains a JWT with weak alg='${weak}'`;
+        }
+      }
+      if (rootCause !== undefined) {
+        detectionsByPage.set(route, rootCause);
+        log.info(`${kind}: detection`, { route });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const severity: 'critical' | 'major' | 'minor' = kind === 'xss_dom'
+    ? 'critical'
+    : kind === 'swallowed_error_empty_catch' ? 'minor' : 'major';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCause] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity,
     });
   }
 

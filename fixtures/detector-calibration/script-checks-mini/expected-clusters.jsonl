@@ -1,0 +1,19 @@
+{"kind":"iframe_postmessage_unguarded","expect":"fires","minClusterSize":1,"match":{"page":"/postmessage-no-origin-check"},"severity":"major"}
+{"kind":"iframe_postmessage_unguarded","expect":"silent","reason":"handler checks event.origin against allowlist","match":{"page":"/postmessage-with-origin-check"}}
+{"kind":"iframe_postmessage_unguarded","expect":"fires","minClusterSize":1,"match":{"page":"/postmessage-arrow-no-origin"},"severity":"major","edgeLabel":"arrow-function-handler"}
+{"kind":"iframe_postmessage_unguarded","expect":"silent","reason":"page has no message-event handler","match":{"page":"/no-postmessage-handler"}}
+{"kind":"iframe_postmessage_unguarded","expect":"skipped","reason":"no_response"}
+{"kind":"xss_dom","expect":"fires","minClusterSize":1,"match":{"page":"/xss-innerhtml-from-search"},"severity":"critical"}
+{"kind":"xss_dom","expect":"fires","minClusterSize":1,"match":{"page":"/xss-document-write-from-hash"},"severity":"critical","edgeLabel":"document-write-with-hash"}
+{"kind":"xss_dom","expect":"silent","reason":"innerHTML set to static string literal","match":{"page":"/xss-innerhtml-from-static"},"edgeLabel":"static-literal-safe"}
+{"kind":"xss_dom","expect":"silent","reason":"textContent assignment is safe (does not interpret HTML)","match":{"page":"/xss-textcontent-safe"},"edgeLabel":"textcontent-safe"}
+{"kind":"xss_dom","expect":"skipped","reason":"no_response"}
+{"kind":"swallowed_error_empty_catch","expect":"fires","minClusterSize":1,"match":{"page":"/swallowed-empty-catch"},"severity":"minor"}
+{"kind":"swallowed_error_empty_catch","expect":"silent","reason":"catch block has body — not swallowed","match":{"page":"/swallowed-with-handler"}}
+{"kind":"swallowed_error_empty_catch","expect":"silent","reason":"catch rethrows with context","match":{"page":"/swallowed-with-rethrow"}}
+{"kind":"swallowed_error_empty_catch","expect":"skipped","reason":"no_response"}
+{"kind":"jwt_weak_alg","expect":"fires","minClusterSize":1,"match":{"page":"/jwt-alg-none"},"severity":"critical","edgeLabel":"alg-none"}
+{"kind":"jwt_weak_alg","expect":"fires","minClusterSize":1,"match":{"page":"/jwt-alg-hs256"},"severity":"major","edgeLabel":"alg-hs256-symmetric"}
+{"kind":"jwt_weak_alg","expect":"silent","reason":"alg:RS256 is asymmetric and safe","match":{"page":"/jwt-alg-rs256"}}
+{"kind":"jwt_weak_alg","expect":"silent","reason":"no JWT-shaped token in body","match":{"page":"/no-jwt"}}
+{"kind":"jwt_weak_alg","expect":"skipped","reason":"no_response"}
