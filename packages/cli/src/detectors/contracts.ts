@@ -538,4 +538,52 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Probes each route, fires on 4xx status. Expected-vs-unexpected distinction is encoded in the fixture\'s expected-clusters.jsonl per route.',
   },
+  {
+    kind: 'subresource_integrity_violation',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'browser-platform-headers-mini',
+      servesKinds: ['subresource_integrity_violation'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness path. Scans response HTML for external <script src> / <link rel=stylesheet href> elements without an integrity attribute. (Production path uses runtime browser observation.)',
+  },
+  {
+    kind: 'coop_coep_violation',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'browser-platform-headers-mini',
+      servesKinds: ['coop_coep_violation'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Detects pages with `new SharedArrayBuffer(...)` instantiation that lack COOP: same-origin + COEP: require-corp / credentialless headers.',
+  },
+  {
+    kind: 'trusted_types_violation',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'browser-platform-headers-mini',
+      servesKinds: ['trusted_types_violation'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Detects CSP that has `require-trusted-types-for` directive but no `trusted-types <policy>` declaration — every DOM-XSS sink will throw at runtime.',
+  },
 ];

@@ -870,6 +870,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'Script/style loaded without integrity= attribute from a cross-origin URL.',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'coop_coep_violation',
@@ -880,6 +881,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'SharedArrayBuffer used but crossOriginIsolated is false (missing COOP/COEP headers).',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'trusted_types_violation',
@@ -890,6 +892,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'Trusted Types CSP violation — unsafe DOM sink usage detected.',
     defaultSeverity: 'major',
+    harness: true,
   },
 
   // — § v0.20 network-fault kinds (wired) —

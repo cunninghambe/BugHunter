@@ -1,0 +1,7 @@
+{
+  "fixture": "browser-platform-headers-mini",
+  "serves": ["subresource_integrity_violation", "coop_coep_violation", "trusted_types_violation"],
+  "port": 9873,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
