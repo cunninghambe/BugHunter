@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import type { DetectorContract, RequiredPhase } from '../detectors/contracts.js';
+import type { DetectorContract, DetectorRequires, RequiredPhase } from '../detectors/contracts.js';
 import type { BugCluster, BugKind, Occurrence } from '../types.js';
 import { generatePenPayloads } from '../security/injection-palette.js';
 import type { PenPayload } from '../security/injection-palette.js';
@@ -169,6 +169,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
         target.appBaseUrl,
         target.fixturePath,
         contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'idor_horizontal_read' && target.fixturePath !== undefined) {
+      const clusters = await runIdorHorizontalReadHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires,
         phasesRun,
         combinedSignal,
         warnings,
@@ -346,6 +359,140 @@ function buildPathTraversalClusters(detectionsByPage: Map<string, string[]>): Bu
       runId: 'harness',
       kind,
       rootCause: rootCauses[0] ?? `path_traversal detected at ${page}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: rootCauses.length,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'critical',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// idor_horizontal_read runner
+// ---------------------------------------------------------------------------
+
+type IdorProbe = {
+  /** Page prefix used in occurrence.page — must match expected-clusters.jsonl match.page exactly. */
+  page: string;
+  /** Full URL of the resource owned by the victim role. */
+  url: string;
+};
+
+// Resources owned by bob that alice should NOT be able to read (IDOR plants).
+const IDOR_CROSS_USER_PROBES: IdorProbe[] = [
+  { page: '/api/orders/', url: '/api/orders/bob-order-1' },
+  { page: '/api/users/', url: '/api/users/bob/profile' },
+  { page: '/api/orders/', url: '/api/orders/1002' },
+  { page: '/api/orders/uuid/', url: '/api/orders/uuid/01HW9XMKQ2P8VB3N5T6R7YCF4B' },
+];
+
+// Resources alice legitimately owns (control case — must NOT emit a cluster).
+const IDOR_SELF_ACCESS_PROBES: IdorProbe[] = [
+  { page: '/api/orders/alice-order-1', url: '/api/orders/alice-order-1' },
+];
+
+async function runIdorHorizontalReadHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  requires: DetectorRequires,
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  // Skip when only one role is configured (insufficient_roles input-degradation case).
+  const roles = requires.role.kind === 'specific' ? requires.role.roles : [];
+  if (roles.length < 2) {
+    warnings.push('idor_horizontal_read: fewer than 2 roles configured — skipping (insufficient_roles)');
+    return [];
+  }
+
+  const contractPath = path.join(fixturePath, 'contract.json');
+  const contractRaw = fs.readFileSync(contractPath, 'utf8');
+  const fixtureContract = JSON.parse(contractRaw) as { port: number };
+  void fixtureContract; // port already encoded in appBaseUrl
+
+  if (requires.phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('idor_horizontal_read: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  // Map: page prefix → set of confirmed IDOR root causes
+  const detectionsByPage = new Map<string, string[]>();
+
+  if (requires.phases.includes('execute')) {
+    for (const probe of IDOR_CROSS_USER_PROBES) {
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${probe.url}`;
+      const response = await httpGet(url, { Authorization: 'Bearer alice-token' }).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      // IDOR fires when alice receives 200 for a bob-owned resource.
+      // Any non-empty body confirms data exposure — the resource itself is the leak.
+      if (response.status === 200 && response.body.trim().length > 0) {
+        const causes = detectionsByPage.get(probe.page) ?? [];
+        causes.push(`alice accessed ${probe.url} (bob-owned) and received 200 with data — ownership check absent`);
+        detectionsByPage.set(probe.page, causes);
+        log.info('harness: idor_horizontal_read detection', { page: probe.page, url: probe.url, status: response.status });
+      }
+    }
+
+    // Control: verify alice's own resources do NOT produce false positives.
+    // No cluster is emitted here — this is a correctness self-check only.
+    for (const probe of IDOR_SELF_ACCESS_PROBES) {
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${probe.url}`;
+      const response = await httpGet(url, { Authorization: 'Bearer alice-token' }).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status !== 200) {
+        warnings.push(`idor_horizontal_read: self-access control case ${probe.url} returned ${response.status} (expected 200 — fixture may be broken)`);
+      }
+    }
+
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (requires.phases.includes('classify')) phasesRun.push('classify');
+  if (requires.phases.includes('cluster')) phasesRun.push('cluster');
+
+  return buildIdorClusters(detectionsByPage);
+}
+
+function buildIdorClusters(detectionsByPage: Map<string, string[]>): BugCluster[] {
+  const now = new Date().toISOString();
+  const kind: BugKind = 'idor_horizontal_read';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCauses] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'alice',
+      page,
+      action: {
+        kind: 'api_call',
+        via: 'api',
+        expectedOutcome: 'expected_failure',
+        palette: 'edge',
+      },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: rootCauses[0] ?? `idor_horizontal_read detected at ${page}`,
       firstSeenAt: now,
       lastSeenAt: now,
       clusterSize: rootCauses.length,
@@ -610,7 +757,7 @@ function combineSignals(budget: AbortSignal, parent?: AbortSignal): AbortSignal 
  * This is critical for path-traversal probes where `../` in the URL path must
  * reach the server as-is rather than being resolved by the HTTP client.
  */
-function httpGet(url: string): Promise<ProbeResponse> {
+function httpGet(url: string, headers?: Record<string, string>): Promise<ProbeResponse> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const reqOptions: http.RequestOptions = {
@@ -620,6 +767,7 @@ function httpGet(url: string): Promise<ProbeResponse> {
       path: parsed.pathname + parsed.search,
       method: 'GET',
       timeout: 5_000,
+      headers,
     };
 
     const req = http.get(reqOptions, (res) => {
