@@ -527,7 +527,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     // Resolve surface topology (v0.3 multi-surface or legacy single-surface shim).
     const topology = await resolveSurfaceTopology(surface);
 
-    await runMultiSurfacePipeline(
+    const surfacePipelineResults = await runMultiSurfacePipeline(
       surface,
       topology,
       resolved,
@@ -1047,6 +1047,12 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ? buildReadOnlyTelemetry(planSkipReasons, droppedSubsystems, readOnlyBanner ?? buildReadOnlyBanner())
       : undefined;
 
+    // #176: per-surface budget telemetry — only present when ≥2 surfaces ran.
+    const ranSurfaces = surfacePipelineResults.filter(r => !r.skipped);
+    const perSurfaceTelemetry: RunSummary['perSurface'] = ranSurfaces.length >= 2
+      ? ranSurfaces.map(r => ({ surfaceName: r.surfaceName, budgetMs: r.budgetMs, elapsedMs: r.elapsedMs ?? 0 }))
+      : undefined;
+
     runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
       testsPlanned: testCases.length,
       testsRan: results.length,
@@ -1064,6 +1070,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ...(multiContextTelemetry !== undefined ? { multiContext: multiContextTelemetry } : {}),
       ...(crossUserResult.idorTelemetry !== undefined ? { idor: crossUserResult.idorTelemetry } : {}),
       ...(browserPlatformTelemetry !== undefined ? { browserPlatform: browserPlatformTelemetry } : {}),
+      ...(perSurfaceTelemetry !== undefined ? { perSurface: perSurfaceTelemetry } : {}),
       suppressedClusters: suppressedCount,
       ...(suppressedSamples.length > 0 ? { suppressedSamples } : {}),
       ...(deterministicBlock !== undefined ? { deterministic: deterministicBlock } : {}),
@@ -1525,8 +1532,15 @@ function buildReadOnlyTelemetry(
  * v0.43+: Merge per-surface config overrides on top of the global config.
  * The merged config is passed to runDiscover/runPlan/runExecute for a specific surface.
  * Single-surface configs with no `config.surfaces` map fall through unchanged.
+ *
+ * @param budgetMsDefault - Optional computed budget (e.g. per-surface split). Applied only
+ *   when the surface has no explicit budgetMs override in config.surfaces.
  */
-export function mergePerSurfaceConfig(config: BugHunterConfig, surfaceName: string): BugHunterConfig {
+export function mergePerSurfaceConfig(
+  config: BugHunterConfig,
+  surfaceName: string,
+  budgetMsDefault?: number,
+): BugHunterConfig {
   const override = config.surfaces?.[surfaceName] ?? {};
   return {
     ...config,
@@ -1534,7 +1548,7 @@ export function mergePerSurfaceConfig(config: BugHunterConfig, surfaceName: stri
     roles: override.roles ?? config.roles,
     concurrency: override.concurrency ?? config.concurrency,
     apiConcurrency: override.apiConcurrency ?? config.apiConcurrency,
-    budgetMs: override.budgetMs ?? config.budgetMs,
+    budgetMs: override.budgetMs ?? budgetMsDefault ?? config.budgetMs,
     excludedRoutes: [...(config.excludedRoutes ?? []), ...(override.excludedRoutes ?? [])],
   };
 }
@@ -1578,6 +1592,10 @@ export type PerSurfaceRunResult = {
   surfaceName: string;
   summary: SurfaceSummary;
   skipped: boolean;
+  /** Allocated budget for this surface in ms. Absent when skipped. */
+  budgetMs?: number;
+  /** Actual wall-clock time spent running this surface's pipeline in ms. Absent when skipped. */
+  elapsedMs?: number;
 };
 
 /**
@@ -1600,6 +1618,13 @@ export async function runMultiSurfacePipeline(
 ): Promise<PerSurfaceRunResult[]> {
   const results: PerSurfaceRunResult[] = [];
 
+  // #176: divide the global budget equally across ready surfaces so the first surface
+  // cannot starve subsequent ones by consuming the full budget.
+  const readyCount = topology.surfaces.filter(s => s.state.kind === 'ready').length;
+  const perSurfaceBudgetMs = config.budgetMs !== undefined && readyCount > 1
+    ? Math.floor(config.budgetMs / readyCount)
+    : config.budgetMs;
+
   for (const summary of topology.surfaces) {
     if (summary.state.kind !== 'ready') {
       const phase = summary.state.kind === 'failed' ? summary.state.phase : summary.state.kind;
@@ -1612,14 +1637,25 @@ export async function runMultiSurfacePipeline(
     // race-runner (and any other per-surface path) dispatches against the correct port
     // (e.g. race-bad:9994) instead of the global appBaseUrl (self-spa:5790).
     const surfaceConfig = {
-      ...mergePerSurfaceConfig(config, summary.name),
+      ...mergePerSurfaceConfig(config, summary.name, perSurfaceBudgetMs),
       appBaseUrl: summary.baseUrl,
     };
     const boundAdapter = new BoundSurfaceMcpAdapter(surface, summary.name);
 
-    log.info('multi_surface: running pipeline for surface', { surface: summary.name });
+    const surfaceStartMs = Date.now();
+    log.info('multi_surface: running pipeline for surface', {
+      surface: summary.name,
+      budgetMs: surfaceConfig.budgetMs,
+    });
     await runPhaseForSurface(boundAdapter, surfaceConfig, summary.name);
-    results.push({ surfaceName: summary.name, summary, skipped: false });
+    const elapsedMs = Date.now() - surfaceStartMs;
+
+    log.info('multi_surface: surface complete', {
+      surface: summary.name,
+      elapsedMs,
+      budgetMs: surfaceConfig.budgetMs,
+    });
+    results.push({ surfaceName: summary.name, summary, skipped: false, budgetMs: surfaceConfig.budgetMs, elapsedMs });
   }
 
   return results;

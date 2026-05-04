@@ -53,6 +53,8 @@ export type TestCounters = {
   idor?: IdorTelemetry;
   /** v0.36: browser-platform probe telemetry — present when browserPlatform.enabled = true. */
   browserPlatform?: BrowserPlatformTelemetry;
+  /** #176: per-surface budget allocation telemetry — present on multi-surface runs (≥2 ready surfaces). */
+  perSurface?: RunSummary['perSurface'];
   /** v0.20: network-fault telemetry — present when networkFaults.enabled = true. */
   networkFaults?: NetworkFaultsTelemetry;
   /** v0.28: number of clusters suppressed by .bughunter/suppressions.json. */
@@ -157,6 +159,7 @@ export function runEmit(
     ...(counters?.idor !== undefined ? { idor: counters.idor } : {}),
     ...(counters?.clockTesting !== undefined ? { clockTesting: counters.clockTesting } : {}),
     ...(counters?.browserPlatform !== undefined ? { browserPlatform: counters.browserPlatform } : {}),
+    ...(counters?.perSurface !== undefined ? { perSurface: counters.perSurface } : {}),
     ...(counters?.networkFaults !== undefined ? { networkFaults: counters.networkFaults } : {}),
     ...(counters?.deterministic !== undefined ? { deterministic: counters.deterministic } : {}),
     ...(counters?.dataIntegrityEvaluations !== undefined ? { dataIntegrity: buildDataIntegritySummary(counters) } : {}),
@@ -241,6 +244,7 @@ export function runEmit(
 
   const perfLines = buildPerfSummaryLines(counters?.perfSummary);
   const bundleLines = buildBundleSummaryLines(counters?.bundleSummary);
+  const perSurfaceLines = buildPerSurfaceLines(counters?.perSurface);
 
   const lines = [
     `\n=== BugHunter Run ${runState.runId} ===`,
@@ -257,6 +261,7 @@ export function runEmit(
     ...Object.entries(byRole).map(([r, v]) => `  ${r}: ${v}`),
     ...perfLines,
     ...bundleLines,
+    ...perSurfaceLines,
     '',
     `Bugs: ${paths.bugsFile}`,
     `Summary: ${paths.summaryFile}`,
@@ -311,6 +316,17 @@ function buildDataIntegritySummary(counters: TestCounters): DataIntegritySummary
     violations,
     durationMsTotal,
   };
+}
+
+function buildPerSurfaceLines(perSurface: RunSummary['perSurface']): string[] {
+  if (perSurface === undefined || perSurface.length === 0) return [];
+  const lines = ['', 'Per-surface budget vs elapsed:'];
+  for (const s of perSurface) {
+    const budget = s.budgetMs !== undefined ? `${Math.round(s.budgetMs / 1000)}s` : 'unlimited';
+    const elapsed = `${Math.round(s.elapsedMs / 1000)}s`;
+    lines.push(`  ${s.surfaceName}: elapsed=${elapsed} budget=${budget}`);
+  }
+  return lines;
 }
 
 function buildBundleSummaryLines(bundle: RunSummary['bundleSummary']): string[] {
