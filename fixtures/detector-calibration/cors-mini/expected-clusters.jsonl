@@ -1,0 +1,7 @@
+{"kind":"permissive_cors","expect":"fires","minClusterSize":1,"match":{"page":"/wide-open"},"severity":"major"}
+{"kind":"permissive_cors","expect":"silent","reason":"ACAO:* without ACAC:true is safe (wildcard without credentials)","match":{"page":"/wildcard-no-creds"}}
+{"kind":"permissive_cors","expect":"silent","reason":"specific origin with credentials is the safe pattern","match":{"page":"/origin-with-creds"}}
+{"kind":"permissive_cors","expect":"silent","reason":"no CORS headers — same-origin only","match":{"page":"/no-cors"}}
+{"kind":"permissive_cors","expect":"silent","reason":"ACAC:false explicit — wildcard cannot expose credentials","match":{"page":"/wildcard-creds-false"},"edgeLabel":"acac-false-explicit"}
+{"kind":"permissive_cors","expect":"fires","minClusterSize":1,"match":{"page":"/error-with-bad-cors"},"severity":"major","edgeLabel":"5xx-response-still-detects-bad-cors"}
+{"kind":"permissive_cors","expect":"skipped","reason":"no_response"}

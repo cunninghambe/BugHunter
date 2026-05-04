@@ -1,0 +1,7 @@
+{
+  "fixture": "cors-mini",
+  "serves": ["permissive_cors"],
+  "port": 9943,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
