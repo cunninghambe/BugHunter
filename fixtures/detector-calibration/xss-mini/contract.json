@@ -1,0 +1,7 @@
+{
+  "fixture": "xss-mini",
+  "serves": ["xss_reflected"],
+  "port": 9971,
+  "boots": "bash bin/up.sh",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
