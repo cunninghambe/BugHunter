@@ -1,6 +1,6 @@
 {
   "fixture": "seo-mini",
-  "serves": ["seo_title_missing", "seo_meta_description_missing"],
+  "serves": ["seo_title_missing", "seo_meta_description_missing", "seo_canonical_missing"],
   "port": 9963,
   "boots": "node app/server.js",
   "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }

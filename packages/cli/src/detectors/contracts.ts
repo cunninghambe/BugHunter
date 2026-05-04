@@ -282,4 +282,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Detects HTML pages with no <meta name="description"> element or empty/whitespace content attribute.',
   },
+  {
+    kind: 'seo_canonical_missing',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'seo-mini',
+      servesKinds: ['seo_canonical_missing'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Detects HTML pages without <link rel="canonical"> when at least one other page in the corpus has one.',
+  },
 ];

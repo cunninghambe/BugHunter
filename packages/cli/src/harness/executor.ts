@@ -280,7 +280,8 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
 
     if (
       (contract.kind === 'seo_title_missing'
-        || contract.kind === 'seo_meta_description_missing')
+        || contract.kind === 'seo_meta_description_missing'
+        || contract.kind === 'seo_canonical_missing')
       && target.fixturePath !== undefined
     ) {
       const clusters = await runSeoHarness(
