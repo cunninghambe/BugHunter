@@ -1,0 +1,7 @@
+{
+  "fixture": "idor-mini",
+  "serves": ["idor_horizontal_read"],
+  "port": 9978,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

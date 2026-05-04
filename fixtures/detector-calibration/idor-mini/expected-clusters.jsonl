@@ -1,0 +1,4 @@
+{"kind":"idor_horizontal_read","expect":"fires","minClusterSize":1,"match":{"page":"/api/orders/","role":"alice"},"severity":"critical"}
+{"kind":"idor_horizontal_read","expect":"fires","minClusterSize":1,"match":{"page":"/api/users/","role":"alice"},"severity":"critical"}
+{"kind":"idor_horizontal_read","expect":"silent","reason":"alice reading her own order is a legitimate access — no IDOR","match":{"page":"/api/orders/alice-order-1","role":"alice"}}
+{"kind":"idor_horizontal_read","expect":"silent","reason":"unauthenticated request is rejected 401 before any IDOR can occur","match":{"role":"anonymous"}}
