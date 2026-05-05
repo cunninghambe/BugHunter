@@ -1,5 +1,7 @@
 // bughunter run — main run pipeline orchestrator.
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { loadConfig, resolvedConfig } from '../config.js';
 import { setIdFactory, createId, resetIdFactory } from '../lib/ids.js';
 import { makeClock, nowIso } from '../lib/clock.js';
@@ -63,6 +65,13 @@ export type RunOptions = {
   budget?: number;
   concurrency?: number;
   apiConcurrency?: number;
+  /**
+   * v0.50: minimum cluster confidence to surface in summary / bugs.jsonl.
+   * Default 'medium'. Low-confidence clusters are written to
+   * `bugs-low-confidence.jsonl` separately for triage. Use 'low' to include
+   * everything.
+   */
+  minConfidence?: 'high' | 'medium' | 'low';
   reset?: boolean;
   resume?: string;
   forceResume?: boolean;
@@ -1053,7 +1062,28 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       ? ranSurfaces.map(r => ({ surfaceName: r.surfaceName, budgetMs: r.budgetMs, elapsedMs: r.elapsedMs ?? 0 }))
       : undefined;
 
-    runEmit(clusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
+    // v0.50 confidence filter — split clusters into trusted (≥minConfidence)
+    // and low-confidence (below threshold). Low-confidence land in a separate
+    // file so users still have full visibility for triage but the default
+    // workflow (summary, --auto-fix, PR comment) only sees trusted clusters.
+    const minConfidence = (opts.minConfidence ?? 'medium') as 'high' | 'medium' | 'low';
+    const confRank = (c: 'high' | 'medium' | 'low' | undefined): number =>
+      c === 'low' ? 0 : c === 'medium' ? 1 : 2;
+    const minRank = confRank(minConfidence);
+    const lowConfidenceClusters = clusters.filter(c => confRank(c.confidence) < minRank);
+    const trustedClusters = clusters.filter(c => confRank(c.confidence) >= minRank);
+    if (lowConfidenceClusters.length > 0) {
+      const lowPath = path.join(opts.projectDir, '.bughunter', 'runs', runState.runId, 'bugs-low-confidence.jsonl');
+      const lowJsonl = lowConfidenceClusters.map(c => JSON.stringify(c)).join('\n') + '\n';
+      try {
+        fs.writeFileSync(lowPath, lowJsonl, 'utf8');
+        log.info(`emit: ${lowConfidenceClusters.length} low-confidence cluster(s) written to bugs-low-confidence.jsonl (below --min-confidence ${minConfidence})`);
+      } catch (err) {
+        log.warn(`emit: failed to write low-confidence clusters: ${String(err)}`);
+      }
+    }
+
+    runEmit(trustedClusters, infraFailures, runState, projectedRuntimeMs, actualRuntimeMs, {
       testsPlanned: testCases.length,
       testsRan: results.length,
       testsSkipped: testCases.length - results.length,

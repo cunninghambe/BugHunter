@@ -64,10 +64,10 @@ describe('isMutatorValidationRejection', () => {
     expect(isMutatorValidationRejection(tc, result)).toBe(false);
   });
 
-  it('real link (no fuzzMeta, palette happy) + 400 + ZodError → false (still fires)', () => {
+  it('happy palette + 400 + ZodError → true (probe input was incomplete; not an app bug — Spoonworks calibration FP class May 2026)', () => {
     const tc = makeTc('happy');
     const result = makeResult(400, { issues: [{ message: 'Required' }] });
-    expect(isMutatorValidationRejection(tc, result)).toBe(false);
+    expect(isMutatorValidationRejection(tc, result)).toBe(true);
   });
 
   it('header x-error-type: validation with 400 → true', () => {

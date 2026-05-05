@@ -604,18 +604,19 @@ function isMutatingTestCase(tc: TestCase, toolMap: Map<string, ToolMeta> | undef
 }
 
 /**
- * Returns true when a 4xx response is an expected validation rejection of mutator-generated
+ * Returns true when a 4xx response is an expected validation rejection of probe-generated
  * bad inputs — not a real bug. 5xx responses and empty bodies are never suppressed.
+ *
+ * Applies to BOTH mutator palettes (fuzz/null/edge/out_of_bounds, where input was
+ * deliberately bad) AND happy palettes when the synthesized happy input was just
+ * incomplete enough that a real Zod schema rejected it. Spoonworks calibration
+ * (May 2026) showed many happy probes hitting `field is required` validation
+ * because the probe input doesn't include every required field — that's a probe
+ * coverage gap, not an app bug.
+ *
  * @internal exported for unit tests only
  */
 export function isMutatorValidationRejection(tc: TestCase, callResult: SurfaceCallResult): boolean {
-  const fromMutator = tc.fuzzMeta !== undefined
-    || tc.action.palette === 'fuzz'
-    || tc.action.palette === 'null'
-    || tc.action.palette === 'edge'
-    || tc.action.palette === 'out_of_bounds';
-  if (!fromMutator) return false;
-
   const status = callResult.status ?? 0;
   if (status < 400 || status >= 500) return false;
 
@@ -624,15 +625,34 @@ export function isMutatorValidationRejection(tc: TestCase, callResult: SurfaceCa
   const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
   if (bodyStr.trim().length === 0) return false;
 
-  // ZodError shape
-  if (typeof body === 'object' && 'issues' in body && Array.isArray((body as Record<string, unknown>).issues)) {
-    return true;
+  // ZodError shape — either `issues` (parse error) or `error.formErrors`/
+  // `error.fieldErrors` (Zod's flatten() output, which Spoonworks-style
+  // routes return).
+  if (typeof body === 'object' && body !== null) {
+    const rec = body as Record<string, unknown>;
+    if ('issues' in rec && Array.isArray(rec.issues)) return true;
+    // Nested error.formErrors / error.fieldErrors (Zod flatten)
+    if ('error' in rec && typeof rec.error === 'object' && rec.error !== null) {
+      const err = rec.error as Record<string, unknown>;
+      if (Array.isArray(err.formErrors) || (err.fieldErrors !== undefined && err.fieldErrors !== null && typeof err.fieldErrors === 'object')) {
+        return true;
+      }
+    }
+    // Top-level formErrors / fieldErrors
+    if (Array.isArray(rec.formErrors) || (rec.fieldErrors !== undefined && rec.fieldErrors !== null && typeof rec.fieldErrors === 'object')) {
+      return true;
+    }
+    // Generic validation message
+    if ('error' in rec) {
+      const errStr = String(rec.error).toLowerCase();
+      if (errStr.includes('valid') || errStr.includes('invalid') || errStr.includes('bad request') || errStr.includes('zod') || errStr.includes('required')) return true;
+    }
+    if ('message' in rec) {
+      const msgStr = String(rec.message).toLowerCase();
+      if (msgStr.includes('valid') || msgStr.includes('required') || msgStr.includes('zod')) return true;
+    }
   }
-  // Generic validation message in JSON
-  if (typeof body === 'object' && 'error' in body) {
-    const errStr = String((body as Record<string, unknown>).error).toLowerCase();
-    if (errStr.includes('valid') || errStr.includes('invalid') || errStr.includes('bad request') || errStr.includes('zod')) return true;
-  }
+
   // Header signals
   const headers: Record<string, string> = callResult.headers ?? {};
   const lowerHeaders: Record<string, string> = Object.fromEntries(
@@ -1569,20 +1589,39 @@ async function executeApiTest(
         }
       }
 
-      // XSS reflection check
+      // XSS reflection check.
+      // Only meaningful when the response renders as HTML — for an
+      // application/json response the browser never parses any literal
+      // `<script>` text in the body as a script. Responses to fuzz/edge
+      // inputs frequently echo the payload via Zod-style validation error
+      // messages, which produced FP `xss_reflected` clusters before this
+      // gate (see Spoonworks calibration, May 2026).
       if (tc.action.injectionNonce !== undefined) {
         const nonce = tc.action.injectionNonce;
-        const bodyStr = typeof callResult.body === 'string'
-          ? callResult.body
-          : JSON.stringify(callResult.body ?? '');
-        const xssDetection = detectXssReflection(bodyStr, nonce, tc.page, callToolId ?? callToolName ?? '', 'json_body');
-        if (xssDetection !== null) bugs.push(xssDetection);
+        const contentType = (callResult.headers?.['content-type'] ?? callResult.headers?.['Content-Type'] ?? '').toLowerCase();
+        const isJsonResponse = contentType.includes('application/json')
+          || (callResult.body !== undefined && callResult.body !== null && typeof callResult.body === 'object');
+        if (!isJsonResponse) {
+          const bodyStr = typeof callResult.body === 'string'
+            ? callResult.body
+            : JSON.stringify(callResult.body ?? '');
+          const xssDetection = detectXssReflection(bodyStr, nonce, tc.page, callToolId ?? callToolName ?? '', 'json_body');
+          if (xssDetection !== null) bugs.push(xssDetection);
+        }
       }
 
       // surface_call_failed
       if (callResult.ok !== true && tc.action.palette === 'happy') {
         const status = callResult.status ?? 0;
-        if (status >= 400 && status < 500) {
+        // Anonymous (and other non-authorized roles) hitting an admin
+        // endpoint and getting 401/403 is the correct security response, not
+        // a "surface call failed". A separate auth_bypass_via_unauthed_route
+        // detector handles the inverse (anon getting 200 on admin), and
+        // network_4xx_unexpected handles 401/403 against authorized roles.
+        // Spoonworks calibration (May 2026): surfaces lots of 401s on anon's
+        // happy probes against /api/admin/*.
+        const isAnonymous = tc.role === 'anonymous' || tc.role === 'anon';
+        if (status >= 400 && status < 500 && !((status === 401 || status === 403) && isAnonymous)) {
           if (!isMutatorValidationRejection(tc, callResult)) {
             const meta = callToolId !== undefined ? toolMap?.get(callToolId) : undefined;
             const endpoint = meta !== undefined
@@ -1591,12 +1630,25 @@ async function executeApiTest(
             if (meta === undefined) {
               log.debug(`toolMap miss for toolId ${callToolId ?? callToolName}; using bare id as endpoint`);
             }
+            // 404s on happy probes with empty/placeholder inputs are usually
+            // probe-coverage gaps (no real :id was discovered), not app bugs.
+            // Mark as low confidence so the default --min-confidence=medium
+            // gate hides them but they remain in bugs-low-confidence.jsonl
+            // for triage. Spoonworks calibration (May 2026).
+            const inputObj = (tc.action.input ?? {}) as Record<string, unknown>;
+            const probeInputLooksSynthetic =
+              Object.keys(inputObj).length === 0 ||
+              Object.values(inputObj).some(v =>
+                typeof v === 'string' && (v === '' || /^test value$|^test\.local|^aaaa+$/i.test(v))
+              );
+            const isLikelyProbeGap = status === 404 && probeInputLooksSynthetic;
             bugs.push({
               kind: 'surface_call_failed',
               rootCause: `surface_call failed with status ${status} for tool ${callToolId ?? callToolName}`,
               endpoint,
               status,
               responseBodyShape: callResult.error?.message,
+              confidence: isLikelyProbeGap ? 'low' : 'high',
             });
           }
         }
@@ -1727,6 +1779,11 @@ function detectXssReflection(
     pageRoute: pageRoute !== '' ? pageRoute : undefined,
     endpoint: endpoint !== '' ? endpoint : undefined,
     xssContext,
+    // Reflected-script in real HTML is high; reflected-attr / reflected-html
+    // are still strong signals but more prone to FPs in odd contexts (e.g.
+    // attribute-encoded text content). injectionPoint==='json_body' should
+    // never reach here post-fix (caller skips JSON responses).
+    confidence: sink === 'reflected_script' ? 'high' : 'medium',
   };
 }
 

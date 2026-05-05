@@ -107,7 +107,17 @@ export function runCluster(opts: ClusterOptions): ClusterResult {
           ? computeBugIdentity(opts.projectName, sig)
           : undefined,
         surface: SURFACE_AGNOSTIC_KINDS.includes(detection.kind) ? undefined : detection.surface,
+        confidence: detection.confidence ?? 'high',
       });
+    }
+    // Cluster confidence = max across detections (high > medium > low).
+    // A single high-confidence detection promotes the cluster.
+    const cluster0 = clusterMap.get(sig);
+    if (cluster0 !== undefined) {
+      const dc = detection.confidence ?? 'high';
+      const cc = cluster0.confidence ?? 'high';
+      const rank = (c: 'high' | 'medium' | 'low'): number => c === 'high' ? 2 : c === 'medium' ? 1 : 0;
+      if (rank(dc) > rank(cc)) cluster0.confidence = dc;
     }
 
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- set just above or on previous iteration; cannot be absent here

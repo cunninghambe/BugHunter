@@ -80,21 +80,51 @@ export function classifyNetworkRequests(
         ((req.status === 401 || req.status === 403) && authorizedRole);
 
       if (isUnexpected) {
-        bugs.push({
-          kind: 'network_4xx_unexpected',
-          rootCause: `Unexpected HTTP ${req.status} from ${req.method} ${req.path}`,
-          status: req.status,
-          endpoint: `${req.method} ${normalizePath(req.path)}`,
-          responseBodyShape: req.responseBodySnippet,
-        });
+        // Suppress when the response body is a Zod / validation-rejection shape.
+        const snippet = req.responseBodySnippet ?? '';
+        const isValidationRejection =
+          snippet.includes('"fieldErrors"') ||
+          snippet.includes('"formErrors"') ||
+          snippet.includes('"issues"') ||
+          /\b(invalid|required|expected.+received|zod)\b/i.test(snippet);
+        if (!isValidationRejection) {
+          // 422 ("Unprocessable Entity") is by HTTP spec a validation failure.
+          // When happy probes against admin POSTs return 422 the cause is
+          // almost always incomplete synthesised input — not an app bug.
+          // Mark 422 as low confidence regardless of body snippet (which may
+          // not be captured in some code paths). Other 4xx stay medium.
+          // Spoonworks calibration (May 2026).
+          const confidence: 'high' | 'medium' | 'low' = req.status === 422 ? 'low' : 'medium';
+          bugs.push({
+            kind: 'network_4xx_unexpected',
+            rootCause: `Unexpected HTTP ${req.status} from ${req.method} ${req.path}`,
+            status: req.status,
+            endpoint: `${req.method} ${normalizePath(req.path)}`,
+            responseBodyShape: req.responseBodySnippet,
+            confidence,
+          });
+        }
       }
     }
 
-    if (req.status === 404 && !isMutatorSyntheticPath(req.path) && !isDevServerPath(req.path)) {
+    // Suppress 404_for_linked_route when the test deliberately injects a probe
+    // expected to fail (edge / null / fuzz / out_of_bounds palettes set
+    // expectedOutcome='expected_failure'). The 404 IS the expected response
+    // there — not a real broken link. Spoonworks calibration (May 2026)
+    // surfaced two such FPs.
+    if (
+      req.status === 404
+      && expectedOutcome !== 'expected_failure'
+      && !isMutatorSyntheticPath(req.path)
+      && !isDevServerPath(req.path)
+    ) {
       bugs.push({
         kind: '404_for_linked_route',
         rootCause: `Page links to ${req.path} which returned 404`,
         targetPath: req.path,
+        // High confidence: a real page-emitted link returning 404 is a
+        // deterministic broken link.
+        confidence: 'high',
       });
     }
   }
