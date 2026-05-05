@@ -32,6 +32,16 @@ jobs:
         run: npm ci
         working-directory: /tmp/bench
 
+      # bughunter init each bench app first — calibrate fails without a
+      # .bughunter/config.json. The bench repo doesn't pre-commit these files.
+      - name: Init bench apps
+        run: |
+          for app in vibe-todo vite-shop vue-board next-blog astro-saas; do
+            if [ ! -f /tmp/bench/apps/$app/.bughunter/config.json ]; then
+              (cd /tmp/bench/apps/$app && node $GITHUB_WORKSPACE/packages/cli/dist/cli/main.js init --no-interactive --project-name "$app" || true)
+            fi
+          done
+
       # Use --out instead of stdout redirect — bench-app boot scripts inherit
       # the calibrate process's stdout (e.g. "npm run dev" logs), so a
       # `--json > file.json` redirect captures both calibrate JSON and
