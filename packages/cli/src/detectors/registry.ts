@@ -1132,6 +1132,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Orphaned records detected after mutation (e.g. child records with deleted parent).',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'money_math_precision',
@@ -1183,6 +1184,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Soft-deleted record still visible via read query.',
     defaultSeverity: 'major',
+    harness: true,
   },
 
   // — § v0.41 mobile / responsive kinds (wired) —

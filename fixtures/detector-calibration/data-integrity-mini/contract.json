@@ -1,0 +1,7 @@
+{
+  "fixture": "data-integrity-mini",
+  "serves": ["data_integrity_orphan", "soft_delete_consistency"],
+  "port": 9803,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

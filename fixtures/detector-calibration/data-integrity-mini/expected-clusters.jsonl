@@ -1,0 +1,6 @@
+{"kind":"data_integrity_orphan","expect":"fires","minClusterSize":1,"match":{"page":"/api/orphan-broken/delete-parent"},"severity":"major"}
+{"kind":"data_integrity_orphan","expect":"silent","reason":"cascade-delete clears children — no orphans","match":{"page":"/api/orphan-cascade/delete-parent"}}
+{"kind":"data_integrity_orphan","expect":"skipped","reason":"no_response"}
+{"kind":"soft_delete_consistency","expect":"fires","minClusterSize":1,"match":{"page":"/api/soft-delete-inconsistent/delete"},"severity":"major"}
+{"kind":"soft_delete_consistency","expect":"silent","reason":"list endpoint correctly filters soft-deleted items","match":{"page":"/api/soft-delete-consistent/delete"}}
+{"kind":"soft_delete_consistency","expect":"skipped","reason":"no_response"}

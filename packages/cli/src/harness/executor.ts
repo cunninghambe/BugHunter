@@ -282,6 +282,32 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'data_integrity_orphan' && target.fixturePath !== undefined) {
+      const clusters = await runDataIntegrityOrphanHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
+    if (contract.kind === 'soft_delete_consistency' && target.fixturePath !== undefined) {
+      const clusters = await runSoftDeleteConsistencyHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'audit_log_missing_for_mutation' && target.fixturePath !== undefined) {
       const clusters = await runAuditLogMissingHarness(
         target.appBaseUrl,
@@ -2132,6 +2158,172 @@ async function runI18nTextStaticHarness(
     });
   }
 
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// data_integrity_orphan + soft_delete_consistency runners.
+// Per-kind: trigger a mutation and observe a downstream read endpoint.
+// ---------------------------------------------------------------------------
+
+async function runDataIntegrityOrphanHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('data_integrity_orphan: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      // Reset state
+      await httpPost(`${appBaseUrl}/__bughunter_reset`, '').catch(() => {});
+
+      // Trigger the mutation
+      const status = await bareRequest(`${appBaseUrl}${route}`, 'POST');
+      if (status === 0) continue;
+
+      // Derive the read endpoint: /api/orphan-broken/delete-parent → /api/orphan-broken
+      const segments = route.split('/');
+      if (segments.length < 3) continue;
+      const readPath = `/${segments[1]}/${segments[2]}`;
+      const readResp = await httpGet(`${appBaseUrl}${readPath}`).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (readResp.status === 0) continue;
+      try {
+        const data = JSON.parse(readResp.body) as { orphans?: unknown[] };
+        if (Array.isArray(data.orphans) && data.orphans.length > 0) {
+          detectionsByPage.set(route, `Mutating ${route} left ${data.orphans.length} orphan child rows referenced by ${readPath}`);
+        }
+      } catch { /* ignore parse error */ }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'data_integrity_orphan';
+  const clusters: BugCluster[] = [];
+  for (const [page, rootCause] of detectionsByPage) {
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [{
+        occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+        role: 'anonymous',
+        page,
+        action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+        fullArtifacts: false as const,
+        timestamp: now,
+      }],
+      suspectedFiles: [],
+      fixHints: ['Cascade-delete or restrict-delete child rows when parent is removed'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
+    });
+  }
+  return clusters;
+}
+
+async function runSoftDeleteConsistencyHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('soft_delete_consistency: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      await httpPost(`${appBaseUrl}/__bughunter_reset`, '').catch(() => {});
+
+      const status = await bareRequest(`${appBaseUrl}${route}`, 'POST');
+      if (status === 0) continue;
+
+      // Derive list endpoint: /api/soft-delete-inconsistent/delete → /api/soft-delete-inconsistent/list
+      const segments = route.split('/');
+      if (segments.length < 4) continue;
+      const listPath = `/${segments[1]}/${segments[2]}/list`;
+      const listResp = await httpGet(`${appBaseUrl}${listPath}`).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (listResp.status === 0) continue;
+      try {
+        const data = JSON.parse(listResp.body) as { items?: Array<{ deletedAt?: number | null }> };
+        const inconsistent = (data.items ?? []).find(it => it.deletedAt !== null && it.deletedAt !== undefined);
+        if (inconsistent !== undefined) {
+          detectionsByPage.set(route, `${route}: soft-deleted item still appears in ${listPath} response (deletedAt set but item not filtered)`);
+        }
+      } catch { /* ignore */ }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'soft_delete_consistency';
+  const clusters: BugCluster[] = [];
+  for (const [page, rootCause] of detectionsByPage) {
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [{
+        occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+        role: 'anonymous',
+        page,
+        action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+        fullArtifacts: false as const,
+        timestamp: now,
+      }],
+      suspectedFiles: [],
+      fixHints: ['Filter rows where deletedAt IS NOT NULL on read paths after soft-delete'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
+    });
+  }
   return clusters;
 }
 
