@@ -1,0 +1,8 @@
+{
+  "fixture": "money-math-mini",
+  "serves": ["money_math_precision"],
+  "port": null,
+  "boots": "bash bin/up.sh",
+  "scanTarget": "generated/",
+  "resetCommand": { "kind": "script", "path": "bin/reset.sh" }
+}

@@ -1142,6 +1142,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Floating-point precision loss in monetary calculation.',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'cache_staleness',
