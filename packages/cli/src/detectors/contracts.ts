@@ -810,4 +810,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Triggers a soft-delete mutation, then GETs the corresponding /list endpoint; fires when the response still contains items whose deletedAt is set.',
   },
+  {
+    kind: 'auth_session_fixation',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'session-fixation-mini',
+      servesKinds: ['auth_session_fixation'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Two-step probe: GET login route (pre-login cookie), POST creds (post-login cookie). Fires when the primary session cookie value is unchanged across the login boundary.',
+  },
 ];

@@ -282,6 +282,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'auth_session_fixation' && target.fixturePath !== undefined) {
+      const clusters = await runSessionFixationHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'data_integrity_orphan' && target.fixturePath !== undefined) {
       const clusters = await runDataIntegrityOrphanHarness(
         target.appBaseUrl,
@@ -2158,6 +2171,137 @@ async function runI18nTextStaticHarness(
     });
   }
 
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// auth_session_fixation runner.
+// Two-step probe: GET /login-route (capture pre-login session cookie),
+// then POST /login-route with creds (capture post-login cookie). Fires
+// when the primary session cookie value is unchanged across the boundary.
+// ---------------------------------------------------------------------------
+
+const SESSION_COOKIE_NAMES = ['sessionid', 'sid', 'session', 'connect.sid', 'PHPSESSID'];
+
+function pickSessionCookie(setCookies: string[]): { name: string; value: string } | null {
+  for (const raw of setCookies) {
+    const eq = raw.indexOf('=');
+    if (eq === -1) continue;
+    const name = raw.slice(0, eq).trim();
+    const semi = raw.indexOf(';', eq);
+    const value = (semi === -1 ? raw.slice(eq + 1) : raw.slice(eq + 1, semi)).trim();
+    if (SESSION_COOKIE_NAMES.some(p => name.toLowerCase() === p.toLowerCase())) {
+      return { name, value };
+    }
+  }
+  return null;
+}
+
+function loginPostJson(url: string, body: string): Promise<{ status: number; setCookies: string[] }> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(url);
+      const req = http.request({
+        hostname: parsed.hostname,
+        port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
+        path: parsed.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        timeout: 5_000,
+      }, (res) => {
+        const setCookieRaw = res.headers['set-cookie'];
+        const setCookies: string[] = Array.isArray(setCookieRaw) ? setCookieRaw : typeof setCookieRaw === 'string' ? [setCookieRaw] : [];
+        res.on('data', () => {});
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, setCookies }));
+        res.on('error', () => resolve({ status: 0, setCookies: [] }));
+      });
+      req.on('timeout', () => { req.destroy(); resolve({ status: 0, setCookies: [] }); });
+      req.on('error', () => resolve({ status: 0, setCookies: [] }));
+      req.write(body);
+      req.end();
+    } catch {
+      resolve({ status: 0, setCookies: [] });
+    }
+  });
+}
+
+async function runSessionFixationHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('auth_session_fixation: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+
+      // GET first — capture pre-login session cookie.
+      const preResp = await fetchSetCookieHeaders(url);
+      if (preResp.status === 0) continue;
+      const preCookie = pickSessionCookie(preResp.setCookies);
+      if (preCookie === null) continue; // no session cookie issued — token-auth or unrelated route
+
+      // POST creds.
+      const postResp = await loginPostJson(url, JSON.stringify({ email: 'a@b.com', password: 'pw' }));
+      if (postResp.status === 0) continue;
+      const postCookie = pickSessionCookie(postResp.setCookies);
+      if (postCookie === null) continue;
+
+      if (preCookie.name === postCookie.name && preCookie.value === postCookie.value) {
+        detectionsByPage.set(route, `Session cookie '${preCookie.name}' did not change after login on ${route} — pre-login value reused (fixation)`);
+        log.info('auth_session_fixation: detection', { route, cookie: preCookie.name });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'auth_session_fixation';
+  const clusters: BugCluster[] = [];
+  for (const [page, rootCause] of detectionsByPage) {
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [{
+        occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+        role: 'anonymous',
+        page,
+        action: { kind: 'api_call', via: 'api', expectedOutcome: 'expected_failure', palette: 'edge' },
+        fullArtifacts: false as const,
+        timestamp: now,
+      }],
+      suspectedFiles: [],
+      fixHints: ['Rotate (regenerate) the session ID inside the login handler after credentials are validated'],
+      thirdPartyOrGenerated: false,
+      severity: 'critical',
+    });
+  }
   return clusters;
 }
 

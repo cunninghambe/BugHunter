@@ -1,0 +1,7 @@
+{
+  "fixture": "session-fixation-mini",
+  "serves": ["auth_session_fixation"],
+  "port": 9793,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

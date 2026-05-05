@@ -1,0 +1,5 @@
+{"kind":"auth_session_fixation","expect":"fires","minClusterSize":1,"match":{"page":"/login-fixated"},"severity":"critical"}
+{"kind":"auth_session_fixation","expect":"silent","reason":"server rotates sessionid value on successful login","match":{"page":"/login-rotated"}}
+{"kind":"auth_session_fixation","expect":"silent","reason":"login uses token-only auth — no session cookie to fixate","match":{"page":"/login-token-only"},"edgeLabel":"token-only-no-cookie"}
+{"kind":"auth_session_fixation","expect":"fires","minClusterSize":1,"match":{"page":"/login-secondary-cookie"},"severity":"critical","edgeLabel":"primary-reused-secondary-rotated"}
+{"kind":"auth_session_fixation","expect":"skipped","reason":"no_response"}

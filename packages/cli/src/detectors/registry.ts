@@ -497,6 +497,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V07_AUTH_FLOWS.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'password_reset_token_reuse',
