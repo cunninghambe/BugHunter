@@ -32,12 +32,16 @@ jobs:
         run: npm ci
         working-directory: /tmp/bench
 
+      # Use --out instead of stdout redirect — bench-app boot scripts inherit
+      # the calibrate process's stdout (e.g. "npm run dev" logs), so a
+      # `--json > file.json` redirect captures both calibrate JSON and
+      # subprocess noise into the same file. --out writes only the report.
       - name: Calibrate vibe-todo
         run: |
           node packages/cli/dist/cli/main.js calibrate \
             --app /tmp/bench/apps/vibe-todo \
             --enforce-thresholds \
-            --json > /tmp/calibration-vibe-todo.json || EXIT_VIBE_TODO=$?
+            --out /tmp/calib-vibe-todo || EXIT_VIBE_TODO=$?
           echo "vibe-todo exit: ${EXIT_VIBE_TODO:-0}"
 
       - name: Calibrate vite-shop
@@ -45,7 +49,7 @@ jobs:
           node packages/cli/dist/cli/main.js calibrate \
             --app /tmp/bench/apps/vite-shop \
             --enforce-thresholds \
-            --json > /tmp/calibration-vite-shop.json || EXIT_VITE_SHOP=$?
+            --out /tmp/calib-vite-shop || EXIT_VITE_SHOP=$?
           echo "vite-shop exit: ${EXIT_VITE_SHOP:-0}"
 
       - name: Calibrate vue-board
@@ -53,7 +57,7 @@ jobs:
           node packages/cli/dist/cli/main.js calibrate \
             --app /tmp/bench/apps/vue-board \
             --enforce-thresholds \
-            --json > /tmp/calibration-vue-board.json || EXIT_VUE_BOARD=$?
+            --out /tmp/calib-vue-board || EXIT_VUE_BOARD=$?
           echo "vue-board exit: ${EXIT_VUE_BOARD:-0}"
 
       - name: Calibrate next-blog
@@ -61,7 +65,7 @@ jobs:
           node packages/cli/dist/cli/main.js calibrate \
             --app /tmp/bench/apps/next-blog \
             --enforce-thresholds \
-            --json > /tmp/calibration-next-blog.json || EXIT_NEXT_BLOG=$?
+            --out /tmp/calib-next-blog || EXIT_NEXT_BLOG=$?
           echo "next-blog exit: ${EXIT_NEXT_BLOG:-0}"
 
       - name: Calibrate astro-saas
@@ -69,17 +73,17 @@ jobs:
           node packages/cli/dist/cli/main.js calibrate \
             --app /tmp/bench/apps/astro-saas \
             --enforce-thresholds \
-            --json > /tmp/calibration-astro-saas.json || EXIT_ASTRO_SAAS=$?
+            --out /tmp/calib-astro-saas || EXIT_ASTRO_SAAS=$?
           echo "astro-saas exit: ${EXIT_ASTRO_SAAS:-0}"
 
       - name: Aggregate calibration reports
         run: |
           node scripts/aggregate-calibration.mjs \
-            /tmp/calibration-vibe-todo.json \
-            /tmp/calibration-vite-shop.json \
-            /tmp/calibration-vue-board.json \
-            /tmp/calibration-next-blog.json \
-            /tmp/calibration-astro-saas.json \
+            /tmp/calib-vibe-todo/calibration-report.json \
+            /tmp/calib-vite-shop/calibration-report.json \
+            /tmp/calib-vue-board/calibration-report.json \
+            /tmp/calib-next-blog/calibration-report.json \
+            /tmp/calib-astro-saas/calibration-report.json \
             > /tmp/aggregate.json
 
       - name: Upload calibration artifacts
