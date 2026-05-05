@@ -1,0 +1,7 @@
+{
+  "fixture": "perf-deferred-mini",
+  "serves": ["unbounded_list_render","oversized_bundle","excessive_re_renders","memory_leak_suspected","memory_leak_attributed"],
+  "port": 9543,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

@@ -1,0 +1,15 @@
+{"kind":"unbounded_list_render","expect":"fires","minClusterSize":1,"match":{"page":"/unbounded-list-fires"},"severity":"major"}
+{"kind":"unbounded_list_render","expect":"silent","reason":"no sentinel pushed","match":{"page":"/unbounded-list-silent"}}
+{"kind":"unbounded_list_render","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"oversized_bundle","expect":"fires","minClusterSize":1,"match":{"page":"/oversized-bundle-fires"},"severity":"major"}
+{"kind":"oversized_bundle","expect":"silent","reason":"no sentinel pushed","match":{"page":"/oversized-bundle-silent"}}
+{"kind":"oversized_bundle","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"excessive_re_renders","expect":"fires","minClusterSize":1,"match":{"page":"/excessive-renders-fires"},"severity":"minor"}
+{"kind":"excessive_re_renders","expect":"silent","reason":"no sentinel pushed","match":{"page":"/excessive-renders-silent"}}
+{"kind":"excessive_re_renders","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"memory_leak_suspected","expect":"fires","minClusterSize":1,"match":{"page":"/memory-leak-suspected-fires"},"severity":"major"}
+{"kind":"memory_leak_suspected","expect":"silent","reason":"no sentinel pushed","match":{"page":"/memory-leak-suspected-silent"}}
+{"kind":"memory_leak_suspected","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"memory_leak_attributed","expect":"fires","minClusterSize":1,"match":{"page":"/memory-leak-attributed-fires"},"severity":"major"}
+{"kind":"memory_leak_attributed","expect":"silent","reason":"no sentinel pushed","match":{"page":"/memory-leak-attributed-silent"}}
+{"kind":"memory_leak_attributed","expect":"skipped","reason":"browser_mcp_unavailable"}

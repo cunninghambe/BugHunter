@@ -1,0 +1,7 @@
+{
+  "fixture": "agent-runner-mini",
+  "serves": ["agent_response_hallucinated","agent_action_timeout","streaming_response_truncated","tool_call_failure_unhandled","agent_cost_per_turn_high"],
+  "port": 9533,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

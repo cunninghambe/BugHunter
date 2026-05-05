@@ -1,0 +1,12 @@
+{"kind":"viewport_100vh_break","expect":"fires","minClusterSize":1,"match":{"page":"/viewport-vh-fires"},"severity":"minor"}
+{"kind":"viewport_100vh_break","expect":"silent","reason":"no sentinel pushed","match":{"page":"/viewport-vh-silent"}}
+{"kind":"viewport_100vh_break","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"soft_keyboard_occlusion","expect":"fires","minClusterSize":1,"match":{"page":"/soft-keyboard-fires"},"severity":"minor"}
+{"kind":"soft_keyboard_occlusion","expect":"silent","reason":"no sentinel pushed","match":{"page":"/soft-keyboard-silent"}}
+{"kind":"soft_keyboard_occlusion","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"orientation_change_layout_break","expect":"fires","minClusterSize":1,"match":{"page":"/orientation-break-fires"},"severity":"minor"}
+{"kind":"orientation_change_layout_break","expect":"silent","reason":"no sentinel pushed","match":{"page":"/orientation-break-silent"}}
+{"kind":"orientation_change_layout_break","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"pull_to_refresh_conflict","expect":"fires","minClusterSize":1,"match":{"page":"/pull-refresh-fires"},"severity":"minor"}
+{"kind":"pull_to_refresh_conflict","expect":"silent","reason":"no sentinel pushed","match":{"page":"/pull-refresh-silent"}}
+{"kind":"pull_to_refresh_conflict","expect":"skipped","reason":"browser_mcp_unavailable"}

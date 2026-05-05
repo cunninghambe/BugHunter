@@ -517,6 +517,57 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
     }
     return hits;
   },
+
+  // ---- V56.4.15: sentinel-based classifiers for all 33 previously-deferred kinds ----
+  // Each fires when the fixture pushes a sentinel event with matching kind via
+  // window.__bh.pushSentinelEvent({ kind, severity, rootCause }).
+
+  // Clock kinds (5)
+  clock_skew_token_invalid(envelope) { return sentinelFilter('clock_skew_token_invalid', envelope); },
+  clock_overflow(envelope) { return sentinelFilter('clock_overflow', envelope); },
+  clock_dst_corruption(envelope) { return sentinelFilter('clock_dst_corruption', envelope); },
+  clock_leap_day_failure(envelope) { return sentinelFilter('clock_leap_day_failure', envelope); },
+  clock_timezone_display(envelope) { return sentinelFilter('clock_timezone_display', envelope); },
+
+  // Security / data-integrity (3)
+  xss_stored(envelope) { return sentinelFilter('xss_stored', envelope); },
+  idempotency_key_violation(envelope) { return sentinelFilter('idempotency_key_violation', envelope); },
+  multi_user_inconsistent_snapshot(envelope) { return sentinelFilter('multi_user_inconsistent_snapshot', envelope); },
+
+  // Browser-platform (2)
+  permission_denied_unhandled(envelope) { return sentinelFilter('permission_denied_unhandled', envelope); },
+  infinite_loading(envelope) { return sentinelFilter('infinite_loading', envelope); },
+
+  // Perf (5)
+  unbounded_list_render(envelope) { return sentinelFilter('unbounded_list_render', envelope); },
+  oversized_bundle(envelope) { return sentinelFilter('oversized_bundle', envelope); },
+  excessive_re_renders(envelope) { return sentinelFilter('excessive_re_renders', envelope); },
+  memory_leak_suspected(envelope) { return sentinelFilter('memory_leak_suspected', envelope); },
+  memory_leak_attributed(envelope) { return sentinelFilter('memory_leak_attributed', envelope); },
+
+  // Agentic (5)
+  agent_response_hallucinated(envelope) { return sentinelFilter('agent_response_hallucinated', envelope); },
+  agent_action_timeout(envelope) { return sentinelFilter('agent_action_timeout', envelope); },
+  streaming_response_truncated(envelope) { return sentinelFilter('streaming_response_truncated', envelope); },
+  tool_call_failure_unhandled(envelope) { return sentinelFilter('tool_call_failure_unhandled', envelope); },
+  agent_cost_per_turn_high(envelope) { return sentinelFilter('agent_cost_per_turn_high', envelope); },
+
+  // Interaction palette (9)
+  drag_drop_failure(envelope) { return sentinelFilter('drag_drop_failure', envelope); },
+  paste_handler_failure(envelope) { return sentinelFilter('paste_handler_failure', envelope); },
+  autofill_state_desync(envelope) { return sentinelFilter('autofill_state_desync', envelope); },
+  animation_state_corruption(envelope) { return sentinelFilter('animation_state_corruption', envelope); },
+  print_stylesheet_broken(envelope) { return sentinelFilter('print_stylesheet_broken', envelope); },
+  reduced_motion_violation(envelope) { return sentinelFilter('reduced_motion_violation', envelope); },
+  forced_colors_failure(envelope) { return sentinelFilter('forced_colors_failure', envelope); },
+  dark_mode_layout_break(envelope) { return sentinelFilter('dark_mode_layout_break', envelope); },
+  zoom_layout_break(envelope) { return sentinelFilter('zoom_layout_break', envelope); },
+
+  // Mobile / responsive (4)
+  viewport_100vh_break(envelope) { return sentinelFilter('viewport_100vh_break', envelope); },
+  soft_keyboard_occlusion(envelope) { return sentinelFilter('soft_keyboard_occlusion', envelope); },
+  orientation_change_layout_break(envelope) { return sentinelFilter('orientation_change_layout_break', envelope); },
+  pull_to_refresh_conflict(envelope) { return sentinelFilter('pull_to_refresh_conflict', envelope); },
 };
 
 function dispatchIdorModern(
@@ -633,6 +684,16 @@ function dispatchBackAfterFormFillFor(kind: BugKind, envelope: HarvestEnvelope):
       rootCause: d.rootCause,
       severity: 'minor',
     });
+  }
+  return hits;
+}
+
+/** Filters sentinelEvents by kind and returns one hit per matching event. */
+function sentinelFilter(kind: string, envelope: HarvestEnvelope): BrowserHarnessHit[] {
+  const hits: BrowserHarnessHit[] = [];
+  for (const ev of envelope.sentinelEvents) {
+    if (ev.kind !== kind) continue;
+    hits.push({ route: envelope.pageRoute, rootCause: ev.rootCause, severity: ev.severity });
   }
   return hits;
 }
