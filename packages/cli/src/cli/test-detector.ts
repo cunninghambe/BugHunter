@@ -187,6 +187,25 @@ async function runOneContract(
   const startMs = Date.now();
   const absoluteFixturePath = resolveFixturePath(contract.fixture.path);
 
+  // V56.4: Browser-harness dispatch. When a contract declares browser-mcp as a
+  // required tool, route through runBrowserHarness instead of the static runHarness.
+  // V56.4.1 ships the runner dormant — no per-kind classifier is registered yet,
+  // so all browser-routed contracts return a structured SKIPPED with reason
+  // 'browser_harness_classifier_pending'. V56.4.2+ replaces that branch with
+  // real per-kind classifier dispatch and a real camofox adapter wiring.
+  if (contract.requires.tools.includes('browser-mcp')) {
+    if (opts.verbose === true) {
+      process.stdout.write(`  [${contract.kind}] SKIPPED — browser-harness classifier pending (V56.4.2+)\n`);
+    }
+    return {
+      kind: contract.kind,
+      fixture: contract.fixture.path,
+      status: 'SKIPPED',
+      elapsedMs: Date.now() - startMs,
+      reason: `browser_harness_classifier_pending: contract.tools includes 'browser-mcp' but no V56.4.2+ classifier wired for ${contract.kind} yet`,
+    };
+  }
+
   if (opts.verbose === true) {
     process.stdout.write(`  [${contract.kind}] booting fixture '${contract.fixture.path}'...\n`);
   }

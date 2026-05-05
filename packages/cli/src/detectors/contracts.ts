@@ -39,6 +39,13 @@ export type DetectorRequires = {
   surface: RequiredSurface;
   role: RequiredRole;
   pageContext: RequiredPageContext;
+  /**
+   * V56.4: settle time in ms after the bootstrap script installs but before the
+   * browser harness reads the harvest envelope. Default 1500ms. Perf detectors
+   * that wait for LCP / INP may set 3000–5000ms. Capped at defaultBudgetMs / 4.
+   * Ignored by the static-fixture runner.
+   */
+  observationWindowMs?: number;
 };
 
 /** Cluster assertion line (one entry in expected-clusters.jsonl). */
@@ -64,7 +71,17 @@ export type ClusterAssertion =
       /** Harness skips this assertion when the fixture is unreachable or a precondition is unmet. */
       kind: BugKind;
       expect: 'skipped';
-      reason: 'fixture_unreachable' | 'insufficient_roles' | 'missing_tool' | 'missing_surface' | 'no_response';
+      reason:
+        | 'fixture_unreachable'
+        | 'insufficient_roles'
+        | 'missing_tool'
+        | 'missing_surface'
+        | 'no_response'
+        | 'fixture_not_built'
+        // V56.4: browser-harness-specific skip reasons
+        | 'browser_mcp_unavailable'
+        | 'camofox_tab_failure'
+        | 'observation_window_exceeded';
     };
 
 /** Fixture pointer for this detector. May be shared across N detectors. */
