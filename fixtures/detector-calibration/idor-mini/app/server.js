@@ -95,7 +95,7 @@ const server = http.createServer((req, res) => {
   }
 
   // Correctly secured: GET /api/orders/protected/:id enforces ownership on reads.
-  // PUT/DELETE also check ownership. Used for negative and read-with-403-on-mutate-only shapes.
+  // PUT/DELETE also check ownership. Used for negative shapes.
   const protectedOrderMatch = pathname.match(/^\/api\/orders\/protected\/([^/]+)$/);
   if (protectedOrderMatch) {
     const order = PROTECTED_ORDERS[protectedOrderMatch[1]];

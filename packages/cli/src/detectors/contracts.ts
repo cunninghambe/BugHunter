@@ -111,8 +111,8 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     kind: 'sensitive_data_in_url',
     requires: {
       phases: ['discover', 'execute', 'classify', 'cluster'],
-      tools: ['browser-mcp'],
-      surface: 'web',
+      tools: ['surface-mcp'],
+      surface: 'api',
       role: { kind: 'none' },
       pageContext: { kind: 'any-route' },
     },
@@ -121,7 +121,7 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
       servesKinds: ['sensitive_data_in_url'],
     },
     defaultBudgetMs: 30_000,
-    note: 'Detects sensitive parameters (token, api_key, password, etc.) present in observed URLs during crawl.',
+    note: 'Detects sensitive parameters (token, api_key, password, etc.) in observed URLs. Static API detector — runs through surface-mcp / runHarness path, not the browser harness.',
   },
   {
     kind: 'hardcoded_credentials_in_source',
