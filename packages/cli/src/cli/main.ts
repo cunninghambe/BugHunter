@@ -320,6 +320,9 @@ async function main(): Promise<void> {
           budget: typeof flags['budget'] === 'string' ? parseInt(flags['budget'], 10) : undefined,
           concurrency: typeof flags['concurrency'] === 'string' ? parseInt(flags['concurrency'], 10) : undefined,
           apiConcurrency: typeof flags['api-concurrency'] === 'string' ? parseInt(flags['api-concurrency'], 10) : undefined,
+          minConfidence: (typeof flags['min-confidence'] === 'string' && ['high', 'medium', 'low'].includes(flags['min-confidence']))
+            ? flags['min-confidence'] as 'high' | 'medium' | 'low'
+            : undefined,
           reset: flags['reset'] === true,
           resume: typeof flags['resume'] === 'string' ? flags['resume'] : undefined,
           forceResume: flags['force-resume'] === true,

@@ -468,6 +468,12 @@ export type BugCluster = {
   severity?: Severity;
   /** v0.47+: surface that produced this cluster. Undefined for SURFACE_AGNOSTIC_KINDS (oversized_bundle, memory_leak_suspected) and pre-v0.47 clusters. */
   surface?: string;
+  /**
+   * v0.50: cluster-level confidence — the maximum confidence across all
+   * detections in this cluster. Defaults to 'high' if no occurrence has a
+   * confidence field set (back-compat with pre-v0.50 clusters).
+   */
+  confidence?: 'high' | 'medium' | 'low';
 };
 
 export type ClusterVerdict =
@@ -1221,6 +1227,22 @@ export type InteractionPaletteConfig = {
 export type BugDetection = {
   kind: BugKind;
   rootCause: string;
+  /**
+   * v0.50: detector self-attributed reliability of THIS specific detection.
+   * - 'high': deterministic check with low FP risk (gitleaks, missing security
+   *   headers, axe-core violation, real DOM XSS in HTML response)
+   * - 'medium': pattern match with strong context (route 5xx, console.error,
+   *   classifier with explicit invariant)
+   * - 'low': heuristic regex on prose, or pattern match in a context where
+   *   the response shape can echo input (xss_reflected from JSON body,
+   *   404 on probe expected_failure paths, i18n_pluralization on real text)
+   *
+   * Default if unset: treated as 'high' for backward compat. The CLI's
+   * `--min-confidence <high|medium|low>` flag (default 'medium') filters
+   * cluster output by this. Low-confidence clusters still land in bugs.jsonl
+   * for triage, just not surfaced to summary / PR comment / --auto-fix.
+   */
+  confidence?: 'high' | 'medium' | 'low';
   stackTrace?: string;
   consoleErrors?: ConsoleError[];
   networkRequests?: NetworkRequest[];
