@@ -5,6 +5,12 @@ on:
   push:
     branches: [main]
 
+# Workflow needs pull-requests:write to post the calibration comment, and
+# contents:write so the auto-update-README step on push can commit + push.
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   calibrate:
     runs-on: ubuntu-latest
