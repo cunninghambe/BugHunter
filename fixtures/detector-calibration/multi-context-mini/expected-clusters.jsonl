@@ -1,0 +1,5 @@
+{"kind":"multi_context_state_divergence","expect":"fires","minClusterSize":1,"match":{"page":"/divergence-fires"},"severity":"minor"}
+{"kind":"multi_context_state_divergence","expect":"silent","reason":"all contexts agree","match":{"page":"/divergence-silent"}}
+{"kind":"multi_context_state_divergence","expect":"silent","reason":"missing observations on one context","match":{"page":"/divergence-missing-obs"},"edgeLabel":"missing-obs-skip"}
+{"kind":"multi_context_state_divergence","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"multi_context_state_divergence","expect":"skipped","reason":"browser_mcp_unavailable"}
