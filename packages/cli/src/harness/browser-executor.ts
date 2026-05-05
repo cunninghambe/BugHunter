@@ -114,6 +114,12 @@ export type HarvestResourceRequest = {
   status?: number;
   durationMs?: number;
   initiatorType?: string;
+  /** Optional fields used by calibration fixtures and (in production) by
+   *  the request-hygiene observer. `startTime` is high-res ms; `inflightOnNav`
+   *  marks a request that was still in-flight when the next navigation began. */
+  startTime?: number;
+  duration?: number;
+  inflightOnNav?: boolean;
 };
 
 export type HarvestDomState = {

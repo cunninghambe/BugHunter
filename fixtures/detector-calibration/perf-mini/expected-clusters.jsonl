@@ -1,0 +1,112 @@
+{"kind":"slow_lcp","expect":"fires","minClusterSize":1,"match":{"page":"/lcp-slow"},"severity":"major"}
+{"kind":"slow_lcp","expect":"silent","reason":"LCP under 4000ms threshold","match":{"page":"/lcp-fast"}}
+{"kind":"slow_lcp","expect":"silent","reason":"LCP 3900ms — just under threshold (FP boundary)","match":{"page":"/lcp-just-under"},"edgeLabel":"just-under-threshold"}
+{"kind":"slow_lcp","expect":"silent","reason":"non-LCP entry only","match":{"page":"/inp-slow"}}
+{"kind":"slow_lcp","expect":"silent","reason":"non-LCP entry only","match":{"page":"/inp-fast"}}
+{"kind":"slow_lcp","expect":"silent","reason":"non-LCP entry only","match":{"page":"/cls-high"}}
+{"kind":"slow_lcp","expect":"silent","reason":"non-LCP entry only","match":{"page":"/cls-low"}}
+{"kind":"slow_lcp","expect":"silent","reason":"non-LCP entry only","match":{"page":"/longtask-bad"}}
+{"kind":"slow_lcp","expect":"silent","reason":"no perf entries","match":{"page":"/longtask-clean"}}
+{"kind":"slow_lcp","expect":"silent","reason":"no perf entries","match":{"page":"/n-plus-one-bad"}}
+{"kind":"slow_lcp","expect":"silent","reason":"no perf entries","match":{"page":"/n-plus-one-clean"}}
+{"kind":"slow_lcp","expect":"silent","reason":"no perf entries","match":{"page":"/dedup-bad"}}
+{"kind":"slow_lcp","expect":"silent","reason":"no perf entries","match":{"page":"/dedup-ok"}}
+{"kind":"slow_lcp","expect":"silent","reason":"no perf entries","match":{"page":"/cancel-missing"}}
+{"kind":"slow_lcp","expect":"silent","reason":"no perf entries","match":{"page":"/cancel-clean"}}
+{"kind":"slow_lcp","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"slow_inp","expect":"fires","minClusterSize":1,"match":{"page":"/inp-slow"},"severity":"major"}
+{"kind":"slow_inp","expect":"silent","reason":"INP 50ms — under 200ms threshold","match":{"page":"/inp-fast"}}
+{"kind":"slow_inp","expect":"silent","reason":"non-FID entry","match":{"page":"/lcp-slow"}}
+{"kind":"slow_inp","expect":"silent","reason":"non-FID entry","match":{"page":"/lcp-fast"}}
+{"kind":"slow_inp","expect":"silent","reason":"non-FID entry","match":{"page":"/lcp-just-under"}}
+{"kind":"slow_inp","expect":"silent","reason":"non-FID entry","match":{"page":"/cls-high"}}
+{"kind":"slow_inp","expect":"silent","reason":"non-FID entry","match":{"page":"/cls-low"}}
+{"kind":"slow_inp","expect":"silent","reason":"non-FID entry","match":{"page":"/longtask-bad"}}
+{"kind":"slow_inp","expect":"silent","reason":"no perf entries","match":{"page":"/longtask-clean"}}
+{"kind":"slow_inp","expect":"silent","reason":"no perf entries","match":{"page":"/n-plus-one-bad"}}
+{"kind":"slow_inp","expect":"silent","reason":"no perf entries","match":{"page":"/n-plus-one-clean"}}
+{"kind":"slow_inp","expect":"silent","reason":"no perf entries","match":{"page":"/dedup-bad"}}
+{"kind":"slow_inp","expect":"silent","reason":"no perf entries","match":{"page":"/dedup-ok"}}
+{"kind":"slow_inp","expect":"silent","reason":"no perf entries","match":{"page":"/cancel-missing"}}
+{"kind":"slow_inp","expect":"silent","reason":"no perf entries","match":{"page":"/cancel-clean"}}
+{"kind":"slow_inp","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"high_cls","expect":"fires","minClusterSize":1,"match":{"page":"/cls-high"},"severity":"major"}
+{"kind":"high_cls","expect":"silent","reason":"CLS 0.05 — well under 0.25 threshold","match":{"page":"/cls-low"}}
+{"kind":"high_cls","expect":"silent","reason":"non-CLS entry","match":{"page":"/lcp-slow"}}
+{"kind":"high_cls","expect":"silent","reason":"non-CLS entry","match":{"page":"/lcp-fast"}}
+{"kind":"high_cls","expect":"silent","reason":"non-CLS entry","match":{"page":"/lcp-just-under"}}
+{"kind":"high_cls","expect":"silent","reason":"non-CLS entry","match":{"page":"/inp-slow"}}
+{"kind":"high_cls","expect":"silent","reason":"non-CLS entry","match":{"page":"/inp-fast"}}
+{"kind":"high_cls","expect":"silent","reason":"non-CLS entry","match":{"page":"/longtask-bad"}}
+{"kind":"high_cls","expect":"silent","reason":"no perf entries","match":{"page":"/longtask-clean"}}
+{"kind":"high_cls","expect":"silent","reason":"no perf entries","match":{"page":"/n-plus-one-bad"}}
+{"kind":"high_cls","expect":"silent","reason":"no perf entries","match":{"page":"/n-plus-one-clean"}}
+{"kind":"high_cls","expect":"silent","reason":"no perf entries","match":{"page":"/dedup-bad"}}
+{"kind":"high_cls","expect":"silent","reason":"no perf entries","match":{"page":"/dedup-ok"}}
+{"kind":"high_cls","expect":"silent","reason":"no perf entries","match":{"page":"/cancel-missing"}}
+{"kind":"high_cls","expect":"silent","reason":"no perf entries","match":{"page":"/cancel-clean"}}
+{"kind":"high_cls","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"main_thread_blocked","expect":"fires","minClusterSize":1,"match":{"page":"/longtask-bad"},"severity":"major"}
+{"kind":"main_thread_blocked","expect":"silent","reason":"no longtask entries","match":{"page":"/longtask-clean"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"non-longtask entry","match":{"page":"/lcp-slow"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"non-longtask entry","match":{"page":"/lcp-fast"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"non-longtask entry","match":{"page":"/lcp-just-under"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"non-longtask entry","match":{"page":"/inp-slow"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"non-longtask entry","match":{"page":"/inp-fast"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"non-longtask entry","match":{"page":"/cls-high"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"non-longtask entry","match":{"page":"/cls-low"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"no perf entries","match":{"page":"/n-plus-one-bad"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"no perf entries","match":{"page":"/n-plus-one-clean"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"no perf entries","match":{"page":"/dedup-bad"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"no perf entries","match":{"page":"/dedup-ok"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"no perf entries","match":{"page":"/cancel-missing"}}
+{"kind":"main_thread_blocked","expect":"silent","reason":"no perf entries","match":{"page":"/cancel-clean"}}
+{"kind":"main_thread_blocked","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"n_plus_one_api_calls","expect":"fires","minClusterSize":1,"match":{"page":"/n-plus-one-bad"},"severity":"minor"}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"single API call","match":{"page":"/n-plus-one-clean"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"3 dup calls — under N+1 threshold of 5","match":{"page":"/dedup-bad"},"edgeLabel":"under-n-plus-one-threshold"}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"single API call","match":{"page":"/dedup-ok"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"single API call","match":{"page":"/cancel-missing"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"single API call","match":{"page":"/cancel-clean"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"no resource requests","match":{"page":"/lcp-slow"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"no resource requests","match":{"page":"/lcp-fast"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"no resource requests","match":{"page":"/lcp-just-under"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"no resource requests","match":{"page":"/inp-slow"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"no resource requests","match":{"page":"/inp-fast"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"no resource requests","match":{"page":"/cls-high"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"no resource requests","match":{"page":"/cls-low"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"no resource requests","match":{"page":"/longtask-bad"}}
+{"kind":"n_plus_one_api_calls","expect":"silent","reason":"no resource requests","match":{"page":"/longtask-clean"}}
+{"kind":"n_plus_one_api_calls","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"request_dedup_missing","expect":"fires","minClusterSize":1,"match":{"page":"/dedup-bad"},"severity":"minor"}
+{"kind":"request_dedup_missing","expect":"silent","reason":"single GET — no duplicate","match":{"page":"/dedup-ok"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"calls are different URLs (/items/1, /items/2 ...) — not duplicates","match":{"page":"/n-plus-one-bad"},"edgeLabel":"unique-urls-not-dedup"}
+{"kind":"request_dedup_missing","expect":"silent","reason":"single GET","match":{"page":"/n-plus-one-clean"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"single GET","match":{"page":"/cancel-missing"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"single GET","match":{"page":"/cancel-clean"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"no resource requests","match":{"page":"/lcp-slow"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"no resource requests","match":{"page":"/lcp-fast"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"no resource requests","match":{"page":"/lcp-just-under"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"no resource requests","match":{"page":"/inp-slow"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"no resource requests","match":{"page":"/inp-fast"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"no resource requests","match":{"page":"/cls-high"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"no resource requests","match":{"page":"/cls-low"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"no resource requests","match":{"page":"/longtask-bad"}}
+{"kind":"request_dedup_missing","expect":"silent","reason":"no resource requests","match":{"page":"/longtask-clean"}}
+{"kind":"request_dedup_missing","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"request_cancellation_missing","expect":"fires","minClusterSize":1,"match":{"page":"/cancel-missing"},"severity":"minor"}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no inflight-on-nav marker","match":{"page":"/cancel-clean"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no inflight-on-nav marker","match":{"page":"/dedup-bad"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no inflight-on-nav marker","match":{"page":"/dedup-ok"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no inflight-on-nav marker","match":{"page":"/n-plus-one-bad"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no inflight-on-nav marker","match":{"page":"/n-plus-one-clean"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no resource requests","match":{"page":"/lcp-slow"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no resource requests","match":{"page":"/lcp-fast"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no resource requests","match":{"page":"/lcp-just-under"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no resource requests","match":{"page":"/inp-slow"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no resource requests","match":{"page":"/inp-fast"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no resource requests","match":{"page":"/cls-high"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no resource requests","match":{"page":"/cls-low"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no resource requests","match":{"page":"/longtask-bad"}}
+{"kind":"request_cancellation_missing","expect":"silent","reason":"no resource requests","match":{"page":"/longtask-clean"}}
+{"kind":"request_cancellation_missing","expect":"skipped","reason":"browser_mcp_unavailable"}

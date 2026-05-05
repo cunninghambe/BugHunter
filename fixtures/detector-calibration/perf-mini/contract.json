@@ -1,0 +1,7 @@
+{
+  "fixture": "perf-mini",
+  "serves": ["slow_lcp", "slow_inp", "high_cls", "main_thread_blocked", "n_plus_one_api_calls", "request_dedup_missing", "request_cancellation_missing"],
+  "port": 9713,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

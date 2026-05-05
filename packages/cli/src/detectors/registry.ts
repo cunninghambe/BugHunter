@@ -524,6 +524,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'slow_inp',
@@ -533,6 +534,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'high_cls',
@@ -542,6 +544,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'unbounded_list_render',
@@ -559,6 +562,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'request_dedup_missing',
@@ -568,6 +572,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'request_cancellation_missing',
@@ -577,6 +582,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'main_thread_blocked',
@@ -586,6 +592,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_PERFORMANCE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'oversized_bundle',
