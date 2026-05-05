@@ -10,13 +10,13 @@ BugHunter automates the boring half. It discovers your app's surface from [Surfa
 
 ## Empirical numbers
 
-Real BugHunter runs against the deliberate-bugs fixture and the comprehensive-bench fixture. Numbers vary as the calibration pipeline matures — the trajectory is documented honestly rather than smoothed.
+Real BugHunter runs against the deliberate-bugs fixture, the comprehensive-bench fixture, and 5 bench apps in [BugHunter-bench](https://github.com/cunninghambe/BugHunter-bench). Numbers vary as the calibration pipeline matures — the trajectory is documented honestly rather than smoothed.
 
-**Peak measurement (smoke #14, focused fixture):** 17/85 golden BugKinds detected — **20.0% kind recall, 49.7% plant recall, 0 false positives.** Both UI and API kinds firing in one run. This is the empirical signal of what the system delivers when its inputs reach it cleanly.
+**Detector calibration (V56.4.15, 127 BugKinds):** **127/127 PASS** on the per-detector self-test. Every wired BugKind in the registry has a `DetectorContract`, a fixture, and a per-route scorecard. A serial sweep against camofox + 17 fixture servers completes in ~50 min with all 127 PASSing.
 
-**Current measurement (smoke #20, comprehensive-bench):** 9/96 (9.4%) kind recall, 17/218 (7.8%) plant recall, 0 false positives in detector classes (8 unexpected `auth_bypass_via_unauthed_route` clusters fire on intentionally-public routes — pending suppression rule). The comprehensive-bench fixture (218 plants × 101 kinds × 22 auth-gated routes × 2 surfaces) is more demanding than the focused fixture, and surfaces a regression chain currently under investigation. Two unfixed blockers are tracked:
-- Web surface budget overrun — `runPhaseForSurface` runs 7% past `budgetMs`, eating into API surface allocation
-- API cookie propagation gap — `extraCookie` obtained but not reaching outbound headers despite landed PRs
+**Bench-app calibration (5 web apps × ~100 BugKinds):** runs on every push to main via the `calibrate` workflow, posts per-PR comments, and writes the auto-updated block at the bottom of this README. Bench-app stability is upstream of BugHunter — the workflow tolerates per-app health-check timeouts and emits a vacuous aggregate rather than failing CI.
+
+**Peak measurement (smoke #14, focused fixture):** 17/85 golden BugKinds detected — **20.0% kind recall, 49.7% plant recall, 0 false positives.** Both UI and API kinds firing in one run.
 
 **Determinism:** verified — two consecutive runs with `--seed 42 --frozen-clock` against the race-bad fixture produce byte-identical canonical `summary.json` (SHA-256 `9c5ea3362c04efb4a4fbf7495ece90cb014e814a0744554c71dc8d17a8747faf`). The only fields that differ between runs are `actualRuntimeMs` (stripped from canonical hash per spec §6.5) and `runId` (by design).
 
@@ -24,7 +24,7 @@ Real BugHunter runs against the deliberate-bugs fixture and the comprehensive-be
 
 ## Status
 
-Spec only. See **[SPEC.md](SPEC.md)**.
+Working system with 127 wired detectors, calibration scorecards on all of them, CI on every push. See **[SPEC.md](SPEC.md)** for design decisions and **[CHANGELOG.md](CHANGELOG.md)** for milestone history.
 
 Depends on:
 - **[SurfaceMCP](https://github.com/cunninghambe/SurfaceMCP)** — provides the API tool catalog
