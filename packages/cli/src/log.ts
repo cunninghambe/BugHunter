@@ -24,11 +24,10 @@ function emit(level: LogLevel, msg: string, data?: unknown): void {
       ? JSON.stringify({ message: data.message, stack: data.stack })
       : JSON.stringify(data);
   const line = data !== undefined ? `${msg} ${serialized}` : msg;
-  if (level === 'error') {
-    process.stderr.write(`${ts} ${prefix} ${line}\n`);
-  } else {
-    process.stdout.write(`${ts} ${prefix} ${line}\n`);
-  }
+  // All log output goes to stderr so commands that emit machine-readable
+  // payloads on stdout (e.g. `calibrate --json > file.json`) don't get logger
+  // chatter mixed into the captured file.
+  process.stderr.write(`${ts} ${prefix} ${line}\n`);
 }
 
 export const log = {
