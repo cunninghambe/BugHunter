@@ -72,6 +72,30 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
     }];
   },
 
+  // ---- Bucket B: accessibility_critical ----
+  // Production threshold: violation.impact === 'critical' || 'serious'.
+  accessibility_critical(envelope) {
+    const hits = envelope.axeViolations.filter(v => v.impact === 'critical' || v.impact === 'serious');
+    if (hits.length === 0) return [];
+    const sample = hits[0];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `${hits.length} critical/serious axe violation(s) on ${envelope.pageRoute} — first: ${sample?.id} (${sample?.impact})`,
+      severity: 'critical',
+    }];
+  },
+
+  // ---- Bucket B: axe_color_contrast_strong ----
+  axe_color_contrast_strong(envelope) {
+    const hits = envelope.axeViolations.filter(v => v.id === 'color-contrast');
+    if (hits.length === 0) return [];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `Color contrast violation on ${envelope.pageRoute} — ${hits[0]?.nodes ?? 0} affected node(s) (WCAG AA 4.5:1 normal / 3:1 large)`,
+      severity: 'critical',
+    }];
+  },
+
   // ---- Bucket A: dom_error_text ----
   // Production pattern: /(something went wrong|an error occurred|unable to|failed to)/i
   // applied to TreeWalker text nodes. Harness reads envelope.domState.bodyTextSample

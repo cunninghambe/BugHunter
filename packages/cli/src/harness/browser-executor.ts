@@ -282,6 +282,7 @@ export const HARVEST_SCRIPT = `(() => {
           unhandledRejections: Array.isArray(parsed.unhandledRejections) ? parsed.unhandledRejections : [],
           performanceEntries: Array.isArray(parsed.performanceEntries) ? parsed.performanceEntries : [],
           resourceRequests: Array.isArray(parsed.resourceRequests) ? parsed.resourceRequests : [],
+          axeViolations: Array.isArray(parsed.axeViolations) ? parsed.axeViolations : [],
           domState: domState,
           harvestWarnings: Array.isArray(parsed.harvestWarnings) ? parsed.harvestWarnings : [],
         };
@@ -584,6 +585,7 @@ export async function runBrowserHarness(opts: BrowserHarnessOptions): Promise<Br
                   consoleEvents: envelope.consoleEvents.length,
                   uncaughtErrors: envelope.uncaughtErrors.length,
                   performanceEntries: envelope.performanceEntries.length,
+                  axeViolations: envelope.axeViolations.length,
                 });
               }
             }

@@ -28,6 +28,7 @@ const BOOTSTRAP_SOURCE = `(() => {
     unhandledRejections: [],
     performanceEntries: [],
     resourceRequests: [],
+    axeViolations: [],
     harvestWarnings: [],
     sync: function() {
       try {
@@ -38,10 +39,12 @@ const BOOTSTRAP_SOURCE = `(() => {
           unhandledRejections: bh.unhandledRejections.slice(-50),
           performanceEntries: bh.performanceEntries.slice(-200),
           resourceRequests: bh.resourceRequests.slice(-200),
+          axeViolations: bh.axeViolations.slice(-100),
           harvestWarnings: bh.harvestWarnings.slice(-50),
         });
       } catch (_e) { bh.harvestWarnings.push('sync_threw:' + String(_e)); }
     },
+    pushAxe: function(violation) { bh.axeViolations.push(violation); bh.sync(); },
   };
   window.__bh = bh;
   bh.sync();

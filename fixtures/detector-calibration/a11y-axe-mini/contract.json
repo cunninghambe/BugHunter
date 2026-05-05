@@ -1,0 +1,7 @@
+{
+  "fixture": "a11y-axe-mini",
+  "serves": ["accessibility_critical", "axe_color_contrast_strong"],
+  "port": 9723,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
