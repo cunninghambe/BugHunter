@@ -1,0 +1,7 @@
+{
+  "fixture": "react-error-mini",
+  "serves": ["react_error", "hydration_mismatch"],
+  "port": 9743,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

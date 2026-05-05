@@ -1,0 +1,15 @@
+{"kind":"react_error","expect":"fires","minClusterSize":1,"match":{"page":"/react-warning"},"severity":"critical"}
+{"kind":"react_error","expect":"fires","minClusterSize":1,"match":{"page":"/react-state-update"},"severity":"critical","edgeLabel":"state-update-during-render"}
+{"kind":"react_error","expect":"fires","minClusterSize":1,"match":{"page":"/react-invalid-hook"},"severity":"critical","edgeLabel":"invalid-hook-call"}
+{"kind":"react_error","expect":"silent","reason":"page renders cleanly","match":{"page":"/react-clean"}}
+{"kind":"react_error","expect":"silent","reason":"hydration errors are classified as hydration_mismatch, not react_error","match":{"page":"/hydration-failed"}}
+{"kind":"react_error","expect":"silent","reason":"hydration errors are classified as hydration_mismatch, not react_error","match":{"page":"/hydration-text"}}
+{"kind":"react_error","expect":"silent","reason":"generic console.error without React-pattern match","match":{"page":"/non-react-error"}}
+{"kind":"react_error","expect":"fires","minClusterSize":1,"match":{"page":"/react-malformed"},"severity":"critical","edgeLabel":"malformed-html-still-detects"}
+{"kind":"react_error","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"hydration_mismatch","expect":"fires","minClusterSize":1,"match":{"page":"/hydration-failed"},"severity":"major"}
+{"kind":"hydration_mismatch","expect":"fires","minClusterSize":1,"match":{"page":"/hydration-text"},"severity":"major","edgeLabel":"text-content-mismatch"}
+{"kind":"hydration_mismatch","expect":"silent","reason":"non-hydration React warning","match":{"page":"/react-warning"}}
+{"kind":"hydration_mismatch","expect":"silent","reason":"page renders cleanly","match":{"page":"/react-clean"}}
+{"kind":"hydration_mismatch","expect":"silent","reason":"generic console.error","match":{"page":"/non-react-error"}}
+{"kind":"hydration_mismatch","expect":"skipped","reason":"browser_mcp_unavailable"}

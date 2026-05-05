@@ -957,4 +957,38 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'V56.4 browser harness. Fires when the harvested envelope contains any uncaughtError (window.error) or unhandledRejection (window.unhandledrejection) event.',
   },
+  {
+    kind: 'react_error',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: {
+      path: 'react-error-mini',
+      servesKinds: ['react_error'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness. Fires when console.error text matches React patterns (Warning:, Cannot update during render, Invalid hook call, etc.). Hydration-specific errors take precedence and fire hydration_mismatch instead.',
+  },
+  {
+    kind: 'hydration_mismatch',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: {
+      path: 'react-error-mini',
+      servesKinds: ['hydration_mismatch'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness. Fires when console.error text matches hydration-mismatch patterns (Hydration failed, Text content does not match, etc.).',
+  },
 ];
