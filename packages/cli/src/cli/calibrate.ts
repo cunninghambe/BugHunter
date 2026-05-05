@@ -315,8 +315,12 @@ export async function calibrateCommand(opts: CalibrateOptions): Promise<void> {
     const reportPath = path.join(outDir, 'calibration-report.json');
     writeJsonFile(reportPath, report);
 
-    process.stdout.write(`${formatSummaryLine(report)}\n`);
-    process.stdout.write(`[calibrate] Report written to ${reportPath}\n`);
+    // When --json is set, stdout is reserved for the machine-readable JSON
+    // payload only. Human-readable summary + paths go to stderr so a
+    // `calibrate --json > out.json` redirect doesn't corrupt the file.
+    const humanStream = opts.jsonOutput === true ? process.stderr : process.stdout;
+    humanStream.write(`${formatSummaryLine(report)}\n`);
+    humanStream.write(`[calibrate] Report written to ${reportPath}\n`);
 
     if (opts.jsonOutput === true) {
       process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
