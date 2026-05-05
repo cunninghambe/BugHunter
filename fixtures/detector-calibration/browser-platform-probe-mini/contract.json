@@ -1,0 +1,7 @@
+{
+  "fixture": "browser-platform-probe-mini",
+  "serves": ["service_worker_stale", "web_worker_error", "webrtc_ice_failure"],
+  "port": 9633,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

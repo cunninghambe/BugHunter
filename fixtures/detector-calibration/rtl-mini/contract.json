@@ -1,0 +1,7 @@
+{
+  "fixture": "rtl-mini",
+  "serves": ["i18n_rtl_layout_break"],
+  "port": 9603,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

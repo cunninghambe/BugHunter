@@ -1,0 +1,6 @@
+{"kind":"visual_anomaly","expect":"fires","minClusterSize":1,"match":{"page":"/visual-major"},"severity":"major"}
+{"kind":"visual_anomaly","expect":"fires","minClusterSize":1,"match":{"page":"/visual-critical"},"severity":"critical"}
+{"kind":"visual_anomaly","expect":"fires","minClusterSize":1,"match":{"page":"/visual-minor"},"severity":"minor","edgeLabel":"minor-still-fires"}
+{"kind":"visual_anomaly","expect":"silent","reason":"invalid severity dropped","match":{"page":"/visual-invalid-severity"},"edgeLabel":"invalid-severity-skip"}
+{"kind":"visual_anomaly","expect":"silent","reason":"no anomaly pushed","match":{"page":"/clean"}}
+{"kind":"visual_anomaly","expect":"skipped","reason":"browser_mcp_unavailable"}
