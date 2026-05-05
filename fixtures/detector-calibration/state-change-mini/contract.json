@@ -1,0 +1,7 @@
+{
+  "fixture": "state-change-mini",
+  "serves": ["missing_state_change", "surface_call_failed"],
+  "port": 9683,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

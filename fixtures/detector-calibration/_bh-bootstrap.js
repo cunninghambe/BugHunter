@@ -46,6 +46,8 @@ const BOOTSTRAP_SOURCE = `(() => {
           focusAfterAction: bh.focusAfterAction || null,
           shadowAxeViolations: (bh.shadowAxeViolations || []).slice(-100),
           visibilityChangeStateLoss: bh.visibilityChangeStateLoss || null,
+          missingStateChangeInput: bh.missingStateChangeInput || null,
+          surfaceCallResults: (bh.surfaceCallResults || []).slice(-50),
           harvestWarnings: bh.harvestWarnings.slice(-50),
         });
       } catch (_e) { bh.harvestWarnings.push('sync_threw:' + String(_e)); }
@@ -62,6 +64,9 @@ const BOOTSTRAP_SOURCE = `(() => {
     setFocusAfterAction: function(result) { bh.focusAfterAction = result; bh.sync(); },
     pushShadowAxe: function(violation) { bh.shadowAxeViolations = bh.shadowAxeViolations || []; bh.shadowAxeViolations.push(violation); bh.sync(); },
     setVisibilityChangeStateLoss: function(payload) { bh.visibilityChangeStateLoss = payload; bh.sync(); },
+    // V56.4.11 (Bucket B remainder).
+    setMissingStateChangeInput: function(input) { bh.missingStateChangeInput = input; bh.sync(); },
+    pushSurfaceCallResult: function(result) { bh.surfaceCallResults = bh.surfaceCallResults || []; bh.surfaceCallResults.push(result); bh.sync(); },
   };
   window.__bh = bh;
   bh.sync();

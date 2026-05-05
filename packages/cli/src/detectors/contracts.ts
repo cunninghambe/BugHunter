@@ -1266,4 +1266,32 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'V56.4 browser harness. Calibration fixture pushes a HarvestVisibilityChangeLoss payload via window.__bh.setVisibilityChangeStateLoss matching the production multi-context detection shape (lifecycle event + proof + tool path + evidence). Production requires multi-context coordination across two browser contexts.',
   },
+  {
+    kind: 'missing_state_change',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'state-change-mini', servesKinds: ['missing_state_change'] },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness. Calibration fixture pushes (PreState, PostState, Action) via window.__bh.setMissingStateChangeInput; harness dispatches through production classifyMissingStateChange. Production captures pre/post via execute-phase MutationObserver + ARIA snapshots.',
+  },
+  {
+    kind: 'surface_call_failed',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'state-change-mini', servesKinds: ['surface_call_failed'] },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness. Calibration fixture pushes synthesized SurfaceCallResult via window.__bh.pushSurfaceCallResult; harness mirrors the production rule (status 4xx + happy palette + not a mutator-validation-rejection).',
+  },
 ];
