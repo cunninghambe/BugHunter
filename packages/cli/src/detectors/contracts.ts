@@ -826,4 +826,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Two-step probe: GET login route (pre-login cookie), POST creds (post-login cookie). Fires when the primary session cookie value is unchanged across the login boundary.',
   },
+  {
+    kind: 'password_reset_token_reuse',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'password-reset-mini',
+      servesKinds: ['password_reset_token_reuse'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Three-step probe per /<route>/consume endpoint: request → consume → consume. Fires when the second consume succeeds (status 2xx, body not flagged as failure).',
+  },
 ];

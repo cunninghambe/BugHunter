@@ -1,0 +1,4 @@
+{"kind":"password_reset_token_reuse","expect":"fires","minClusterSize":1,"match":{"page":"/reset-broken/consume"},"severity":"critical"}
+{"kind":"password_reset_token_reuse","expect":"silent","reason":"server marks token used; second consume returns 400","match":{"page":"/reset-correct/consume"}}
+{"kind":"password_reset_token_reuse","expect":"silent","reason":"server returns 200 on second use but body says ok:false — counts as rejection","match":{"page":"/reset-200-but-rejects/consume"},"edgeLabel":"200-but-body-rejects"}
+{"kind":"password_reset_token_reuse","expect":"skipped","reason":"no_response"}
