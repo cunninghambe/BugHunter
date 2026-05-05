@@ -113,7 +113,9 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const fn = await import('./scripts/post-calibration-comment.mjs');
+            // actions/github-script resolves relative imports against its own
+            // dist dir, not the repo. Use absolute path via GITHUB_WORKSPACE.
+            const fn = await import(`${process.env.GITHUB_WORKSPACE}/scripts/post-calibration-comment.mjs`);
             await fn.default(github, context, '/tmp/aggregate.json');
 
       - name: Update README calibration block (push to main only)
