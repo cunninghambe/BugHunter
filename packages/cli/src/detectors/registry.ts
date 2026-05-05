@@ -62,6 +62,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'hydration_mismatch',
@@ -71,6 +72,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'network_5xx',

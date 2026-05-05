@@ -7,6 +7,7 @@
 
 import type { BugKind } from '../types.js';
 import type { HarvestEnvelope } from './browser-executor.js';
+import { isReactError, isHydrationError } from '../classify/react.js';
 
 export type BrowserHarnessHit = {
   route: string;
@@ -40,6 +41,34 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
       route: envelope.pageRoute,
       rootCause: `${total} uncaught exception(s)/rejection(s) on ${envelope.pageRoute} — first: "${sample.slice(0, 120)}"`,
       severity: 'critical',
+    }];
+  },
+
+  // ---- Bucket A: react_error (production isReactError pattern) ----
+  // hydration errors are a more-specific subkind — when isHydrationError matches,
+  // we DON'T fire react_error (production behaviour: hydration takes precedence).
+  react_error(envelope) {
+    const errors = envelope.consoleEvents.filter(e => e.level === 'error');
+    const reactish = errors.filter(e => !isHydrationError(e.message) && isReactError(e.message));
+    if (reactish.length === 0) return [];
+    const sample = reactish[0]?.message ?? '';
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `${reactish.length} React-pattern console.error(s) on ${envelope.pageRoute} — "${sample.slice(0, 120)}"`,
+      severity: 'critical',
+    }];
+  },
+
+  // ---- Bucket A: hydration_mismatch ----
+  hydration_mismatch(envelope) {
+    const errors = envelope.consoleEvents.filter(e => e.level === 'error');
+    const hits = errors.filter(e => isHydrationError(e.message));
+    if (hits.length === 0) return [];
+    const sample = hits[0]?.message ?? '';
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `${hits.length} hydration-mismatch console.error(s) on ${envelope.pageRoute} — "${sample.slice(0, 120)}"`,
+      severity: 'major',
     }];
   },
 };
