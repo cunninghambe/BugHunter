@@ -282,6 +282,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'hallucinated_route' && target.fixturePath !== undefined) {
+      const clusters = await runHallucinatedRouteHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (
       (contract.kind === 'i18n_date_format_ambiguous'
         || contract.kind === 'i18n_pluralization_broken'
@@ -2078,6 +2091,107 @@ async function runI18nTextStaticHarness(
       fixHints: [],
       thirdPartyOrGenerated: false,
       severity: 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// hallucinated_route runner — fetches /sitemap.xml, probes each claimed
+// route, fires when a claimed route 404s.
+// ---------------------------------------------------------------------------
+
+function extractSitemapLocs(xml: string): string[] {
+  const locs: string[] = [];
+  const re = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(xml)) !== null) {
+    const raw = match[1] ?? '';
+    try {
+      // Extract pathname for path-only comparison
+      const u = new URL(raw);
+      locs.push(u.pathname);
+    } catch {
+      if (raw.startsWith('/')) locs.push(raw);
+    }
+  }
+  return locs;
+}
+
+async function runHallucinatedRouteHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('hallucinated_route: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    // Fetch the sitemap (or equivalent route claim source).
+    const sitemapResp = await httpGet(`${appBaseUrl}/sitemap.xml`).catch((): ProbeResponse => ({ status: 0, body: '' }));
+    if (sitemapResp.status === 0 || sitemapResp.status >= 400) {
+      warnings.push('hallucinated_route: /sitemap.xml not available — cannot enumerate claimed routes');
+    } else {
+      const claimedRoutes = extractSitemapLocs(sitemapResp.body);
+      log.info('hallucinated_route: sitemap claims', { count: claimedRoutes.length });
+
+      for (const route of claimedRoutes) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (signal.aborted) break;
+        const url = `${appBaseUrl}${route}`;
+        const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+        if (response.status === 404) {
+          detectionsByPage.set(route, `Sitemap-claimed route ${route} returned 404 — route does not exist on the server`);
+          log.info('hallucinated_route: detection', { route });
+        }
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'hallucinated_route';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCause] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'expected_failure', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: ['Either implement the missing route or remove it from the sitemap/links'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
     });
   }
 

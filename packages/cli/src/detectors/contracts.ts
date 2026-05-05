@@ -714,4 +714,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Static-heuristic harness. Fires when currency-amount string ($USD/€EUR/£GBP/¥JPY) renders with decimals not matching the currency convention (USD/EUR/GBP=2; JPY=0).',
   },
+  {
+    kind: 'hallucinated_route',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'hallucinated-route-mini',
+      servesKinds: ['hallucinated_route'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Fetches /sitemap.xml, probes each <loc>-claimed route, fires when a claimed route returns 404.',
+  },
 ];

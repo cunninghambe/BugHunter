@@ -1,0 +1,7 @@
+{
+  "fixture": "hallucinated-route-mini",
+  "serves": ["hallucinated_route"],
+  "port": 9833,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
