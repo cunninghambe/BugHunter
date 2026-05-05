@@ -20,6 +20,9 @@ import {
   detectCrossTab,
 } from '../security/race-detectors.js';
 import { detectMultiContextStateDivergence } from '../security/multi-context-detectors.js';
+import { detectNetworkFaultUnhandled } from '../classify/network-fault-unhandled.js';
+import { detectOptimisticNoRevert } from '../classify/network-fault-optimistic-revert.js';
+import { detectPromptInjection } from '../security/pen-detectors.js';
 import type {
   DoubleSubmitPlan,
   ClickThenNavigatePlan,
@@ -397,6 +400,122 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
       rootCause: detection.rootCause,
       severity: 'minor',
     }];
+  },
+
+  // ---- Bucket G: network_fault_unhandled ----
+  network_fault_unhandled(envelope) {
+    if (envelope.networkFaultUnhandledInput === null) return [];
+    const i = envelope.networkFaultUnhandledInput;
+    const detection = detectNetworkFaultUnhandled(i.preState, i.postState, i.fault, i.retryStormThresholdRps, i.asyncMaxWaitMs);
+    if (detection === null) return [];
+    return [{ route: envelope.pageRoute, rootCause: detection.rootCause, severity: 'major' }];
+  },
+
+  // ---- Bucket G: network_fault_optimistic_no_revert ----
+  network_fault_optimistic_no_revert(envelope) {
+    if (envelope.optimisticNoRevertInput === null) return [];
+    const i = envelope.optimisticNoRevertInput;
+    const detection = detectOptimisticNoRevert(i.preState, i.postState, i.fault, i.optimisticSnapshot, i.retryStormThresholdRps);
+    if (detection === null) return [];
+    return [{ route: envelope.pageRoute, rootCause: detection.rootCause, severity: 'major' }];
+  },
+
+  // ---- Bucket G: service_worker_stale ----
+  // Mirrors the inline rule in browser-platform-probe.ts:260: not first visit,
+  // state installing/waiting, ageMs > threshold, no controller-changed event.
+  service_worker_stale(envelope) {
+    const hits: BrowserHarnessHit[] = [];
+    for (const d of envelope.browserPlatformDetections) {
+      if (d.kind !== 'service_worker_stale') continue;
+      if (d.isFirstVisit === true) continue;
+      if (!(d.hasInstalling || d.hasWaiting)) continue;
+      if (d.ageMs <= d.thresholdMs) continue;
+      if (d.controllerChangedDuringWindow === true) continue;
+      hits.push({
+        route: envelope.pageRoute,
+        rootCause: `Service worker at scope "${d.scope}" has been ${d.hasInstalling ? 'installing' : 'waiting'} for ${Math.round(d.ageMs / 1000)}s without activating.`,
+        severity: 'major',
+      });
+    }
+    return hits;
+  },
+
+  // ---- Bucket G: web_worker_error ----
+  web_worker_error(envelope) {
+    const seen = new Set<string>();
+    const hits: BrowserHarnessHit[] = [];
+    for (const d of envelope.browserPlatformDetections) {
+      if (d.kind !== 'web_worker_error') continue;
+      const key = `${d.scriptUrl}|${d.eventKind}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      hits.push({
+        route: envelope.pageRoute,
+        rootCause: `Worker at "${d.scriptUrl}" fired "${d.eventKind}": ${d.errorMsg}`,
+        severity: 'major',
+      });
+    }
+    return hits;
+  },
+
+  // ---- Bucket G: webrtc_ice_failure ----
+  webrtc_ice_failure(envelope) {
+    const hits: BrowserHarnessHit[] = [];
+    for (const d of envelope.browserPlatformDetections) {
+      if (d.kind !== 'webrtc_ice_failure') continue;
+      if (d.finalState !== 'failed') continue;
+      if (d.hadHandler === true) continue;
+      hits.push({
+        route: envelope.pageRoute,
+        rootCause: `RTCPeerConnection (id=${d.connectionId}) reached iceConnectionState 'failed' with no iceconnectionstatechange handler registered.`,
+        severity: 'major',
+      });
+    }
+    return hits;
+  },
+
+  // ---- Bucket G: visual_anomaly ----
+  // Production reads vision-API outputs; calibration pushes anomaly objects
+  // matching the production-shape filter (severity meets threshold + valid category).
+  visual_anomaly(envelope) {
+    const hits: BrowserHarnessHit[] = [];
+    for (const a of envelope.visualAnomalies) {
+      if (a.severity !== 'minor' && a.severity !== 'major' && a.severity !== 'critical') continue;
+      const desc = a.description ?? '';
+      const el = a.element ?? '';
+      hits.push({
+        route: envelope.pageRoute,
+        rootCause: el !== '' ? `${el}: ${desc}` : desc,
+        severity: a.severity === 'critical' ? 'critical' : a.severity === 'major' ? 'major' : 'minor',
+      });
+    }
+    return hits;
+  },
+
+  // ---- Bucket G: prompt_injection_executed ----
+  prompt_injection_executed(envelope) {
+    const hits: BrowserHarnessHit[] = [];
+    for (const p of envelope.promptInjectionProbes) {
+      const detection = detectPromptInjection(p.probe, p.response);
+      if (detection === null) continue;
+      hits.push({ route: envelope.pageRoute, rootCause: detection.rootCause, severity: 'critical' });
+    }
+    return hits;
+  },
+
+  // ---- Bucket G: i18n_rtl_layout_break ----
+  // Mirrors the inline rule in discovery/locale/rtl.ts: filter geo findings to certainty='high'.
+  i18n_rtl_layout_break(envelope) {
+    const hits: BrowserHarnessHit[] = [];
+    for (const f of envelope.rtlGeoFindings) {
+      if (f.certainty !== 'high') continue;
+      hits.push({
+        route: envelope.pageRoute,
+        rootCause: `RTL layout break: ${f.kind} on ${f.selector}${f.pairSelector !== undefined ? ` / ${f.pairSelector}` : ''}`,
+        severity: 'minor',
+      });
+    }
+    return hits;
   },
 };
 

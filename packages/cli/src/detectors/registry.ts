@@ -156,6 +156,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   },
   {
     kind: 'visual_anomaly',
+    harness: true,
     status: 'wired',
     detectorSite: 'packages/cli/src/classify/vision.ts:411',
     runnerSite: 'packages/cli/src/phases/discover.ts',
@@ -846,6 +847,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   // v0.36 browser-platform surface kinds
   {
     kind: 'service_worker_stale',
+    harness: true,
     status: 'wired',
     detectorSite: 'packages/cli/src/discovery/browser-platform-probe.ts',
     runnerSite: 'packages/cli/src/phases/execute.ts',
@@ -856,6 +858,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   },
   {
     kind: 'web_worker_error',
+    harness: true,
     status: 'wired',
     detectorSite: 'packages/cli/src/discovery/browser-platform-probe.ts',
     runnerSite: 'packages/cli/src/phases/execute.ts',
@@ -896,6 +899,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   },
   {
     kind: 'webrtc_ice_failure',
+    harness: true,
     status: 'wired',
     detectorSite: 'packages/cli/src/discovery/browser-platform-probe.ts',
     runnerSite: 'packages/cli/src/phases/execute.ts',
@@ -941,6 +945,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   // — § v0.20 network-fault kinds (wired) —
   {
     kind: 'network_fault_unhandled',
+    harness: true,
     status: 'wired',
     detectorSite: 'packages/cli/src/classify/network-fault-unhandled.ts:54',
     runnerSite: 'packages/cli/src/phases/execute.ts',
@@ -950,6 +955,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   },
   {
     kind: 'network_fault_optimistic_no_revert',
+    harness: true,
     status: 'wired',
     detectorSite: 'packages/cli/src/classify/network-fault-optimistic-revert.ts:51',
     runnerSite: 'packages/cli/src/phases/execute.ts',
@@ -985,6 +991,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   },
   {
     kind: 'prompt_injection_executed',
+    harness: true,
     status: 'wired',
     detectorSite: 'packages/cli/src/security/pen-detectors.ts',
     runnerSite: 'packages/cli/src/security/pen-test-runner.ts',
@@ -1020,6 +1027,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   // — § v0.37 i18n / locale stress kinds (wired) —
   {
     kind: 'i18n_rtl_layout_break',
+    harness: true,
     status: 'wired',
     detectorSite: 'packages/cli/src/discovery/locale/rtl.ts:33',
     runnerSite: 'packages/cli/src/phases/locale-stress.ts',

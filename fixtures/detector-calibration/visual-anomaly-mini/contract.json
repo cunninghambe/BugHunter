@@ -1,0 +1,7 @@
+{
+  "fixture": "visual-anomaly-mini",
+  "serves": ["visual_anomaly"],
+  "port": 9623,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

@@ -1,0 +1,33 @@
+{"kind":"service_worker_stale","expect":"fires","minClusterSize":1,"match":{"page":"/sw-stale-installing"},"severity":"major"}
+{"kind":"service_worker_stale","expect":"silent","reason":"first visit","match":{"page":"/sw-silent-first-visit"}}
+{"kind":"service_worker_stale","expect":"silent","reason":"controller changed during window","match":{"page":"/sw-silent-controller-changed"}}
+{"kind":"service_worker_stale","expect":"silent","reason":"under threshold","match":{"page":"/sw-silent-under-threshold"}}
+{"kind":"service_worker_stale","expect":"silent","reason":"different bucket","match":{"page":"/worker-error-fires"}}
+{"kind":"service_worker_stale","expect":"silent","reason":"different bucket","match":{"page":"/worker-error-dedup"}}
+{"kind":"service_worker_stale","expect":"silent","reason":"different bucket","match":{"page":"/webrtc-fires"}}
+{"kind":"service_worker_stale","expect":"silent","reason":"different bucket","match":{"page":"/webrtc-silent-with-handler"}}
+{"kind":"service_worker_stale","expect":"silent","reason":"different bucket","match":{"page":"/webrtc-silent-not-failed"}}
+{"kind":"service_worker_stale","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"service_worker_stale","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"web_worker_error","expect":"fires","minClusterSize":1,"match":{"page":"/worker-error-fires"},"severity":"major"}
+{"kind":"web_worker_error","expect":"fires","minClusterSize":1,"match":{"page":"/worker-error-dedup"},"severity":"major","edgeLabel":"dedup-by-script-url-and-event-kind"}
+{"kind":"web_worker_error","expect":"silent","reason":"different bucket","match":{"page":"/sw-stale-installing"}}
+{"kind":"web_worker_error","expect":"silent","reason":"different bucket","match":{"page":"/sw-silent-first-visit"}}
+{"kind":"web_worker_error","expect":"silent","reason":"different bucket","match":{"page":"/sw-silent-controller-changed"}}
+{"kind":"web_worker_error","expect":"silent","reason":"different bucket","match":{"page":"/sw-silent-under-threshold"}}
+{"kind":"web_worker_error","expect":"silent","reason":"different bucket","match":{"page":"/webrtc-fires"}}
+{"kind":"web_worker_error","expect":"silent","reason":"different bucket","match":{"page":"/webrtc-silent-with-handler"}}
+{"kind":"web_worker_error","expect":"silent","reason":"different bucket","match":{"page":"/webrtc-silent-not-failed"}}
+{"kind":"web_worker_error","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"web_worker_error","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"webrtc_ice_failure","expect":"fires","minClusterSize":1,"match":{"page":"/webrtc-fires"},"severity":"major"}
+{"kind":"webrtc_ice_failure","expect":"silent","reason":"handler registered","match":{"page":"/webrtc-silent-with-handler"}}
+{"kind":"webrtc_ice_failure","expect":"silent","reason":"final state not failed","match":{"page":"/webrtc-silent-not-failed"}}
+{"kind":"webrtc_ice_failure","expect":"silent","reason":"different bucket","match":{"page":"/sw-stale-installing"}}
+{"kind":"webrtc_ice_failure","expect":"silent","reason":"different bucket","match":{"page":"/sw-silent-first-visit"}}
+{"kind":"webrtc_ice_failure","expect":"silent","reason":"different bucket","match":{"page":"/sw-silent-controller-changed"}}
+{"kind":"webrtc_ice_failure","expect":"silent","reason":"different bucket","match":{"page":"/sw-silent-under-threshold"}}
+{"kind":"webrtc_ice_failure","expect":"silent","reason":"different bucket","match":{"page":"/worker-error-fires"}}
+{"kind":"webrtc_ice_failure","expect":"silent","reason":"different bucket","match":{"page":"/worker-error-dedup"}}
+{"kind":"webrtc_ice_failure","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"webrtc_ice_failure","expect":"skipped","reason":"browser_mcp_unavailable"}

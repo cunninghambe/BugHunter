@@ -1,0 +1,7 @@
+{
+  "fixture": "network-fault-mini",
+  "serves": ["network_fault_unhandled", "network_fault_optimistic_no_revert"],
+  "port": 9643,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

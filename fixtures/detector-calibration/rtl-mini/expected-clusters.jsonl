@@ -1,0 +1,6 @@
+{"kind":"i18n_rtl_layout_break","expect":"fires","minClusterSize":1,"match":{"page":"/rtl-high-certainty-overlap"},"severity":"minor"}
+{"kind":"i18n_rtl_layout_break","expect":"fires","minClusterSize":1,"match":{"page":"/rtl-high-certainty-overflow"},"severity":"minor","edgeLabel":"overflow-shape"}
+{"kind":"i18n_rtl_layout_break","expect":"silent","reason":"low certainty","match":{"page":"/rtl-low-certainty"}}
+{"kind":"i18n_rtl_layout_break","expect":"silent","reason":"medium certainty — only high fires","match":{"page":"/rtl-medium-certainty"},"edgeLabel":"medium-skip"}
+{"kind":"i18n_rtl_layout_break","expect":"silent","reason":"no finding pushed","match":{"page":"/clean"}}
+{"kind":"i18n_rtl_layout_break","expect":"skipped","reason":"browser_mcp_unavailable"}

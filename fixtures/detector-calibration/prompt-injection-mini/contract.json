@@ -1,0 +1,7 @@
+{
+  "fixture": "prompt-injection-mini",
+  "serves": ["prompt_injection_executed"],
+  "port": 9613,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

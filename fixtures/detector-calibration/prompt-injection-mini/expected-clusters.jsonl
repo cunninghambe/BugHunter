@@ -1,0 +1,5 @@
+{"kind":"prompt_injection_executed","expect":"fires","minClusterSize":1,"match":{"page":"/injection-fires"},"severity":"critical"}
+{"kind":"prompt_injection_executed","expect":"silent","reason":"nonce only in echo block","match":{"page":"/injection-silent-echo"},"edgeLabel":"echo-block-skip"}
+{"kind":"prompt_injection_executed","expect":"silent","reason":"nonce absent","match":{"page":"/injection-silent-absent"}}
+{"kind":"prompt_injection_executed","expect":"silent","reason":"no probe pushed","match":{"page":"/clean"}}
+{"kind":"prompt_injection_executed","expect":"skipped","reason":"browser_mcp_unavailable"}

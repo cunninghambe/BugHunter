@@ -1,0 +1,18 @@
+{"kind":"network_fault_unhandled","expect":"fires","minClusterSize":1,"match":{"page":"/unhandled-fires"},"severity":"major"}
+{"kind":"network_fault_unhandled","expect":"silent","reason":"error UI shown","match":{"page":"/unhandled-silent-error-ui"}}
+{"kind":"network_fault_unhandled","expect":"silent","reason":"non-error-handling fault kind","match":{"page":"/unhandled-silent-non-error-fault"}}
+{"kind":"network_fault_unhandled","expect":"silent","reason":"network console error surfaced","match":{"page":"/unhandled-silent-network-console-error"}}
+{"kind":"network_fault_unhandled","expect":"silent","reason":"different bucket","match":{"page":"/optimistic-fires"}}
+{"kind":"network_fault_unhandled","expect":"silent","reason":"different bucket","match":{"page":"/optimistic-silent-no-snapshot"}}
+{"kind":"network_fault_unhandled","expect":"silent","reason":"different bucket","match":{"page":"/optimistic-silent-error-ui"}}
+{"kind":"network_fault_unhandled","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"network_fault_unhandled","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"network_fault_optimistic_no_revert","expect":"fires","minClusterSize":1,"match":{"page":"/optimistic-fires"},"severity":"major"}
+{"kind":"network_fault_optimistic_no_revert","expect":"silent","reason":"no optimistic snapshot","match":{"page":"/optimistic-silent-no-snapshot"}}
+{"kind":"network_fault_optimistic_no_revert","expect":"silent","reason":"error UI shown","match":{"page":"/optimistic-silent-error-ui"}}
+{"kind":"network_fault_optimistic_no_revert","expect":"silent","reason":"different bucket","match":{"page":"/unhandled-fires"}}
+{"kind":"network_fault_optimistic_no_revert","expect":"silent","reason":"different bucket","match":{"page":"/unhandled-silent-error-ui"}}
+{"kind":"network_fault_optimistic_no_revert","expect":"silent","reason":"different bucket","match":{"page":"/unhandled-silent-non-error-fault"}}
+{"kind":"network_fault_optimistic_no_revert","expect":"silent","reason":"different bucket","match":{"page":"/unhandled-silent-network-console-error"}}
+{"kind":"network_fault_optimistic_no_revert","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"network_fault_optimistic_no_revert","expect":"skipped","reason":"browser_mcp_unavailable"}
