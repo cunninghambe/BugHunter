@@ -282,6 +282,26 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (
+      (contract.kind === 'touch_target_too_small'
+        || contract.kind === 'hover_only_affordance'
+        || contract.kind === 'i18n_long_string_overflow'
+        || contract.kind === 'i18n_timezone_display_wrong')
+      && target.fixturePath !== undefined
+    ) {
+      const clusters = await runCssHeuristicsHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.kind,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'password_reset_token_reuse' && target.fixturePath !== undefined) {
       const clusters = await runPasswordResetReuseHarness(
         target.appBaseUrl,
@@ -2184,6 +2204,150 @@ async function runI18nTextStaticHarness(
     });
   }
 
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// css-heuristics runners — touch_target_too_small, hover_only_affordance,
+// i18n_long_string_overflow, i18n_timezone_display_wrong.
+// All are static heuristic checks against rendered HTML body.
+// ---------------------------------------------------------------------------
+
+const TOUCH_TARGET_MIN_PX = 24;
+
+function findSmallTouchTargets(html: string): boolean {
+  // Find every <button>/<a> with explicit width or height < 24px in inline style.
+  const re = /<(button|a)\b[^>]*\bstyle\s*=\s*["']([^"']+)["'][^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) {
+    const style = match[2] ?? '';
+    const wMatch = /\bwidth\s*:\s*(\d+)\s*px/i.exec(style);
+    const hMatch = /\bheight\s*:\s*(\d+)\s*px/i.exec(style);
+    const width = wMatch !== null ? parseInt(wMatch[1] ?? '0', 10) : Infinity;
+    const height = hMatch !== null ? parseInt(hMatch[1] ?? '0', 10) : Infinity;
+    if (width < TOUCH_TARGET_MIN_PX || height < TOUCH_TARGET_MIN_PX) return true;
+  }
+  return false;
+}
+
+function findHoverOnlyAffordance(html: string): boolean {
+  // Page has :hover rules without any matching :focus rule.
+  const hasHover = /:hover\b/i.test(html);
+  if (!hasHover) return false;
+  const hasFocus = /:focus(?:-visible)?\b/i.test(html);
+  return !hasFocus;
+}
+
+function findOverflowOverlyConstrained(html: string): boolean {
+  // Heuristic: text-overflow:ellipsis + overflow:hidden + fixed-px width on a label-ish element.
+  // (Without min-width:0 on a flex container parent — we can't statically tell, so we look for
+  // the antipattern of fixed-pixel width + ellipsis without a sibling/parent flex hint.)
+  if (!/text-overflow\s*:\s*ellipsis/i.test(html)) return false;
+  if (!/overflow\s*:\s*hidden/i.test(html)) return false;
+  const widthMatch = /\bwidth\s*:\s*(\d+)\s*px/i.exec(html);
+  if (widthMatch === null) return false;
+  // If the page also uses flex / min-width:0 / max-width / fr, treat as accommodating.
+  if (/flex\s*:|min-width\s*:\s*0/i.test(html)) return false;
+  return true;
+}
+
+const TZ_SUFFIX_RE = /\b(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?\s+)([A-Z]{2,4}|[+-]\d{2}:?\d{2})\b/g;
+
+function findTimezoneInconsistency(html: string): boolean {
+  const found = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = TZ_SUFFIX_RE.exec(html)) !== null) {
+    const tz = match[2];
+    if (tz !== undefined) found.add(tz);
+  }
+  return found.size >= 2;
+}
+
+async function runCssHeuristicsHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  kind: 'touch_target_too_small' | 'hover_only_affordance' | 'i18n_long_string_overflow' | 'i18n_timezone_display_wrong',
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push(`${kind}: fixture port not reachable during validate phase`);
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGet(url).catch((): ProbeResponse => ({ status: 0, body: '' }));
+      if (response.status === 0) continue;
+
+      let rootCause: string | undefined;
+      if (kind === 'touch_target_too_small') {
+        if (findSmallTouchTargets(response.body)) {
+          rootCause = `${route} contains an interactive element with explicit width or height < ${TOUCH_TARGET_MIN_PX}px`;
+        }
+      } else if (kind === 'hover_only_affordance') {
+        if (findHoverOnlyAffordance(response.body)) {
+          rootCause = `${route} has :hover styles without a :focus / :focus-visible counterpart — keyboard users see no affordance`;
+        }
+      } else if (kind === 'i18n_long_string_overflow') {
+        if (findOverflowOverlyConstrained(response.body)) {
+          rootCause = `${route} uses fixed-pixel width + text-overflow:ellipsis on translatable text — long translations will be truncated`;
+        }
+      } else {
+        if (findTimezoneInconsistency(response.body)) {
+          rootCause = `${route} renders multiple timestamps with conflicting timezone suffixes — likely shows times in a wrong/mixed timezone`;
+        }
+      }
+      if (rootCause !== undefined) {
+        detectionsByPage.set(route, rootCause);
+        log.info(`${kind}: detection`, { route });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const clusters: BugCluster[] = [];
+  for (const [page, rootCause] of detectionsByPage) {
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [{
+        occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+        role: 'anonymous',
+        page,
+        action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+        fullArtifacts: false as const,
+        timestamp: now,
+      }],
+      suspectedFiles: [],
+      fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'minor',
+    });
+  }
   return clusters;
 }
 

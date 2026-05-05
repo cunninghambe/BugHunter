@@ -1,0 +1,19 @@
+{"kind":"touch_target_too_small","expect":"fires","minClusterSize":1,"match":{"page":"/touch-tiny-button"},"severity":"minor"}
+{"kind":"touch_target_too_small","expect":"fires","minClusterSize":1,"match":{"page":"/touch-tiny-link"},"severity":"minor","edgeLabel":"anchor-too-small"}
+{"kind":"touch_target_too_small","expect":"silent","reason":"explicit width/height ≥24px","match":{"page":"/touch-good-size"}}
+{"kind":"touch_target_too_small","expect":"silent","reason":"no explicit size — defer to UA default (no static evidence of small target)","match":{"page":"/touch-no-size-set"}}
+{"kind":"touch_target_too_small","expect":"silent","reason":"no interactive elements present","match":{"page":"/touch-static-content"}}
+{"kind":"touch_target_too_small","expect":"skipped","reason":"no_response"}
+{"kind":"hover_only_affordance","expect":"fires","minClusterSize":1,"match":{"page":"/hover-no-focus"},"severity":"minor"}
+{"kind":"hover_only_affordance","expect":"silent","reason":"selector groups :hover with :focus","match":{"page":"/hover-with-focus"}}
+{"kind":"hover_only_affordance","expect":"silent","reason":"separate :focus-visible selector covers keyboard users","match":{"page":"/hover-with-focus-visible"},"edgeLabel":"focus-visible-counterpart"}
+{"kind":"hover_only_affordance","expect":"silent","reason":"page has no CSS rules at all","match":{"page":"/hover-no-css-rules"}}
+{"kind":"hover_only_affordance","expect":"skipped","reason":"no_response"}
+{"kind":"i18n_long_string_overflow","expect":"fires","minClusterSize":1,"match":{"page":"/overflow-hidden-fixed-width"},"severity":"minor"}
+{"kind":"i18n_long_string_overflow","expect":"silent","reason":"flex container with min-width:0 accommodates translation growth","match":{"page":"/overflow-flex-grow"},"edgeLabel":"flex-grow-safe"}
+{"kind":"i18n_long_string_overflow","expect":"silent","reason":"page has no overflow constraints","match":{"page":"/overflow-no-fixed-constraint"}}
+{"kind":"i18n_long_string_overflow","expect":"skipped","reason":"no_response"}
+{"kind":"i18n_timezone_display_wrong","expect":"fires","minClusterSize":1,"match":{"page":"/tz-conflicting-suffixes"},"severity":"minor"}
+{"kind":"i18n_timezone_display_wrong","expect":"silent","reason":"all timestamps use the same timezone suffix","match":{"page":"/tz-consistent-suffix"}}
+{"kind":"i18n_timezone_display_wrong","expect":"silent","reason":"no timezone suffix to misalign","match":{"page":"/tz-no-suffix"}}
+{"kind":"i18n_timezone_display_wrong","expect":"skipped","reason":"no_response"}

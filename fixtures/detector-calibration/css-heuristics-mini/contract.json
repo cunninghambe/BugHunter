@@ -1,0 +1,7 @@
+{
+  "fixture": "css-heuristics-mini",
+  "serves": ["touch_target_too_small", "hover_only_affordance", "i18n_long_string_overflow", "i18n_timezone_display_wrong"],
+  "port": 9773,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

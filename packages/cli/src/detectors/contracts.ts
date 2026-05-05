@@ -842,4 +842,68 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Three-step probe per /<route>/consume endpoint: request → consume → consume. Fires when the second consume succeeds (status 2xx, body not flagged as failure).',
   },
+  {
+    kind: 'touch_target_too_small',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'css-heuristics-mini',
+      servesKinds: ['touch_target_too_small'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Fires when <button>/<a> has inline style width or height <24px (axe target-size minimum).',
+  },
+  {
+    kind: 'hover_only_affordance',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'css-heuristics-mini',
+      servesKinds: ['hover_only_affordance'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Fires when CSS has :hover rules without a corresponding :focus / :focus-visible — keyboard-only users miss the affordance.',
+  },
+  {
+    kind: 'i18n_long_string_overflow',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'css-heuristics-mini',
+      servesKinds: ['i18n_long_string_overflow'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Fires on fixed-pixel width + overflow:hidden + text-overflow:ellipsis combo without flex-grow accommodation — translatable text will be truncated.',
+  },
+  {
+    kind: 'i18n_timezone_display_wrong',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'css-heuristics-mini',
+      servesKinds: ['i18n_timezone_display_wrong'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Fires when a single page renders multiple timestamps with conflicting timezone suffixes (UTC + EST, etc.).',
+  },
 ];
