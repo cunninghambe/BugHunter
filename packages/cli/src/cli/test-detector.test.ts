@@ -4,6 +4,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { testDetectorCommand } from './test-detector.js';
 import type { TestDetectorOptions } from './test-detector.js';
 
+// Mock DETECTOR_CONTRACTS to be empty so these unit tests exercise the
+// "no contracts registered" code paths without trying live fixture connections.
+// V56.4.15: DETECTOR_CONTRACTS now has 127 entries; without this mock, kind=all
+// would attempt 127 fixture HTTP calls and time out.
+vi.mock('../detectors/contracts.js', () => ({
+  DETECTOR_CONTRACTS: [],
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

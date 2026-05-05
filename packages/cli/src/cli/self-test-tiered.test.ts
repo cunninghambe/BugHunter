@@ -5,6 +5,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { tieredSelfTestCommand } from './self-test-tiered.js';
 import type { TieredSelfTestOptions } from './self-test-tiered.js';
 
+// Mock testDetectorCommand to avoid live fixture server connections.
+// V56.4.15: DETECTOR_CONTRACTS now has 127 entries (all sentinel-wired); without this
+// mock, Tier 1 would attempt 127 fixture connections which causes test timeouts.
+vi.mock('./test-detector.js', () => ({
+  testDetectorCommand: vi.fn().mockResolvedValue(undefined),
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -38,7 +45,9 @@ describe('tieredSelfTestCommand', () => {
     vi.restoreAllMocks();
   });
 
-  it('Tier 1 with empty DETECTOR_CONTRACTS reports 0 detectors and passes', async () => {
+  it('Tier 1 with mocked testDetectorCommand reports detectors and passes', async () => {
+    // V56.4.15: DETECTOR_CONTRACTS has 127 entries; testDetectorCommand is mocked to avoid
+    // live fixture server connections. The tier reports N detectors and passes vacuously.
     const stdout = captureStdout();
 
     await tieredSelfTestCommand({ tier: 1 });
@@ -46,7 +55,7 @@ describe('tieredSelfTestCommand', () => {
     stdout.restore();
 
     expect(process.exitCode).toBeUndefined();
-    expect(stdout.out()).toContain('0 detectors');
+    expect(stdout.out()).toMatch(/\d+ per-detector test/);
     expect(stdout.out()).not.toContain('FAILED');
   });
 

@@ -152,12 +152,14 @@ describe('evaluateExpectations', () => {
     expect(result.unexpectedKinds).toContain('react_error');
   });
 
-  it('unexpectedKinds does NOT contain non-wired kinds', () => {
+  it('unexpectedKinds contains wired kind observed but only listed as absent (not golden positive)', () => {
+    // xss_stored is sentinel-wired since V56.4.15; if it fires it IS unexpected unless
+    // it appears as a golden positive. A 'negative' (absent) entry does not satisfy that.
     const clusters = [makeCluster('xss_stored', 'xss_stored|/route')];
     const golden = [makeNegative('xss_stored')];
     const result = evaluateExpectations(clusters, golden, { failOnFlake: true });
-    // xss_stored is deferred so should NOT appear in unexpectedKinds
-    expect(result.unexpectedKinds).not.toContain('xss_stored');
+    // xss_stored is wired and appeared without a golden positive → unexpected
+    expect(result.unexpectedKinds).toContain('xss_stored');
   });
 
   it('budget violation reflected in passed=false when combined with result', () => {

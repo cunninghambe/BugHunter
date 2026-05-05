@@ -101,15 +101,17 @@ describe('calibrateCommand — gold validation', () => {
       .rejects.toThrow(CalibrateGoldError);
   });
 
-  it('throws CalibrateGoldError when deferred kind has expected: detector_fires', async () => {
+  it('does not throw CalibrateGoldError when wired kind has expected: detector_fires (V56.4.15: xss_stored is now sentinel-wired)', async () => {
+    // xss_stored is wired since V56.4.15 — detector_fires is a valid expectation for wired kinds
     writeGold(appDir, [{
       ...VALID_GOLD_ENTRY,
       goldId: 'test-app-001',
-      kind: 'xss_stored', // deferred
+      kind: 'xss_stored',
       expected: 'detector_fires',
     }]);
+    // runCommand is mocked; no runs → CalibrateRunError, not CalibrateGoldError
     await expect(calibrateCommand({ appPath: appDir, noBootTeardown: true }))
-      .rejects.toThrow(CalibrateGoldError);
+      .rejects.not.toThrow(CalibrateGoldError);
   });
 });
 
@@ -173,8 +175,10 @@ describe('calibrateCommand — happy path', () => {
     expect(exitCode).toBeUndefined();
   });
 
-  it('deferred kind detector_silent gold → true_negative in report', async () => {
-    // overwrite gold with a deferred-kind silent entry
+  it('wired kind with detector_silent gold + no clusters → no_data in report (V56.4.15: xss_stored sentinel-wired)', async () => {
+    // xss_stored is now sentinel-wired (not deferred). A detector_silent gold entry
+    // for a wired kind with no matching clusters produces 'no_data' (not 'expected_silent').
+    // 'expected_silent' only applies to deferred kinds in the calibrate report logic.
     writeGold(appDir, [{
       ...VALID_GOLD_ENTRY,
       goldId: 'test-app-001',
@@ -193,7 +197,6 @@ describe('calibrateCommand — happy path', () => {
     const report = JSON.parse(fs.readFileSync(reportPath, 'utf-8')) as {
       perKind: Record<string, { status: string; tn: number }>;
     };
-    expect(report.perKind['xss_stored']?.status).toBe('expected_silent');
-    expect(report.perKind['xss_stored']?.tn).toBe(1);
+    expect(report.perKind['xss_stored']?.status).toBe('no_data');
   });
 });

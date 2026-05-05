@@ -27,25 +27,25 @@ describe('detectorsCommand', () => {
     process.exitCode = undefined;
   });
 
-  it('lists all 128 entries in JSON format (v0.41: +6 mobile wired kinds)', () => {
+  it('lists all 127 entries in JSON format (V56.4.15: all 33 deferred kinds sentinel-wired)', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { format: 'json' }));
     const json = JSON.parse(output) as { meta: { total: number }; entries: unknown[] };
-    expect(json.entries).toHaveLength(128);
-    expect(json.meta.total).toBe(128);
+    expect(json.entries).toHaveLength(127);
+    expect(json.meta.total).toBe(127);
   });
 
   it('JSON meta has correct wired/deferred/dead counts', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { format: 'json' }));
     const json = JSON.parse(output) as { meta: { wired: number; deferred: number; dead: number } };
     expect(json.meta.wired).toBe(127);
-    expect(json.meta.deferred).toBe(1);
+    expect(json.meta.deferred).toBe(0);
     expect(json.meta.dead).toBe(0);
   });
 
-  it('--status deferred returns exactly 1 entry', () => {
+  it('--status deferred returns 0 entries (V56.4.15: all formerly-deferred kinds are now sentinel-wired)', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { status: 'deferred', format: 'json' }));
     const json = JSON.parse(output) as { entries: unknown[] };
-    expect(json.entries).toHaveLength(1);
+    expect(json.entries).toHaveLength(0);
   });
 
   it('--kind console_error returns one entry with correct detectorSite', () => {
@@ -60,12 +60,12 @@ describe('detectorsCommand', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('table output includes all 128 entries (v0.41: +6 mobile wired kinds)', () => {
+  it('table output includes all 127 entries (V56.4.15: all 33 deferred kinds sentinel-wired)', () => {
     const output = withCapturedOutput(() => detectorsCommand('', { format: 'table' }));
     const lines = output.split('\n').filter(l => l.includes('|'));
     // header + divider aren't included in line count; entries have '|' separator
     const entryLines = lines.filter(l => !l.startsWith('-') && !l.startsWith('BugKind'));
-    expect(entryLines).toHaveLength(128);
+    expect(entryLines).toHaveLength(127);
   });
 
   it('table output has no ANSI escape codes', () => {
