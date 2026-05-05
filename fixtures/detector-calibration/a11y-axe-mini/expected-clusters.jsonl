@@ -1,0 +1,15 @@
+{"kind":"accessibility_critical","expect":"fires","minClusterSize":1,"match":{"page":"/a11y-image-alt"},"severity":"critical"}
+{"kind":"accessibility_critical","expect":"fires","minClusterSize":1,"match":{"page":"/a11y-label"},"severity":"critical","edgeLabel":"label-violation"}
+{"kind":"accessibility_critical","expect":"fires","minClusterSize":1,"match":{"page":"/a11y-aria-required"},"severity":"critical","edgeLabel":"aria-required"}
+{"kind":"accessibility_critical","expect":"fires","minClusterSize":1,"match":{"page":"/a11y-color-contrast"},"severity":"critical","edgeLabel":"color-contrast-also-fires-critical"}
+{"kind":"accessibility_critical","expect":"fires","minClusterSize":1,"match":{"page":"/a11y-mixed"},"severity":"critical","edgeLabel":"mixed-violations"}
+{"kind":"accessibility_critical","expect":"silent","reason":"page has no axe violations","match":{"page":"/a11y-clean"}}
+{"kind":"accessibility_critical","expect":"silent","reason":"only moderate-impact violation; below critical/serious threshold","match":{"page":"/a11y-only-minor"},"edgeLabel":"moderate-impact-skip"}
+{"kind":"accessibility_critical","expect":"silent","reason":"violation has null impact; cannot classify as critical","match":{"page":"/a11y-no-impact"},"edgeLabel":"null-impact-skip"}
+{"kind":"accessibility_critical","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"axe_color_contrast_strong","expect":"fires","minClusterSize":1,"match":{"page":"/a11y-color-contrast"},"severity":"critical"}
+{"kind":"axe_color_contrast_strong","expect":"fires","minClusterSize":1,"match":{"page":"/a11y-mixed"},"severity":"critical","edgeLabel":"mixed-with-color-contrast"}
+{"kind":"axe_color_contrast_strong","expect":"silent","reason":"violation is image-alt, not color-contrast","match":{"page":"/a11y-image-alt"}}
+{"kind":"axe_color_contrast_strong","expect":"silent","reason":"violation is label, not color-contrast","match":{"page":"/a11y-label"}}
+{"kind":"axe_color_contrast_strong","expect":"silent","reason":"page has no axe violations","match":{"page":"/a11y-clean"}}
+{"kind":"axe_color_contrast_strong","expect":"skipped","reason":"browser_mcp_unavailable"}

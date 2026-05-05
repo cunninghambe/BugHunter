@@ -1008,4 +1008,38 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'V56.4 browser harness. Scans envelope.domState.bodyTextSample for "something went wrong" / "an error occurred" / "unable to" / "failed to" patterns.',
   },
+  {
+    kind: 'accessibility_critical',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: {
+      path: 'a11y-axe-mini',
+      servesKinds: ['accessibility_critical'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness. Calibration fixture injects axe-shaped violations directly into window.__bh.axeViolations; classifier fires on impact === critical/serious. Production injects real axe-core via classify/accessibility.ts.',
+  },
+  {
+    kind: 'axe_color_contrast_strong',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: {
+      path: 'a11y-axe-mini',
+      servesKinds: ['axe_color_contrast_strong'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness. Filters envelope.axeViolations to id === "color-contrast"; calibration fixture provides shaped violations.',
+  },
 ];

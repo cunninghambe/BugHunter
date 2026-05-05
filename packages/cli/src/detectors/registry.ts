@@ -131,6 +131,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'dom_error_text',
@@ -627,6 +628,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'keyboard_trap',
