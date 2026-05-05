@@ -991,4 +991,21 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'V56.4 browser harness. Fires when console.error text matches hydration-mismatch patterns (Hydration failed, Text content does not match, etc.).',
   },
+  {
+    kind: 'dom_error_text',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: {
+      path: 'dom-error-text-mini',
+      servesKinds: ['dom_error_text'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness. Scans envelope.domState.bodyTextSample for "something went wrong" / "an error occurred" / "unable to" / "failed to" patterns.',
+  },
 ];

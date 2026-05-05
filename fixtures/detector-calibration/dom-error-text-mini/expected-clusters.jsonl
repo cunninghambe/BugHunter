@@ -1,0 +1,9 @@
+{"kind":"dom_error_text","expect":"fires","minClusterSize":1,"match":{"page":"/error-something-went-wrong"},"severity":"major"}
+{"kind":"dom_error_text","expect":"fires","minClusterSize":1,"match":{"page":"/error-an-error-occurred"},"severity":"major","edgeLabel":"an-error-occurred"}
+{"kind":"dom_error_text","expect":"fires","minClusterSize":1,"match":{"page":"/error-unable-to"},"severity":"major","edgeLabel":"unable-to"}
+{"kind":"dom_error_text","expect":"fires","minClusterSize":1,"match":{"page":"/error-failed-to"},"severity":"major","edgeLabel":"failed-to"}
+{"kind":"dom_error_text","expect":"silent","reason":"page renders successfully","match":{"page":"/clean-success"}}
+{"kind":"dom_error_text","expect":"silent","reason":"empty page has no error text","match":{"page":"/clean-empty"}}
+{"kind":"dom_error_text","expect":"fires","minClusterSize":1,"match":{"page":"/error-mixed-case"},"severity":"major","edgeLabel":"case-insensitive-match"}
+{"kind":"dom_error_text","expect":"fires","minClusterSize":1,"match":{"page":"/error-malformed"},"severity":"major","edgeLabel":"malformed-html-still-detects"}
+{"kind":"dom_error_text","expect":"skipped","reason":"browser_mcp_unavailable"}

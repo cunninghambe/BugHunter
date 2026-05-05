@@ -71,6 +71,23 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
       severity: 'major',
     }];
   },
+
+  // ---- Bucket A: dom_error_text ----
+  // Production pattern: /(something went wrong|an error occurred|unable to|failed to)/i
+  // applied to TreeWalker text nodes. Harness reads envelope.domState.bodyTextSample
+  // (capped at 1000 chars) which is sufficient for short error messages typically
+  // rendered by toast / error-boundary components.
+  dom_error_text(envelope) {
+    const text = envelope.domState.bodyTextSample;
+    const re = /(something went wrong|an error occurred|unable to|failed to)/i;
+    const match = re.exec(text);
+    if (match === null) return [];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `Error text in DOM on ${envelope.pageRoute}: "${match[0]}" (sample: "${text.slice(0, 100)}")`,
+      severity: 'major',
+    }];
+  },
 };
 
 export function getBrowserHarnessClassifier(kind: BugKind): BrowserHarnessClassifier | undefined {
