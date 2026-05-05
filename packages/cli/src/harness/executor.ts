@@ -474,6 +474,18 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'money_math_precision' && target.fixturePath !== undefined) {
+      const clusters = await runMoneyMathPrecisionHarness(
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'i18n_hardcoded_string' && target.fixturePath !== undefined) {
       const clusters = await runI18nHardcodedStringHarness(
         target.fixturePath,
@@ -4251,6 +4263,167 @@ function runHardcodedCredsHarness(
   if (phases.includes('cluster')) phasesRun.push('cluster');
 
   return buildHardcodedCredsClusters(findings, fixturePath);
+}
+
+// ---------------------------------------------------------------------------
+// money_math_precision runner — static-source scan for float math on
+// money-named identifiers.
+// Production detector uses DB invariants; harness uses focused regex.
+// ---------------------------------------------------------------------------
+
+// Patterns intentionally allow camelCase joins (e.g. "priceUsd", "totalAmount").
+// Match anywhere in the identifier — false positives like "amounted" / "priceless"
+// are acceptable for a security-leaning heuristic.
+const MONEY_NAME_PATTERNS = [
+  /price/i,
+  /amount/i,
+  /total/i,
+  /subtotal/i,
+  /\bcost/i,
+  /refund/i,
+  /payment/i,
+  /charge/i,
+  /usd/i,
+  /eur/i,
+  /gbp/i,
+  /inr/i,
+];
+
+const SAFE_MONEY_INDICATORS = [
+  /cents?\b/i,
+  /\bcents?/i,
+  /[A-Z]Cents?/,
+  /bps\b/i,
+  /[A-Z]Bps/,
+  /Decimal/,
+  /bignum/i,
+];
+
+function isMoneyNamedSymbol(name: string): boolean {
+  if (SAFE_MONEY_INDICATORS.some(re => re.test(name))) return false;
+  return MONEY_NAME_PATTERNS.some(re => re.test(name));
+}
+
+function findMoneyMathPrecisionViolations(src: string): string[] {
+  const violations: string[] = [];
+
+  // 1. parseFloat(...moneyName...)
+  const parseFloatRe = /parseFloat\s*\(\s*([^)]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = parseFloatRe.exec(src)) !== null) {
+    const arg = match[1] ?? '';
+    if (isMoneyNamedSymbol(arg)) violations.push(`parseFloat(${arg.slice(0, 50)})`);
+  }
+
+  // 2. Float arithmetic ops on money-named variables.
+  // Pattern: <moneyName> [*+/] <number-with-decimal-or-name>
+  const opRe = /([A-Za-z_$][A-Za-z0-9_$.]*)\s*([*/+])\s*([A-Za-z0-9_$.()]+)/g;
+  while ((match = opRe.exec(src)) !== null) {
+    const lhs = match[1] ?? '';
+    const op = match[2] ?? '';
+    const rhs = match[3] ?? '';
+    if (op !== '*' && op !== '/' && op !== '+') continue;
+    if (!isMoneyNamedSymbol(lhs)) continue;
+    if (!/[.\d]/.test(rhs)) continue;
+    if (/\bcents?\b/i.test(lhs) || /\bbps\b/i.test(lhs)) continue;
+    violations.push(`${lhs} ${op} ${rhs.slice(0, 40)}`);
+  }
+
+  return violations;
+}
+
+async function runMoneyMathPrecisionHarness(
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  const generatedDir = path.join(fixturePath, 'generated');
+
+  if (phases.includes('execute')) {
+    const upScript = path.join(fixturePath, 'bin', 'up.sh');
+    if (fs.existsSync(upScript)) {
+      const result = child_process.spawnSync('bash', [upScript], { cwd: fixturePath, encoding: 'utf8' });
+      if (result.status !== 0) {
+        warnings.push(`money_math_precision: up.sh exited ${String(result.status)}: ${result.stderr}`);
+      }
+    }
+  }
+
+  if (!fs.existsSync(generatedDir)) {
+    warnings.push('money_math_precision: generated/ missing — fixture not built, skipping scan');
+    phasesRun.push('execute');
+    return [];
+  }
+
+  if (signal.aborted) return [];
+
+  // Recursively walk generated/ for .ts/.tsx files
+  const files: string[] = [];
+  (function walk(dir: string): void {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx') || entry.name.endsWith('.js') || entry.name.endsWith('.jsx'))) {
+        files.push(full);
+      }
+    }
+  })(generatedDir);
+
+  const violationsByPage = new Map<string, string[]>();
+
+  if (phases.includes('execute')) {
+    for (const file of files) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const content = fs.readFileSync(file, 'utf8');
+      const violations = findMoneyMathPrecisionViolations(content);
+      if (violations.length > 0) {
+        const page = path.relative(fixturePath, file);
+        violationsByPage.set(page, violations);
+        log.info('money_math_precision: violation', { page, count: violations.length });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'money_math_precision';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, violations] of violationsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/[^a-z0-9]/gi, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause: `${violations.length} float arithmetic operation(s) on money-named identifier(s) in ${page}: ${violations.slice(0, 2).join('; ')}`,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: violations.length,
+      occurrences: [occurrence],
+      suspectedFiles: [page],
+      fixHints: ['Use integer cents (Stripe convention) or a Decimal library for money math; avoid IEEE 754 float arithmetic'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
+    });
+  }
+
+  return clusters;
 }
 
 // ---------------------------------------------------------------------------

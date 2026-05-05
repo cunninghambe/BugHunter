@@ -746,4 +746,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Static-heuristic harness. Fires on JSON API responses (Content-Type: application/json) with Cache-Control max-age >60s and no must-revalidate / no-cache / private directive — high stale-data risk.',
   },
+  {
+    kind: 'money_math_precision',
+    requires: {
+      phases: ['execute', 'classify', 'cluster'],
+      tools: ['static-analysis'],
+      surface: 'static-source',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'money-math-mini',
+      servesKinds: ['money_math_precision'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-source scanner. Fires on parseFloat(...money...) and float arithmetic ops (* / +) on money-named identifiers (price, amount, total, refund, etc.). Skips identifiers ending in cents/bps and Decimal usage.',
+  },
 ];

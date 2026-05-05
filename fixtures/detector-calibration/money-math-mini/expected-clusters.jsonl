@@ -1,0 +1,6 @@
+{"kind":"money_math_precision","expect":"fires","minClusterSize":1,"match":{"page":"generated/src/floating.ts"},"severity":"major"}
+{"kind":"money_math_precision","expect":"silent","reason":"uses integer cents and Decimal — no float math on money","match":{"page":"generated/src/decimal-safe.ts"}}
+{"kind":"money_math_precision","expect":"silent","reason":"float math on non-money values (animation, percentage)","match":{"page":"generated/src/non-money-floats.ts"},"edgeLabel":"non-money-floats"}
+{"kind":"money_math_precision","expect":"silent","reason":"parseFloat on age and timeout, not currency","match":{"page":"generated/src/parsefloat-non-money.ts"},"edgeLabel":"parsefloat-non-money"}
+{"kind":"money_math_precision","expect":"fires","minClusterSize":1,"match":{"page":"generated/src/malformed.ts"},"severity":"major","edgeLabel":"malformed-typescript-still-detects"}
+{"kind":"money_math_precision","expect":"skipped","reason":"fixture_not_built"}
