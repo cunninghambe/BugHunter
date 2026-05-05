@@ -103,7 +103,23 @@ Scoped to specific route with persistence:
 
 **Output includes:** `clusters[]`, `telemetry.budgetExceeded`, `telemetry.perDetectorElapsed`, `warnings[]`.
 
-**Note:** V56.1 ships the infrastructure. `bughunt_run_detector` returns `unknown_detector_kind` for all kinds until V56.2 populates `DETECTOR_CONTRACTS` with the first 10 detectors.
+**Coverage (as of V56.3):** 51 / 94 wired BugKinds have working harness coverage with calibration scorecards.
+
+The remaining 43 require browser runtime / concurrent action / agent infra that doesn't fit the static-fixture model:
+- 9 core browser observers (console_error, react_error, hydration_mismatch, etc.)
+- 4 IDOR variants (mutate / vertical escalation)
+- 5 race-condition kinds
+- 7 perf metrics (slow_lcp, slow_inp, high_cls, n_plus_one, etc.)
+- 5 nav-state kinds (back/forward/refresh)
+- 4 a11y interaction kinds (axe_color_contrast, keyboard_trap, focus_lost, shadow_dom)
+- 4 multi-context kinds
+- 2 service/web worker kinds
+- 2 network_fault kinds
+- 1 webrtc_ice_failure
+- 1 prompt_injection_executed (LLM agent)
+- 1 i18n_rtl_layout_break (visual layout)
+
+These run via the production browser-driven path (camofox + classifiers) but are not yet harnessable in isolation.
 
 ## Companion projects
 
