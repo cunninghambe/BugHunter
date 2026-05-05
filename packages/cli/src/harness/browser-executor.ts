@@ -246,35 +246,58 @@ export const BOOTSTRAP_INSTALL_SCRIPT = `(() => {
 })()`;
 
 /**
- * Read `window.__bh` after the settle window. Returns the full envelope
- * (sans pageRoute, which the runner adds).
+ * Read the harvest envelope from the DOM-bridged `<script id="__bh-data">`
+ * element. The bootstrap (running in the page's main world) mirrors
+ * `window.__bh` state into this element's textContent on every event push.
+ * Reading via document is world-agnostic — works whether camofox's evaluate
+ * runs in main or isolated world. Falls back to `window.__bh` direct read
+ * when the bootstrap is in same world as the harvest.
  */
 export const HARVEST_SCRIPT = `(() => {
-  const bh = window.__bh;
-  if (!bh || !bh.installed) {
-    return {
-      consoleEvents: [],
-      uncaughtErrors: [],
-      unhandledRejections: [],
-      performanceEntries: [],
-      resourceRequests: [],
-      domState: { activeElementTag: null, bodyTextLength: 0, bodyTextSample: '' },
-      harvestWarnings: ['bootstrap_not_installed'],
-    };
-  }
+  const empty = {
+    consoleEvents: [],
+    uncaughtErrors: [],
+    unhandledRejections: [],
+    performanceEntries: [],
+    resourceRequests: [],
+    domState: { activeElementTag: null, bodyTextLength: 0, bodyTextSample: '' },
+    harvestWarnings: ['bootstrap_not_installed'],
+  };
   const activeEl = document.activeElement;
   const bodyText = (document.body && document.body.innerText) || '';
+  const domState = {
+    activeElementTag: activeEl ? activeEl.tagName : null,
+    bodyTextLength: bodyText.length,
+    bodyTextSample: bodyText.slice(0, 1000),
+  };
+  // Prefer DOM-bridged state — works across world boundaries.
+  const dataEl = document.getElementById('__bh-data');
+  if (dataEl && dataEl.textContent) {
+    try {
+      const parsed = JSON.parse(dataEl.textContent);
+      if (parsed && parsed.installed === true) {
+        return {
+          consoleEvents: Array.isArray(parsed.consoleEvents) ? parsed.consoleEvents : [],
+          uncaughtErrors: Array.isArray(parsed.uncaughtErrors) ? parsed.uncaughtErrors : [],
+          unhandledRejections: Array.isArray(parsed.unhandledRejections) ? parsed.unhandledRejections : [],
+          performanceEntries: Array.isArray(parsed.performanceEntries) ? parsed.performanceEntries : [],
+          resourceRequests: Array.isArray(parsed.resourceRequests) ? parsed.resourceRequests : [],
+          domState: domState,
+          harvestWarnings: Array.isArray(parsed.harvestWarnings) ? parsed.harvestWarnings : [],
+        };
+      }
+    } catch (_e) { /* fall through */ }
+  }
+  // Fall back to direct window.__bh read (same-world install + harvest).
+  const bh = window.__bh;
+  if (!bh || !bh.installed) return Object.assign({}, empty, { domState: domState });
   return {
     consoleEvents: bh.consoleEvents.slice(0, 200),
     uncaughtErrors: bh.uncaughtErrors.slice(0, 50),
     unhandledRejections: bh.unhandledRejections.slice(0, 50),
     performanceEntries: bh.performanceEntries.slice(0, 200),
     resourceRequests: bh.resourceRequests.slice(0, 200),
-    domState: {
-      activeElementTag: activeEl ? activeEl.tagName : null,
-      bodyTextLength: bodyText.length,
-      bodyTextSample: bodyText.slice(0, 1000),
-    },
+    domState: domState,
     harvestWarnings: bh.harvestWarnings.slice(0, 50),
   };
 })()`;
@@ -561,8 +584,6 @@ export async function runBrowserHarness(opts: BrowserHarnessOptions): Promise<Br
                   consoleEvents: envelope.consoleEvents.length,
                   uncaughtErrors: envelope.uncaughtErrors.length,
                   performanceEntries: envelope.performanceEntries.length,
-                  bodyTextSample: envelope.domState.bodyTextSample.slice(0, 100),
-                  harvestWarnings: envelope.harvestWarnings,
                 });
               }
             }

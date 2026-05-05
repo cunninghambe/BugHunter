@@ -52,12 +52,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'major',
-    // V56.4.2: harness:true intentionally NOT set yet. Wiring is in place
-    // (browser-classifiers registry, runOneBrowserContract dispatch,
-    // console-error-mini fixture with inline bootstrap). The
-    // DETECTOR_CONTRACTS activation is deferred to V56.4.3 — calibration
-    // requires a healthy camofox-browser process; the build-machine env
-    // surfaced env-specific instability mid-development.
+    harness: true,
   },
   {
     kind: 'react_error',

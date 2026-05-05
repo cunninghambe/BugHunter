@@ -923,20 +923,21 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Static-heuristic harness. Fires when a single page renders multiple timestamps with conflicting timezone suffixes (UTC + EST, etc.).',
   },
-  // V56.4.2: console_error DETECTOR_CONTRACTS entry intentionally not added yet.
-  // The wiring (runOneBrowserContract dispatch, browser-classifiers registry,
-  // console-error-mini fixture with inline bootstrap) is all in place and exercised
-  // by the runner. Activating the contract requires a healthy camofox-browser
-  // process; calibration on the dev machine surfaced env-specific instability
-  // (browserContext closing mid-run). Calibration is deferred to V56.4.3 once
-  // the env is stable; the contract entry V56.4.3 will add looks like:
-  //
-  //   { kind: 'console_error',
-  //     requires: { phases: ['validate','execute','classify','cluster'],
-  //                 tools: ['browser-mcp'], surface: 'web',
-  //                 role: { kind: 'none' }, pageContext: { kind: 'any-route' },
-  //                 observationWindowMs: 1500 },
-  //     fixture: { path: 'console-error-mini', servesKinds: ['console_error'] },
-  //     defaultBudgetMs: 30_000,
-  //     note: 'V56.4 browser harness — see fixture/app/server.js for inline bootstrap.' }
+  {
+    kind: 'console_error',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: {
+      path: 'console-error-mini',
+      servesKinds: ['console_error'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness — fixture HTML pages embed the bootstrap inline as the first <head> script so console-override is in the page world (camofox evaluate is isolated-world). Fires when the harvested envelope contains any console event with level==="error".',
+  },
 ];
