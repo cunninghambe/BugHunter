@@ -1408,4 +1408,89 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'V56.4 browser harness. Fixture pushes geo findings via window.__bh.pushRtlGeoFinding; harness emits per high-certainty entry mirroring discovery/locale/rtl.ts. Production drives via apply-RTL + capture-rect-map + checkGeometry.',
   },
+
+  // V56.4.15: sentinel-based contracts for all 33 previously-deferred BugKinds.
+  // All use tools: ['browser-mcp'], surface: 'web', sentinel push pattern.
+
+  // ---- mixed-runtime-mini (port 9553): clock x5 + xss_stored + multi_user + permission_denied + infinite_loading + idempotency (11 kinds) ----
+  ...(['clock_skew_token_invalid', 'clock_overflow', 'clock_dst_corruption', 'clock_leap_day_failure', 'clock_timezone_display',
+    'xss_stored', 'multi_user_inconsistent_snapshot', 'permission_denied_unhandled', 'infinite_loading', 'idempotency_key_violation'] as const).map(kind => ({
+    kind,
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'] as RequiredPhase[],
+      tools: ['browser-mcp'] as ('browser-mcp')[],
+      surface: 'web' as const,
+      role: { kind: 'none' as const },
+      pageContext: { kind: 'any-route' as const },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'mixed-runtime-mini', servesKinds: [kind] },
+    defaultBudgetMs: 30_000,
+    note: `V56.4.15 sentinel-based browser harness. Fixture pushes a sentinel event via window.__bh.pushSentinelEvent; classifier fires when kind matches. Production runner integration pending (inline-mirror pattern).`,
+  })),
+
+  // ---- perf-deferred-mini (port 9543): 5 perf kinds ----
+  ...(['unbounded_list_render', 'oversized_bundle', 'excessive_re_renders', 'memory_leak_suspected', 'memory_leak_attributed'] as const).map(kind => ({
+    kind,
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'] as RequiredPhase[],
+      tools: ['browser-mcp'] as ('browser-mcp')[],
+      surface: 'web' as const,
+      role: { kind: 'none' as const },
+      pageContext: { kind: 'any-route' as const },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'perf-deferred-mini', servesKinds: [kind] },
+    defaultBudgetMs: 30_000,
+    note: `V56.4.15 sentinel-based browser harness. Fixture pushes a sentinel event via window.__bh.pushSentinelEvent; classifier fires when kind matches. Production runner integration pending.`,
+  })),
+
+  // ---- agent-runner-mini (port 9533): 5 agentic kinds ----
+  ...(['agent_response_hallucinated', 'agent_action_timeout', 'streaming_response_truncated', 'tool_call_failure_unhandled', 'agent_cost_per_turn_high'] as const).map(kind => ({
+    kind,
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'] as RequiredPhase[],
+      tools: ['browser-mcp'] as ('browser-mcp')[],
+      surface: 'web' as const,
+      role: { kind: 'none' as const },
+      pageContext: { kind: 'any-route' as const },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'agent-runner-mini', servesKinds: [kind] },
+    defaultBudgetMs: 30_000,
+    note: `V56.4.15 sentinel-based browser harness. Fixture pushes a sentinel event via window.__bh.pushSentinelEvent; classifier fires when kind matches. Production runner integration pending (V43.x).`,
+  })),
+
+  // ---- interaction-palette-mini (port 9523): 9 interaction kinds ----
+  ...(['drag_drop_failure', 'paste_handler_failure', 'autofill_state_desync', 'animation_state_corruption',
+    'print_stylesheet_broken', 'reduced_motion_violation', 'forced_colors_failure', 'dark_mode_layout_break', 'zoom_layout_break'] as const).map(kind => ({
+    kind,
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'] as RequiredPhase[],
+      tools: ['browser-mcp'] as ('browser-mcp')[],
+      surface: 'web' as const,
+      role: { kind: 'none' as const },
+      pageContext: { kind: 'any-route' as const },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'interaction-palette-mini', servesKinds: [kind] },
+    defaultBudgetMs: 30_000,
+    note: `V56.4.15 sentinel-based browser harness. Fixture pushes a sentinel event via window.__bh.pushSentinelEvent; classifier fires when kind matches. Production runner integration pending (V38.x).`,
+  })),
+
+  // ---- mobile-responsive-mini (port 9513): 4 mobile kinds ----
+  ...(['viewport_100vh_break', 'soft_keyboard_occlusion', 'orientation_change_layout_break', 'pull_to_refresh_conflict'] as const).map(kind => ({
+    kind,
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'] as RequiredPhase[],
+      tools: ['browser-mcp'] as ('browser-mcp')[],
+      surface: 'web' as const,
+      role: { kind: 'none' as const },
+      pageContext: { kind: 'any-route' as const },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'mobile-responsive-mini', servesKinds: [kind] },
+    defaultBudgetMs: 30_000,
+    note: `V56.4.15 sentinel-based browser harness. Fixture pushes a sentinel event via window.__bh.pushSentinelEvent; classifier fires when kind matches. Production runner integration pending (V41.x).`,
+  })),
 ];

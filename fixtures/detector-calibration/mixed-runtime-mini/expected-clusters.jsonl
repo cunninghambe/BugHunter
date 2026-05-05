@@ -1,0 +1,30 @@
+{"kind":"clock_skew_token_invalid","expect":"fires","minClusterSize":1,"match":{"page":"/clock-skew-fires"},"severity":"major"}
+{"kind":"clock_skew_token_invalid","expect":"silent","reason":"no sentinel pushed","match":{"page":"/clock-skew-silent"}}
+{"kind":"clock_skew_token_invalid","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"clock_overflow","expect":"fires","minClusterSize":1,"match":{"page":"/clock-overflow-fires"},"severity":"major"}
+{"kind":"clock_overflow","expect":"silent","reason":"no sentinel pushed","match":{"page":"/clock-overflow-silent"}}
+{"kind":"clock_overflow","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"clock_dst_corruption","expect":"fires","minClusterSize":1,"match":{"page":"/clock-dst-fires"},"severity":"minor"}
+{"kind":"clock_dst_corruption","expect":"silent","reason":"no sentinel pushed","match":{"page":"/clock-dst-silent"}}
+{"kind":"clock_dst_corruption","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"clock_leap_day_failure","expect":"fires","minClusterSize":1,"match":{"page":"/clock-leap-fires"},"severity":"minor"}
+{"kind":"clock_leap_day_failure","expect":"silent","reason":"no sentinel pushed","match":{"page":"/clock-leap-silent"}}
+{"kind":"clock_leap_day_failure","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"clock_timezone_display","expect":"fires","minClusterSize":1,"match":{"page":"/clock-tz-fires"},"severity":"minor"}
+{"kind":"clock_timezone_display","expect":"silent","reason":"no sentinel pushed","match":{"page":"/clock-tz-silent"}}
+{"kind":"clock_timezone_display","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"xss_stored","expect":"fires","minClusterSize":1,"match":{"page":"/xss-stored-fires"},"severity":"critical"}
+{"kind":"xss_stored","expect":"silent","reason":"no sentinel pushed","match":{"page":"/xss-stored-silent"}}
+{"kind":"xss_stored","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"multi_user_inconsistent_snapshot","expect":"fires","minClusterSize":1,"match":{"page":"/multi-user-fires"},"severity":"major"}
+{"kind":"multi_user_inconsistent_snapshot","expect":"silent","reason":"no sentinel pushed","match":{"page":"/multi-user-silent"}}
+{"kind":"multi_user_inconsistent_snapshot","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"permission_denied_unhandled","expect":"fires","minClusterSize":1,"match":{"page":"/permission-denied-fires"},"severity":"minor"}
+{"kind":"permission_denied_unhandled","expect":"silent","reason":"no sentinel pushed","match":{"page":"/permission-denied-silent"}}
+{"kind":"permission_denied_unhandled","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"infinite_loading","expect":"fires","minClusterSize":1,"match":{"page":"/infinite-loading-fires"},"severity":"major"}
+{"kind":"infinite_loading","expect":"silent","reason":"no sentinel pushed","match":{"page":"/infinite-loading-silent"}}
+{"kind":"infinite_loading","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"idempotency_key_violation","expect":"fires","minClusterSize":1,"match":{"page":"/idempotency-fires"},"severity":"major"}
+{"kind":"idempotency_key_violation","expect":"silent","reason":"no sentinel pushed","match":{"page":"/idempotency-silent"}}
+{"kind":"idempotency_key_violation","expect":"skipped","reason":"browser_mcp_unavailable"}

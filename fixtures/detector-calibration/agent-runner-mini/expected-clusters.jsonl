@@ -1,0 +1,15 @@
+{"kind":"agent_response_hallucinated","expect":"fires","minClusterSize":1,"match":{"page":"/agent-hallucinated-fires"},"severity":"major"}
+{"kind":"agent_response_hallucinated","expect":"silent","reason":"no sentinel pushed","match":{"page":"/agent-hallucinated-silent"}}
+{"kind":"agent_response_hallucinated","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"agent_action_timeout","expect":"fires","minClusterSize":1,"match":{"page":"/agent-timeout-fires"},"severity":"major"}
+{"kind":"agent_action_timeout","expect":"silent","reason":"no sentinel pushed","match":{"page":"/agent-timeout-silent"}}
+{"kind":"agent_action_timeout","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"streaming_response_truncated","expect":"fires","minClusterSize":1,"match":{"page":"/streaming-truncated-fires"},"severity":"minor"}
+{"kind":"streaming_response_truncated","expect":"silent","reason":"no sentinel pushed","match":{"page":"/streaming-truncated-silent"}}
+{"kind":"streaming_response_truncated","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"tool_call_failure_unhandled","expect":"fires","minClusterSize":1,"match":{"page":"/tool-call-failure-fires"},"severity":"major"}
+{"kind":"tool_call_failure_unhandled","expect":"silent","reason":"no sentinel pushed","match":{"page":"/tool-call-failure-silent"}}
+{"kind":"tool_call_failure_unhandled","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"agent_cost_per_turn_high","expect":"fires","minClusterSize":1,"match":{"page":"/agent-cost-fires"},"severity":"info"}
+{"kind":"agent_cost_per_turn_high","expect":"silent","reason":"no sentinel pushed","match":{"page":"/agent-cost-silent"}}
+{"kind":"agent_cost_per_turn_high","expect":"skipped","reason":"browser_mcp_unavailable"}

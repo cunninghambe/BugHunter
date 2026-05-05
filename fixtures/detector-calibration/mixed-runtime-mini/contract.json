@@ -1,0 +1,7 @@
+{
+  "fixture": "mixed-runtime-mini",
+  "serves": ["clock_skew_token_invalid","clock_overflow","clock_dst_corruption","clock_leap_day_failure","clock_timezone_display","xss_stored","multi_user_inconsistent_snapshot","permission_denied_unhandled","infinite_loading","idempotency_key_violation"],
+  "port": 9553,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

@@ -1,0 +1,7 @@
+{
+  "fixture": "mobile-responsive-mini",
+  "serves": ["viewport_100vh_break","soft_keyboard_occlusion","orientation_change_layout_break","pull_to_refresh_conflict"],
+  "port": 9513,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

@@ -1,0 +1,7 @@
+{
+  "fixture": "interaction-palette-mini",
+  "serves": ["drag_drop_failure","paste_handler_failure","autofill_state_desync","animation_state_corruption","print_stylesheet_broken","reduced_motion_violation","forced_colors_failure","dark_mode_layout_break","zoom_layout_break"],
+  "port": 9523,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

@@ -1,0 +1,27 @@
+{"kind":"drag_drop_failure","expect":"fires","minClusterSize":1,"match":{"page":"/drag-drop-fires"},"severity":"major"}
+{"kind":"drag_drop_failure","expect":"silent","reason":"no sentinel pushed","match":{"page":"/drag-drop-silent"}}
+{"kind":"drag_drop_failure","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"paste_handler_failure","expect":"fires","minClusterSize":1,"match":{"page":"/paste-handler-fires"},"severity":"minor"}
+{"kind":"paste_handler_failure","expect":"silent","reason":"no sentinel pushed","match":{"page":"/paste-handler-silent"}}
+{"kind":"paste_handler_failure","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"autofill_state_desync","expect":"fires","minClusterSize":1,"match":{"page":"/autofill-desync-fires"},"severity":"minor"}
+{"kind":"autofill_state_desync","expect":"silent","reason":"no sentinel pushed","match":{"page":"/autofill-desync-silent"}}
+{"kind":"autofill_state_desync","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"animation_state_corruption","expect":"fires","minClusterSize":1,"match":{"page":"/animation-corruption-fires"},"severity":"minor"}
+{"kind":"animation_state_corruption","expect":"silent","reason":"no sentinel pushed","match":{"page":"/animation-corruption-silent"}}
+{"kind":"animation_state_corruption","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"print_stylesheet_broken","expect":"fires","minClusterSize":1,"match":{"page":"/print-stylesheet-fires"},"severity":"info"}
+{"kind":"print_stylesheet_broken","expect":"silent","reason":"no sentinel pushed","match":{"page":"/print-stylesheet-silent"}}
+{"kind":"print_stylesheet_broken","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"reduced_motion_violation","expect":"fires","minClusterSize":1,"match":{"page":"/reduced-motion-fires"},"severity":"minor"}
+{"kind":"reduced_motion_violation","expect":"silent","reason":"no sentinel pushed","match":{"page":"/reduced-motion-silent"}}
+{"kind":"reduced_motion_violation","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"forced_colors_failure","expect":"fires","minClusterSize":1,"match":{"page":"/forced-colors-fires"},"severity":"minor"}
+{"kind":"forced_colors_failure","expect":"silent","reason":"no sentinel pushed","match":{"page":"/forced-colors-silent"}}
+{"kind":"forced_colors_failure","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"dark_mode_layout_break","expect":"fires","minClusterSize":1,"match":{"page":"/dark-mode-fires"},"severity":"minor"}
+{"kind":"dark_mode_layout_break","expect":"silent","reason":"no sentinel pushed","match":{"page":"/dark-mode-silent"}}
+{"kind":"dark_mode_layout_break","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"zoom_layout_break","expect":"fires","minClusterSize":1,"match":{"page":"/zoom-layout-fires"},"severity":"minor"}
+{"kind":"zoom_layout_break","expect":"silent","reason":"no sentinel pushed","match":{"page":"/zoom-layout-silent"}}
+{"kind":"zoom_layout_break","expect":"skipped","reason":"browser_mcp_unavailable"}

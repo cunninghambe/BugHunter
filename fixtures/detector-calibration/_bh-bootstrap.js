@@ -57,6 +57,7 @@ const BOOTSTRAP_SOURCE = `(() => {
           visualAnomalies: (bh.visualAnomalies || []).slice(-30),
           promptInjectionProbes: (bh.promptInjectionProbes || []).slice(-30),
           rtlGeoFindings: (bh.rtlGeoFindings || []).slice(-30),
+          sentinelEvents: (bh.sentinelEvents || []).slice(-50),
           harvestWarnings: bh.harvestWarnings.slice(-50),
         });
       } catch (_e) { bh.harvestWarnings.push('sync_threw:' + String(_e)); }
@@ -87,6 +88,8 @@ const BOOTSTRAP_SOURCE = `(() => {
     pushVisualAnomaly: function(anomaly) { bh.visualAnomalies = bh.visualAnomalies || []; bh.visualAnomalies.push(anomaly); bh.sync(); },
     pushPromptInjectionProbe: function(input) { bh.promptInjectionProbes = bh.promptInjectionProbes || []; bh.promptInjectionProbes.push(input); bh.sync(); },
     pushRtlGeoFinding: function(finding) { bh.rtlGeoFindings = bh.rtlGeoFindings || []; bh.rtlGeoFindings.push(finding); bh.sync(); },
+    // V56.4.15: generic sentinel events for deferred-kind wiring.
+    pushSentinelEvent: function(ev) { bh.sentinelEvents = bh.sentinelEvents || []; bh.sentinelEvents.push(ev); bh.sync(); },
   };
   window.__bh = bh;
   bh.sync();
