@@ -10,6 +10,9 @@ import * as path from 'node:path';
 import { DETECTOR_CONTRACTS } from '../detectors/contracts.js';
 import type { DetectorContract, ClusterAssertion } from '../detectors/contracts.js';
 import { runHarness, bootFixture } from '../harness/executor.js';
+import { runBrowserHarness, buildBrowserHarnessCluster } from '../harness/browser-executor.js';
+import { getBrowserHarnessClassifier } from '../harness/browser-classifiers.js';
+import { CamofoxBrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import type { BugCluster } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -189,21 +192,8 @@ async function runOneContract(
 
   // V56.4: Browser-harness dispatch. When a contract declares browser-mcp as a
   // required tool, route through runBrowserHarness instead of the static runHarness.
-  // V56.4.1 ships the runner dormant — no per-kind classifier is registered yet,
-  // so all browser-routed contracts return a structured SKIPPED with reason
-  // 'browser_harness_classifier_pending'. V56.4.2+ replaces that branch with
-  // real per-kind classifier dispatch and a real camofox adapter wiring.
   if (contract.requires.tools.includes('browser-mcp')) {
-    if (opts.verbose === true) {
-      process.stdout.write(`  [${contract.kind}] SKIPPED — browser-harness classifier pending (V56.4.2+)\n`);
-    }
-    return {
-      kind: contract.kind,
-      fixture: contract.fixture.path,
-      status: 'SKIPPED',
-      elapsedMs: Date.now() - startMs,
-      reason: `browser_harness_classifier_pending: contract.tools includes 'browser-mcp' but no V56.4.2+ classifier wired for ${contract.kind} yet`,
-    };
+    return runOneBrowserContract(contract, opts, absoluteFixturePath, startMs);
   }
 
   if (opts.verbose === true) {
@@ -299,6 +289,148 @@ async function runOneContract(
         process.stdout.write(`        ${ar.detail}\n`);
       }
 
+      const passCount = assertion.assertionResults.filter(r => r.status === 'pass').length;
+      const totalCount = assertion.assertionResults.filter(r => r.status !== 'skip').length;
+      process.stdout.write(`\n  Summary: ${passCount}/${totalCount} passed\n`);
+    }
+
+    return {
+      kind: contract.kind,
+      fixture: contract.fixture.path,
+      status: assertion.passed ? 'PASS' : 'FAIL',
+      elapsedMs,
+      assertionResults: assertion.assertionResults,
+      ...(assertion.passed ? {} : { diff: assertion.diff }),
+    };
+  } finally {
+    if (opts.keep !== true && teardown !== undefined) {
+      teardown();
+      if (opts.verbose === true) {
+        process.stdout.write(`  [${contract.kind}] fixture stopped\n`);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// V56.4 browser-harness single-contract path
+// ---------------------------------------------------------------------------
+
+async function runOneBrowserContract(
+  contract: DetectorContract,
+  opts: TestDetectorOptions,
+  absoluteFixturePath: string,
+  startMs: number,
+): Promise<TestDetectorResultItem> {
+  const inTestRunner = process.env['VITEST'] !== undefined;
+  const shouldBoot = opts.noUp !== true && opts.target === undefined && opts.all !== true && opts.kind !== 'all' && !inTestRunner;
+
+  // Fixture must exist
+  const contractJsonPath = path.join(absoluteFixturePath, 'contract.json');
+  if (!fs.existsSync(contractJsonPath)) {
+    return {
+      kind: contract.kind,
+      fixture: contract.fixture.path,
+      status: 'SKIPPED',
+      elapsedMs: Date.now() - startMs,
+      reason: `fixture not built: ${contractJsonPath} missing`,
+    };
+  }
+  const contractJson = JSON.parse(fs.readFileSync(contractJsonPath, 'utf8')) as { port: number };
+  const appBaseUrl = opts.target ?? `http://127.0.0.1:${contractJson.port}`;
+
+  // Per-kind classifier must be registered.
+  const classifier = getBrowserHarnessClassifier(contract.kind);
+  if (classifier === undefined) {
+    return {
+      kind: contract.kind,
+      fixture: contract.fixture.path,
+      status: 'SKIPPED',
+      elapsedMs: Date.now() - startMs,
+      reason: `no browser-harness classifier registered for ${contract.kind}; add one in browser-classifiers.ts`,
+    };
+  }
+
+  // Camofox URL — env override, else default.
+  const camofoxUrl = process.env['CAMOFOX_MCP_URL'] ?? process.env['BUGHUNTER_BROWSER_MCP_URL'] ?? 'http://127.0.0.1:3141';
+
+  // Boot fixture HTTP server
+  let teardown: (() => void) | undefined;
+  if (shouldBoot) {
+    if (opts.verbose === true) {
+      process.stdout.write(`  [${contract.kind}] booting fixture on ${appBaseUrl}...\n`);
+    }
+    try {
+      teardown = await bootFixture(absoluteFixturePath);
+      if (opts.verbose === true) {
+        process.stdout.write(`  [${contract.kind}] fixture ready\n`);
+      }
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return {
+        kind: contract.kind,
+        fixture: contract.fixture.path,
+        status: 'SKIPPED',
+        elapsedMs: Date.now() - startMs,
+        reason: `fixture boot failed: ${reason}`,
+      };
+    }
+  }
+
+  // Construct camofox adapter
+  const browser = new CamofoxBrowserMcpAdapter(camofoxUrl);
+
+  try {
+    if (opts.verbose === true) {
+      process.stdout.write(`  [${contract.kind}] running browser harness against ${camofoxUrl}...\n`);
+    }
+    const result = await runBrowserHarness({
+      contract,
+      target: { appBaseUrl, fixturePath: absoluteFixturePath },
+      browser,
+      budgetMs: contract.defaultBudgetMs,
+    });
+
+    const allAssertions = loadExpectedClusters(absoluteFixturePath).filter(a => a.kind === contract.kind);
+
+    // If the runner skipped due to camofox issues, surface that as the assertion's
+    // skip reason and pass / fail accordingly.
+    if (result.skipReason !== undefined && result.envelopesByRoute.size === 0) {
+      const elapsedMs = Date.now() - startMs;
+      if (opts.verbose === true) {
+        process.stdout.write(`  [${contract.kind}] SKIPPED — ${result.skipReason}\n`);
+        for (const w of result.warnings) process.stdout.write(`    WARN: ${w}\n`);
+      }
+      return {
+        kind: contract.kind,
+        fixture: contract.fixture.path,
+        status: 'SKIPPED',
+        elapsedMs,
+        reason: result.skipReason,
+      };
+    }
+
+    // Apply classifier per envelope, build clusters
+    const clusters: BugCluster[] = [];
+    for (const [, envelope] of result.envelopesByRoute) {
+      for (const hit of classifier(envelope)) {
+        clusters.push(buildBrowserHarnessCluster(contract.kind, hit.route, hit.rootCause, hit.severity));
+      }
+    }
+
+    const assertion = assertClusters(allAssertions, clusters);
+    const elapsedMs = Date.now() - startMs;
+
+    if (opts.verbose === true) {
+      const status = assertion.passed ? 'PASS' : 'FAIL';
+      process.stdout.write(`  [${contract.kind}] ${status} (${elapsedMs}ms)\n`);
+      for (const w of result.warnings) process.stdout.write(`    WARN: ${w}\n`);
+      process.stdout.write(`\n  Scorecard:\n`);
+      for (const ar of assertion.assertionResults) {
+        const icon = ar.status === 'pass' ? '[✓]' : ar.status === 'skip' ? '[~]' : '[✗]';
+        process.stdout.write(`    ${icon} expect=${ar.expect} ${ar.label}\n`);
+        process.stdout.write(`        ${ar.detail}\n`);
+      }
       const passCount = assertion.assertionResults.filter(r => r.status === 'pass').length;
       const totalCount = assertion.assertionResults.filter(r => r.status !== 'skip').length;
       process.stdout.write(`\n  Summary: ${passCount}/${totalCount} passed\n`);
