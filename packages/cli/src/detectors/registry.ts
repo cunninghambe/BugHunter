@@ -1152,6 +1152,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Cached value diverges from source-of-truth after mutation.',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'idempotency_key_violation',

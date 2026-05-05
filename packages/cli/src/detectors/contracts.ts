@@ -730,4 +730,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Fetches /sitemap.xml, probes each <loc>-claimed route, fires when a claimed route returns 404.',
   },
+  {
+    kind: 'cache_staleness',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'cache-staleness-mini',
+      servesKinds: ['cache_staleness'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Static-heuristic harness. Fires on JSON API responses (Content-Type: application/json) with Cache-Control max-age >60s and no must-revalidate / no-cache / private directive — high stale-data risk.',
+  },
 ];
