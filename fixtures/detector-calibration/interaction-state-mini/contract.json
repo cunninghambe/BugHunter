@@ -1,0 +1,7 @@
+{
+  "fixture": "interaction-state-mini",
+  "serves": ["keyboard_trap", "focus_lost_after_action", "shadow_dom_a11y_violation", "visibility_change_state_loss"],
+  "port": 9693,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
