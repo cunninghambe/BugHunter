@@ -11,6 +11,22 @@ import { isReactError, isHydrationError } from '../classify/react.js';
 import { classifyNavTransition, classifyBackAfterFormFill } from '../classify/nav-state.js';
 import { classifyA11yBaseline } from '../classify/a11y-baseline.js';
 import { classifyMissingStateChange } from '../classify/state-change.js';
+import { classifyIdorOutcome } from '../security/idor-classifier.js';
+import {
+  detectDoubleSubmit,
+  detectClickThenNavigate,
+  detectOptimisticRevert,
+  detectInterleavedMutations,
+  detectCrossTab,
+} from '../security/race-detectors.js';
+import { detectMultiContextStateDivergence } from '../security/multi-context-detectors.js';
+import type {
+  DoubleSubmitPlan,
+  ClickThenNavigatePlan,
+  OptimisticRevertPlan,
+  InterleavedMutationsPlan,
+  CrossTabPlan,
+} from '../security/race-detectors.js';
 
 export type BrowserHarnessHit = {
   route: string;
@@ -324,7 +340,128 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
     }
     return hits;
   },
+
+  // ---- Bucket F: IDOR (4 kinds) ----
+  // Modern V21 kinds (idor_horizontal_mutate, idor_vertical_suspicious) dispatch
+  // through production classifyIdorOutcome.
+  idor_horizontal_mutate(envelope) { return dispatchIdorModern('idor_horizontal_mutate', envelope, 'critical'); },
+  idor_vertical_suspicious(envelope) { return dispatchIdorModern('idor_vertical_suspicious', envelope, 'major'); },
+
+  // Legacy V05 idor_horizontal: peer-pair, status 200, body non-empty,
+  // sideEffectClass safe (read-only). Calibration fixture sets shape='legacy_horizontal'.
+  idor_horizontal(envelope) {
+    const hits: BrowserHarnessHit[] = [];
+    for (const r of envelope.idorReplays) {
+      if (r.shape !== 'legacy_horizontal') continue;
+      if (!isLegacyIdorReplayPositive(r)) continue;
+      hits.push({
+        route: envelope.pageRoute,
+        rootCause: `Cross-user read: ${r.input.sourceRole} accessed ${r.input.targetRole}'s ${r.input.resourceType ?? 'resource'} (status ${r.input.status})`,
+        severity: 'major',
+      });
+    }
+    return hits;
+  },
+
+  // Legacy idor_vertical_role_escalate: status 200, body non-empty, accessor !== admin
+  // (input.sourceRole != input.targetRole and accessor is non-admin tier).
+  idor_vertical_role_escalate(envelope) {
+    const hits: BrowserHarnessHit[] = [];
+    for (const r of envelope.idorReplays) {
+      if (r.shape !== 'legacy_vertical_role_escalate') continue;
+      if (!isLegacyIdorReplayPositive(r)) continue;
+      hits.push({
+        route: envelope.pageRoute,
+        rootCause: `Admin route ${r.toolId ?? '<unknown-tool>'} accessible as non-admin role '${r.accessorRole ?? r.input.sourceRole}'`,
+        severity: 'critical',
+      });
+    }
+    return hits;
+  },
+
+  // ---- Bucket F: race conditions (5 kinds) ----
+  race_condition_double_submit(envelope) { return dispatchRaceFor('race_condition_double_submit', 'double_submit', envelope); },
+  race_condition_click_navigate(envelope) { return dispatchRaceFor('race_condition_click_navigate', 'click_then_navigate', envelope); },
+  race_condition_optimistic_revert(envelope) { return dispatchRaceFor('race_condition_optimistic_revert', 'optimistic_revert', envelope); },
+  race_condition_interleaved_mutations(envelope) { return dispatchRaceFor('race_condition_interleaved_mutations', 'interleaved_mutations', envelope); },
+  race_condition_cross_tab(envelope) { return dispatchRaceFor('race_condition_cross_tab', 'cross_tab', envelope); },
+
+  // ---- Bucket F: multi_context_state_divergence ----
+  multi_context_state_divergence(envelope) {
+    if (envelope.multiContextDivergence === null) return [];
+    const { plan, observationsByContext } = envelope.multiContextDivergence;
+    const detection = detectMultiContextStateDivergence(plan, observationsByContext);
+    if (detection === null) return [];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: detection.rootCause,
+      severity: 'minor',
+    }];
+  },
 };
+
+function dispatchIdorModern(
+  kind: BugKind,
+  envelope: HarvestEnvelope,
+  severity: 'critical' | 'major' | 'minor' | 'info',
+): BrowserHarnessHit[] {
+  const hits: BrowserHarnessHit[] = [];
+  for (const r of envelope.idorReplays) {
+    if (r.shape !== 'modern') continue;
+    const outcome = classifyIdorOutcome(r.input);
+    if (outcome === null || outcome.kind !== kind) continue;
+    hits.push({
+      route: envelope.pageRoute,
+      rootCause: `IDOR ${outcome.tier}-tier replay: ${r.input.sourceRole} → ${r.input.targetRole}'s ${r.input.resourceType ?? 'resource'} succeeded (status ${r.input.status})${outcome.requiresAdjudication ? ' [requires adjudication]' : ''}`,
+      severity,
+    });
+  }
+  return hits;
+}
+
+// Legacy V05 IDOR rule: status 200, body non-empty, sideEffectClass !== external,
+// sourceRole !== targetRole. Mirrors the implicit rule of the V05 inline emit
+// (cross-user.ts pre-V21).
+function isLegacyIdorReplayPositive(r: HarvestEnvelope['idorReplays'][number]): boolean {
+  const i = r.input;
+  if (i.sideEffectClass === 'external') return false;
+  if (i.status < 200 || i.status >= 300) return false;
+  if (i.status === 429) return false;
+  if (i.body === null || i.body === undefined) return false;
+  if (Array.isArray(i.body) && i.body.length === 0) return false;
+  if (typeof i.body === 'object' && !Array.isArray(i.body)) {
+    const rec = i.body as Record<string, unknown>;
+    if ('data' in rec && Array.isArray(rec.data) && rec.data.length === 0) return false;
+  }
+  return true;
+}
+
+// Race detector dispatch. The fixture pushes (variantKind, plan, observations
+// shape per variant). We run the matching detector and emit per `kind` if it
+// returns non-null.
+function dispatchRaceFor(
+  kind: BugKind,
+  variantKind: HarvestEnvelope['racePlans'][number]['variantKind'],
+  envelope: HarvestEnvelope,
+): BrowserHarnessHit[] {
+  const hits: BrowserHarnessHit[] = [];
+  for (const rp of envelope.racePlans) {
+    if (rp.variantKind !== variantKind) continue;
+    let detection: { kind: string; rootCause: string } | null = null;
+    if (rp.variantKind === 'double_submit') detection = detectDoubleSubmit(rp.plan as DoubleSubmitPlan, rp.observations ?? []);
+    else if (rp.variantKind === 'click_then_navigate') detection = detectClickThenNavigate(rp.plan as ClickThenNavigatePlan, rp.observations ?? []);
+    else if (rp.variantKind === 'optimistic_revert') detection = detectOptimisticRevert(rp.plan as OptimisticRevertPlan, rp.observations ?? []);
+    else if (rp.variantKind === 'interleaved_mutations') detection = detectInterleavedMutations(rp.plan as InterleavedMutationsPlan, rp.runObservations ?? []);
+    else if (rp.variantKind === 'cross_tab') detection = detectCrossTab(rp.plan as CrossTabPlan, rp.tab1Obs ?? [], rp.tab2Obs ?? []);
+    if (detection === null || detection.kind !== kind) continue;
+    hits.push({
+      route: envelope.pageRoute,
+      rootCause: detection.rootCause,
+      severity: 'major',
+    });
+  }
+  return hits;
+}
 
 function dispatchA11yBaselineFor(kind: BugKind, envelope: HarvestEnvelope): BrowserHarnessHit[] {
   if (envelope.keyboardTrap === null && envelope.focusAfterAction === null) return [];

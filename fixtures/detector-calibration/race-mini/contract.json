@@ -1,0 +1,7 @@
+{
+  "fixture": "race-mini",
+  "serves": ["race_condition_double_submit", "race_condition_click_navigate", "race_condition_optimistic_revert", "race_condition_interleaved_mutations", "race_condition_cross_tab"],
+  "port": 9663,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

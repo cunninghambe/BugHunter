@@ -1294,4 +1294,47 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'V56.4 browser harness. Calibration fixture pushes synthesized SurfaceCallResult via window.__bh.pushSurfaceCallResult; harness mirrors the production rule (status 4xx + happy palette + not a mutator-validation-rejection).',
   },
+  // V56.4.13 (Bucket F)
+  ...(['idor_horizontal', 'idor_horizontal_mutate', 'idor_vertical_role_escalate', 'idor_vertical_suspicious'] as const).map(kind => ({
+    kind,
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'] as RequiredPhase[],
+      tools: ['browser-mcp'] as ('browser-mcp')[],
+      surface: 'web' as const,
+      role: { kind: 'none' as const },
+      pageContext: { kind: 'any-route' as const },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'cross-role-mini', servesKinds: [kind] },
+    defaultBudgetMs: 30_000,
+    note: `V56.4 browser harness. Calibration fixture pushes IDOR replay via window.__bh.pushIdorReplay; harness dispatches modern V21 kinds through production classifyIdorOutcome and applies the V05 inline rule for legacy kinds. Production drives this from cross-user.ts cross-role replays.`,
+  })),
+  ...(['race_condition_double_submit', 'race_condition_click_navigate', 'race_condition_optimistic_revert', 'race_condition_interleaved_mutations', 'race_condition_cross_tab'] as const).map(kind => ({
+    kind,
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'] as RequiredPhase[],
+      tools: ['browser-mcp'] as ('browser-mcp')[],
+      surface: 'web' as const,
+      role: { kind: 'none' as const },
+      pageContext: { kind: 'any-route' as const },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'race-mini', servesKinds: [kind] },
+    defaultBudgetMs: 30_000,
+    note: `V56.4 browser harness. Calibration fixture pushes (variant, plan, observations) via window.__bh.pushRacePlan; harness dispatches through production race-detectors.ts (detect${kind === 'race_condition_double_submit' ? 'DoubleSubmit' : kind === 'race_condition_click_navigate' ? 'ClickThenNavigate' : kind === 'race_condition_optimistic_revert' ? 'OptimisticRevert' : kind === 'race_condition_interleaved_mutations' ? 'InterleavedMutations' : 'CrossTab'}). Production drives via race-runner against real timing.`,
+  })),
+  {
+    kind: 'multi_context_state_divergence',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: { path: 'multi-context-mini', servesKinds: ['multi_context_state_divergence'] },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness. Fixture pushes (StateDivergencePlan, observationsByContext) via window.__bh.setMultiContextDivergence; harness dispatches through production detectMultiContextStateDivergence. Production drives across N coordinated browser contexts.',
+  },
 ];
