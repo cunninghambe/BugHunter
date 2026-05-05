@@ -282,6 +282,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'password_reset_token_reuse' && target.fixturePath !== undefined) {
+      const clusters = await runPasswordResetReuseHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'auth_session_fixation' && target.fixturePath !== undefined) {
       const clusters = await runSessionFixationHarness(
         target.appBaseUrl,
@@ -2171,6 +2184,142 @@ async function runI18nTextStaticHarness(
     });
   }
 
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// password_reset_token_reuse runner.
+// Three-step probe per route: POST /<route>/request → consume(token) → consume(token).
+// Fires when the second consume succeeds (status 2xx + body ok:true).
+// ---------------------------------------------------------------------------
+
+function postReturningJson(url: string, body: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(url);
+      const req = http.request({
+        hostname: parsed.hostname,
+        port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
+        path: parsed.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        timeout: 5_000,
+      }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
+        res.on('error', () => resolve({ status: 0, body: '' }));
+      });
+      req.on('timeout', () => { req.destroy(); resolve({ status: 0, body: '' }); });
+      req.on('error', () => resolve({ status: 0, body: '' }));
+      req.write(body);
+      req.end();
+    } catch {
+      resolve({ status: 0, body: '' });
+    }
+  });
+}
+
+async function runPasswordResetReuseHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('password_reset_token_reuse: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+
+      // Derive request endpoint from consume endpoint: /reset-X/consume → /reset-X/request
+      if (!route.endsWith('/consume')) continue;
+      const requestPath = route.replace(/\/consume$/, '/request');
+
+      // Reset state
+      await httpPost(`${appBaseUrl}/__bughunter_reset`, '').catch(() => {});
+
+      // 1. Request token
+      const issueResp = await postReturningJson(`${appBaseUrl}${requestPath}`, '{}');
+      if (issueResp.status === 0) continue;
+      let token: string | undefined;
+      try {
+        const parsed = JSON.parse(issueResp.body) as { token?: string };
+        token = parsed.token;
+      } catch { /* continue */ }
+      if (token === undefined) continue;
+
+      // 2. First consume — should succeed
+      const first = await postReturningJson(`${appBaseUrl}${route}`, JSON.stringify({ token }));
+      if (first.status === 0) continue;
+
+      // 3. Second consume — must be rejected
+      const second = await postReturningJson(`${appBaseUrl}${route}`, JSON.stringify({ token }));
+      if (second.status === 0) continue;
+
+      // Server says token reuse succeeded if status is 2xx AND body either lacks ok:false or has ok:true
+      const secondOk = second.status >= 200 && second.status < 300;
+      let bodyAcceptedReuse = secondOk;
+      if (secondOk) {
+        try {
+          const parsed = JSON.parse(second.body) as { ok?: boolean; error?: string };
+          if (parsed.ok === false) bodyAcceptedReuse = false;
+          if (typeof parsed.error === 'string' && parsed.error.length > 0) bodyAcceptedReuse = false;
+        } catch { /* non-JSON 200 — treat as accepted */ }
+      }
+
+      if (bodyAcceptedReuse) {
+        detectionsByPage.set(route, `${route}: token reused successfully on second POST — server did not invalidate the token after first use`);
+        log.info('password_reset_token_reuse: detection', { route });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'password_reset_token_reuse';
+  const clusters: BugCluster[] = [];
+  for (const [page, rootCause] of detectionsByPage) {
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [{
+        occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+        role: 'anonymous',
+        page,
+        action: { kind: 'api_call', via: 'api', expectedOutcome: 'expected_failure', palette: 'edge' },
+        fullArtifacts: false as const,
+        timestamp: now,
+      }],
+      suspectedFiles: [],
+      fixHints: ['Mark the password-reset token as used (server-side) on first consume; reject all subsequent uses'],
+      thirdPartyOrGenerated: false,
+      severity: 'critical',
+    });
+  }
   return clusters;
 }
 

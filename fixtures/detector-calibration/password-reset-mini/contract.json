@@ -1,0 +1,7 @@
+{
+  "fixture": "password-reset-mini",
+  "serves": ["password_reset_token_reuse"],
+  "port": 9783,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

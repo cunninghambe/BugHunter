@@ -507,6 +507,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V07_AUTH_FLOWS.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   // — § v0.6 performance kinds (wired) —
   {
