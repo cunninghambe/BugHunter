@@ -1,0 +1,7 @@
+{"kind":"console_error","expect":"fires","minClusterSize":1,"match":{"page":"/console-error-load"},"severity":"major"}
+{"kind":"console_error","expect":"fires","minClusterSize":1,"match":{"page":"/console-error-microtask"},"severity":"major","edgeLabel":"microtask-deferred"}
+{"kind":"console_error","expect":"silent","reason":"page never calls console.error","match":{"page":"/console-error-clean"}}
+{"kind":"console_error","expect":"silent","reason":"console.warn is not console.error","match":{"page":"/console-warn-only"},"edgeLabel":"warn-not-error"}
+{"kind":"console_error","expect":"silent","reason":"console.log is not console.error","match":{"page":"/console-log-only"},"edgeLabel":"log-not-error"}
+{"kind":"console_error","expect":"fires","minClusterSize":1,"match":{"page":"/console-error-malformed"},"severity":"major","edgeLabel":"malformed-html-still-detects"}
+{"kind":"console_error","expect":"skipped","reason":"browser_mcp_unavailable"}

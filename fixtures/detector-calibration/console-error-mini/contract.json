@@ -1,0 +1,7 @@
+{
+  "fixture": "console-error-mini",
+  "serves": ["console_error"],
+  "port": 9763,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

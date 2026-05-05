@@ -392,15 +392,21 @@ async function probeRoute(
   observationWindowMs: number,
   signal: AbortSignal | undefined,
   warnings: string[],
+  preNavigateInstalled: boolean,
 ): Promise<{ ok: true; envelope: HarvestEnvelope } | { ok: false; reason: BrowserHarnessSkipReason }> {
   try {
     return await browser.withTab(fullUrl, undefined, async (scope) => {
-      const installResult: EvaluateResult | null = await scope.evaluate(BOOTSTRAP_INSTALL_SCRIPT).catch((err) => {
-        warnings.push(`browser-harness: install evaluate threw on ${route}: ${String(err)}`);
-        return null;
-      });
-      if (installResult === null) {
-        return { ok: false as const, reason: 'camofox_tab_failure' as const };
+      // If addInitScript wasn't applicable, install at evaluate time. This means
+      // load-time events from inline page scripts may have already fired and been
+      // missed — surfaced as a warning earlier; capture is best-effort.
+      if (!preNavigateInstalled) {
+        const installResult: EvaluateResult | null = await scope.evaluate(BOOTSTRAP_INSTALL_SCRIPT).catch((err) => {
+          warnings.push(`browser-harness: install evaluate threw on ${route}: ${String(err)}`);
+          return null;
+        });
+        if (installResult === null) {
+          return { ok: false as const, reason: 'camofox_tab_failure' as const };
+        }
       }
 
       try {
@@ -471,22 +477,121 @@ export async function runBrowserHarness(opts: BrowserHarnessOptions): Promise<Br
         warnings.push(`browser-harness: no probe routes loaded from ${target.fixturePath}/expected-clusters.jsonl`);
       }
 
+      // Strategy: open ONE tab to about:blank, install the bootstrap as an init
+      // script (camofox / CDP semantics: addScriptToEvaluateOnNewDocument runs on
+      // every subsequent navigation BEFORE the page's own scripts), then navigate
+      // the same tab to each fixture route in turn. Each navigation creates a
+      // fresh window, the bootstrap fires before page scripts, console.error and
+      // friends are intercepted, and we harvest after the settle window.
+      //
+      // Falls back to per-route withTab + post-navigate evaluate when the adapter
+      // does not expose addInitScript or openTab — load-time events may be missed
+      // but everything later still works.
+      const supportsInitScript = typeof browser.addInitScript === 'function';
+
       let firstSkipReason: BrowserHarnessSkipReason | undefined;
-      for (const route of routes) {
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (combinedSignal.aborted) break;
-        const fullUrl = `${target.appBaseUrl}${route}`;
-        const result = await probeRoute(browser, fullUrl, route, observationWindowMs, combinedSignal, warnings);
-        if (result.ok) {
-          envelopesByRoute.set(route, result.envelope);
-          log.info(`browser-harness: probe ${contract.kind}`, {
-            route,
-            consoleEvents: result.envelope.consoleEvents.length,
-            uncaughtErrors: result.envelope.uncaughtErrors.length,
-            performanceEntries: result.envelope.performanceEntries.length,
-          });
-        } else {
-          if (firstSkipReason === undefined) firstSkipReason = result.reason;
+
+      if (supportsInitScript) {
+        try {
+          // Seed the tab via navigate() — this sets currentTabId on the adapter,
+          // which addInitScript needs. We seed at the FIRST route URL so the
+          // navigation is real. Load-time events for the first route are missed
+          // on this seed pass, but every subsequent navigate runs the init script
+          // before page scripts and captures cleanly.
+          const seedRoute = routes[0];
+          if (seedRoute === undefined) {
+            // No routes — already warned; nothing more to do.
+          } else {
+            const seedUrl = `${target.appBaseUrl}${seedRoute}`;
+            const seedNav = await browser.navigate(seedUrl).catch((err: unknown) => {
+              warnings.push(`browser-harness: seed navigate(${seedRoute}) threw: ${String(err)}`);
+              return null;
+            });
+            if (seedNav === null) {
+              firstSkipReason = 'camofox_tab_failure';
+            } else {
+              const initResult = await browser.addInitScript!(BOOTSTRAP_INSTALL_SCRIPT).catch((err: unknown) => {
+                warnings.push(`browser-harness: addInitScript threw: ${String(err)}`);
+                return null;
+              });
+              const installedAsInit = initResult !== null && initResult.applied;
+              if (initResult !== null && initResult.degraded === 'late_inject') {
+                warnings.push('browser-harness: addInitScript degraded to late-inject — load-time events may be missed');
+              }
+
+              for (const route of routes) {
+                // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+                if (combinedSignal.aborted) break;
+                const fullUrl = `${target.appBaseUrl}${route}`;
+                const navResult = await browser.navigate(fullUrl).catch((err: unknown) => {
+                  warnings.push(`browser-harness: navigate(${route}) threw: ${String(err)}`);
+                  return null;
+                });
+                if (navResult === null) {
+                  if (firstSkipReason === undefined) firstSkipReason = 'camofox_tab_failure';
+                  continue;
+                }
+
+                // If addInitScript wasn't applied as an init-script, install via
+                // evaluate now (best-effort, may miss load-time events).
+                if (!installedAsInit) {
+                  await browser.evaluate(BOOTSTRAP_INSTALL_SCRIPT).catch(() => {});
+                }
+
+                try {
+                  await sleep(observationWindowMs, combinedSignal);
+                } catch {
+                  if (firstSkipReason === undefined) firstSkipReason = 'observation_window_exceeded';
+                  continue;
+                }
+
+                const harvestResult = await browser.evaluate(HARVEST_SCRIPT).catch((err: unknown) => {
+                  warnings.push(`browser-harness: harvest(${route}) threw: ${String(err)}`);
+                  return null;
+                });
+                if (harvestResult === null) {
+                  if (firstSkipReason === undefined) firstSkipReason = 'camofox_tab_failure';
+                  continue;
+                }
+
+                const envelope = parseHarvest(harvestResult.value, route);
+                envelopesByRoute.set(route, envelope);
+                log.info(`browser-harness: probe ${contract.kind}`, {
+                  route,
+                  consoleEvents: envelope.consoleEvents.length,
+                  uncaughtErrors: envelope.uncaughtErrors.length,
+                  performanceEntries: envelope.performanceEntries.length,
+                  bodyTextSample: envelope.domState.bodyTextSample.slice(0, 100),
+                  harvestWarnings: envelope.harvestWarnings,
+                });
+              }
+            }
+          }
+        } finally {
+          // No explicit tab cleanup. Camofox treats the tab as a session-shared
+          // singleton; closing it tears down the browser context for unrelated
+          // callers. Tests run sequentially so the next test-detector invocation
+          // re-navigates as needed.
+        }
+      } else {
+        // Legacy / mock adapters: per-route withTab + post-navigate evaluate.
+        warnings.push('browser-harness: adapter lacks openTab/addInitScript/closeTabExplicit — falling back to per-route withTab (load-time events may be missed)');
+        for (const route of routes) {
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          if (combinedSignal.aborted) break;
+          const fullUrl = `${target.appBaseUrl}${route}`;
+          const result = await probeRoute(browser, fullUrl, route, observationWindowMs, combinedSignal, warnings, false);
+          if (result.ok) {
+            envelopesByRoute.set(route, result.envelope);
+            log.info(`browser-harness: probe ${contract.kind}`, {
+              route,
+              consoleEvents: result.envelope.consoleEvents.length,
+              uncaughtErrors: result.envelope.uncaughtErrors.length,
+              performanceEntries: result.envelope.performanceEntries.length,
+            });
+          } else {
+            if (firstSkipReason === undefined) firstSkipReason = result.reason;
+          }
         }
       }
 

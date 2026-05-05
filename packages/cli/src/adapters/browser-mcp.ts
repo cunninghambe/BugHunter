@@ -1390,12 +1390,12 @@ export class CamofoxBrowserHttpAdapter implements BrowserMcpAdapter {
       await this.mcpCall<{ ok: boolean }>('init_script', { tabId, script: source });
       return { applied: true };
     } catch (err) {
-      const msg = String(err);
-      if (/unknown tool|tool not found|not registered/i.test(msg)) {
-        await this.mcpCall<unknown>('evaluate', { tabId, expression: source }).catch(() => {});
-        return { applied: false, degraded: 'late_inject' };
-      }
-      throw err;
+      // Any error from init_script — unknown tool, 404 endpoint, transport hiccup —
+      // degrades to late-inject via evaluate. Caller sees `degraded: 'late_inject'`
+      // and decides whether load-time observation is worth retrying.
+      await this.mcpCall<unknown>('evaluate', { tabId, expression: source }).catch(() => {});
+      void err;
+      return { applied: false, degraded: 'late_inject' };
     }
   }
 
