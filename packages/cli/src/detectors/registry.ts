@@ -1172,6 +1172,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V42_DATA_INTEGRITY.md',
     note: 'Mutating action produced no audit log entry.',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'soft_delete_consistency',

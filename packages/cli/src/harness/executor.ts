@@ -282,6 +282,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'audit_log_missing_for_mutation' && target.fixturePath !== undefined) {
+      const clusters = await runAuditLogMissingHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'cache_staleness' && target.fixturePath !== undefined) {
       const clusters = await runCacheStalenessHarness(
         target.appBaseUrl,
@@ -2116,6 +2129,147 @@ async function runI18nTextStaticHarness(
       fixHints: [],
       thirdPartyOrGenerated: false,
       severity: 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// audit_log_missing_for_mutation runner.
+// Per-route test plan: method + isMutation. For each mutating route, GET
+// /audit/recent before and after the mutation; fire if log size unchanged.
+// ---------------------------------------------------------------------------
+
+type AuditLogPlan = { method: 'GET' | 'POST' | 'PUT' | 'DELETE'; isMutation: boolean };
+
+const AUDIT_LOG_ROUTE_PLANS: Record<string, AuditLogPlan> = {
+  '/api/posts/delete': { method: 'POST', isMutation: true },
+  '/api/users/update': { method: 'PUT', isMutation: true },
+  '/api/payments/charge': { method: 'POST', isMutation: true },
+  '/api/admin/grant-role': { method: 'POST', isMutation: true },
+  '/api/users/list': { method: 'GET', isMutation: false },
+  '/api/orders/cancel': { method: 'POST', isMutation: true },
+};
+
+function fetchAuditCount(appBaseUrl: string): Promise<number> {
+  return new Promise((resolve) => {
+    httpGet(`${appBaseUrl}/audit/recent`)
+      .then(resp => {
+        try {
+          const arr = JSON.parse(resp.body) as unknown[];
+          resolve(Array.isArray(arr) ? arr.length : 0);
+        } catch {
+          resolve(0);
+        }
+      })
+      .catch(() => resolve(0));
+  });
+}
+
+function bareRequest(url: string, method: string): Promise<number> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(url);
+      const req = http.request({
+        hostname: parsed.hostname,
+        port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
+        path: parsed.pathname,
+        method,
+        timeout: 5_000,
+      }, (res) => {
+        res.on('data', () => {});
+        res.on('end', () => resolve(res.statusCode ?? 0));
+        res.on('error', () => resolve(0));
+      });
+      req.on('timeout', () => { req.destroy(); resolve(0); });
+      req.on('error', () => resolve(0));
+      req.end();
+    } catch {
+      resolve(0);
+    }
+  });
+}
+
+async function runAuditLogMissingHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('audit_log_missing_for_mutation: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const plan = AUDIT_LOG_ROUTE_PLANS[route];
+      if (plan === undefined) {
+        warnings.push(`audit_log_missing_for_mutation: no plan for ${route}; skipping`);
+        continue;
+      }
+      // Reset audit state for clean probe
+      await httpPost(`${appBaseUrl}/__bughunter_reset`, '').catch(() => {});
+
+      const beforeCount = await fetchAuditCount(appBaseUrl);
+      const status = await bareRequest(`${appBaseUrl}${route}`, plan.method);
+      if (status === 0) continue;
+      const afterCount = await fetchAuditCount(appBaseUrl);
+
+      // Detector only fires on mutating methods.
+      if (!plan.isMutation) continue;
+
+      if (afterCount <= beforeCount) {
+        detectionsByPage.set(route, `Mutating ${plan.method} ${route} returned ${status} but no audit-log entry was written (count before=${beforeCount}, after=${afterCount})`);
+        log.info('audit_log_missing_for_mutation: detection', { route, method: plan.method });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'audit_log_missing_for_mutation';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCause] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: ['Append an audit-log entry inside the mutation handler before returning success'],
+      thirdPartyOrGenerated: false,
+      severity: 'major',
     });
   }
 

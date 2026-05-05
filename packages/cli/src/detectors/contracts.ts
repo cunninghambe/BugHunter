@@ -762,4 +762,20 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Static-source scanner. Fires on parseFloat(...money...) and float arithmetic ops (* / +) on money-named identifiers (price, amount, total, refund, etc.). Skips identifiers ending in cents/bps and Decimal usage.',
   },
+  {
+    kind: 'audit_log_missing_for_mutation',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'audit-log-mini',
+      servesKinds: ['audit_log_missing_for_mutation'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Per-route test plan controls method. For each mutating route, GETs /audit/recent before and after; fires when audit-log size does not increase post-mutation.',
+  },
 ];
