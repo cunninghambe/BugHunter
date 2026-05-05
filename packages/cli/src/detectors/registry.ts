@@ -112,6 +112,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'unhandled_exception',
@@ -151,6 +152,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'visual_anomaly',

@@ -10,6 +10,7 @@ import type { HarvestEnvelope } from './browser-executor.js';
 import { isReactError, isHydrationError } from '../classify/react.js';
 import { classifyNavTransition, classifyBackAfterFormFill } from '../classify/nav-state.js';
 import { classifyA11yBaseline } from '../classify/a11y-baseline.js';
+import { classifyMissingStateChange } from '../classify/state-change.js';
 
 export type BrowserHarnessHit = {
   route: string;
@@ -284,6 +285,44 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
       rootCause: `${v.proof.replace(/_/g, ' ')} after ${v.lifecycleEvent} on ${v.toolPath} — ${v.evidence}`,
       severity: 'minor' as const,
     }];
+  },
+
+  // ---- Bucket B remainder: missing_state_change ----
+  // Dispatches through production classifyMissingStateChange.
+  missing_state_change(envelope) {
+    if (envelope.missingStateChangeInput === null) return [];
+    const { pre, post, action } = envelope.missingStateChangeInput;
+    const detection = classifyMissingStateChange(pre, post, action, envelope.pageRoute);
+    if (detection === null) return [];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: detection.rootCause,
+      severity: 'minor',
+    }];
+  },
+
+  // ---- Bucket B remainder: surface_call_failed ----
+  // Mirrors the inline rule in execute.ts: status 4xx + happy palette + not a
+  // mutator-validation-rejection. Calibration fixture pushes synthesized
+  // SurfaceCallResult shapes via window.__bh.pushSurfaceCallResult.
+  surface_call_failed(envelope) {
+    if (envelope.surfaceCallResults.length === 0) return [];
+    const hits: BrowserHarnessHit[] = [];
+    for (const r of envelope.surfaceCallResults) {
+      if (r.ok === true) continue;
+      if (r.palette !== 'happy') continue;
+      const status = r.status ?? 0;
+      if (status < 400 || status >= 500) continue;
+      if (r.isValidationRejection === true) continue;
+      const idLabel = r.toolId ?? r.toolName ?? '<unknown-tool>';
+      const endpoint = r.endpoint ?? idLabel;
+      hits.push({
+        route: envelope.pageRoute,
+        rootCause: `surface_call failed with status ${status} for tool ${idLabel} (endpoint: ${endpoint})${r.errorMessage !== undefined ? ` — ${r.errorMessage}` : ''}`,
+        severity: 'major',
+      });
+    }
+    return hits;
   },
 };
 
