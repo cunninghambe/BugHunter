@@ -140,6 +140,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'surface_call_failed',

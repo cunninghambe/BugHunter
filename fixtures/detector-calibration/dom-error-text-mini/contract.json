@@ -1,0 +1,7 @@
+{
+  "fixture": "dom-error-text-mini",
+  "serves": ["dom_error_text"],
+  "port": 9733,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
