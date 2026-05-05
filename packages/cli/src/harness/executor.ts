@@ -282,6 +282,19 @@ export async function runHarness(opts: HarnessRunOptions): Promise<HarnessResult
       return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
     }
 
+    if (contract.kind === 'cache_staleness' && target.fixturePath !== undefined) {
+      const clusters = await runCacheStalenessHarness(
+        target.appBaseUrl,
+        target.fixturePath,
+        contract.requires.phases,
+        phasesRun,
+        combinedSignal,
+        warnings,
+      );
+      const durationMs = Date.now() - startMs;
+      return buildResult(clusters, phasesRun, clusters.length, clusters.length, 0, durationMs, combinedSignal.aborted, warnings);
+    }
+
     if (contract.kind === 'hallucinated_route' && target.fixturePath !== undefined) {
       const clusters = await runHallucinatedRouteHarness(
         target.appBaseUrl,
@@ -2089,6 +2102,130 @@ async function runI18nTextStaticHarness(
       occurrences: [occurrence],
       suspectedFiles: [],
       fixHints: [],
+      thirdPartyOrGenerated: false,
+      severity: 'minor',
+    });
+  }
+
+  return clusters;
+}
+
+// ---------------------------------------------------------------------------
+// cache_staleness runner — checks Cache-Control on JSON API endpoints.
+// Fires when API JSON responses have long max-age without must-revalidate
+// or no-cache, when the data appears mutable.
+// ---------------------------------------------------------------------------
+
+const CACHE_STALENESS_MAX_SAFE_SECONDS = 60;
+
+function isApiJsonResponse(headers: Record<string, string | undefined>): boolean {
+  const ct = (headers['content-type'] ?? '').toLowerCase();
+  return ct.includes('application/json');
+}
+
+function findCacheStalenessRisk(headers: Record<string, string | undefined>): string | null {
+  const cc = (headers['cache-control'] ?? '').toLowerCase();
+  const expires = headers['expires'];
+
+  // No-cache or no-store: appropriate, silent.
+  if (/\b(no-cache|no-store)\b/.test(cc)) return null;
+  // must-revalidate forces freshness check on every use — overrides max-age.
+  if (/\bmust-revalidate\b/.test(cc)) return null;
+  // private cache only: lower risk, silent.
+  if (/\bprivate\b/.test(cc)) return null;
+
+  // public + max-age above threshold = risky
+  const maxAgeMatch = /max-age\s*=\s*(\d+)/.exec(cc);
+  if (maxAgeMatch !== null) {
+    const seconds = parseInt(maxAgeMatch[1] ?? '0', 10);
+    if (seconds > CACHE_STALENESS_MAX_SAFE_SECONDS) {
+      return `Cache-Control: max-age=${seconds} (>60s) without must-revalidate may serve stale data`;
+    }
+  }
+
+  // Explicit far-future Expires header without revalidation directive
+  if (expires !== undefined && expires.length > 0 && !cc.includes('max-age')) {
+    try {
+      const parsed = Date.parse(expires);
+      const now = Date.now();
+      if (!isNaN(parsed) && parsed - now > CACHE_STALENESS_MAX_SAFE_SECONDS * 1000) {
+        return `Expires header (${expires}) is far in the future without must-revalidate`;
+      }
+    } catch { /* skip */ }
+  }
+
+  return null;
+}
+
+async function runCacheStalenessHarness(
+  appBaseUrl: string,
+  fixturePath: string,
+  phases: RequiredPhase[],
+  phasesRun: RequiredPhase[],
+  signal: AbortSignal,
+  warnings: string[],
+): Promise<BugCluster[]> {
+  if (phases.includes('validate')) {
+    await waitForPort(appBaseUrl, 30_000).catch(() => {
+      warnings.push('cache_staleness: fixture port not reachable during validate phase');
+    });
+    phasesRun.push('validate');
+  }
+
+  if (signal.aborted) return [];
+
+  const routes = loadSeoProbeRoutes(fixturePath);
+  const detectionsByPage = new Map<string, string>();
+
+  if (phases.includes('execute')) {
+    for (const route of routes) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (signal.aborted) break;
+      const url = `${appBaseUrl}${route}`;
+      const response = await httpGetWithHeaders(url).catch((): ProbeResponseWithHeaders => ({ status: 0, body: '', headers: {} }));
+      if (response.status === 0) continue;
+
+      // Only flag JSON API responses — HTML caching is generally fine.
+      if (!isApiJsonResponse(response.headers)) continue;
+
+      const risk = findCacheStalenessRisk(response.headers);
+      if (risk !== null) {
+        detectionsByPage.set(route, `${route}: ${risk}`);
+        log.info('cache_staleness: detection', { route });
+      }
+    }
+    phasesRun.push('execute');
+  }
+
+  if (signal.aborted) return [];
+
+  if (phases.includes('classify')) phasesRun.push('classify');
+  if (phases.includes('cluster')) phasesRun.push('cluster');
+
+  const now = new Date().toISOString();
+  const kind: BugKind = 'cache_staleness';
+  const clusters: BugCluster[] = [];
+
+  for (const [page, rootCause] of detectionsByPage) {
+    const occurrence: Occurrence = {
+      occurrenceId: `harness-${kind}-${page.replace(/\//g, '-')}-${Date.now()}`,
+      role: 'anonymous',
+      page,
+      action: { kind: 'api_call', via: 'api', expectedOutcome: 'success', palette: 'edge' },
+      fullArtifacts: false as const,
+      timestamp: now,
+    };
+    clusters.push({
+      id: `harness-${kind}-${page.replace(/\//g, '-')}`,
+      runId: 'harness',
+      kind,
+      rootCause,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      clusterSize: 1,
+      occurrences: [occurrence],
+      suspectedFiles: [],
+      fixHints: ['Add must-revalidate to Cache-Control or set short max-age (<=60s) for mutable JSON data'],
       thirdPartyOrGenerated: false,
       severity: 'minor',
     });

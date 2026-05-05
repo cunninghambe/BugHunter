@@ -1,0 +1,7 @@
+{
+  "fixture": "cache-staleness-mini",
+  "serves": ["cache_staleness"],
+  "port": 9823,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

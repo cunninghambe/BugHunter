@@ -1,0 +1,9 @@
+{"kind":"cache_staleness","expect":"fires","minClusterSize":1,"match":{"page":"/api/users"},"severity":"minor"}
+{"kind":"cache_staleness","expect":"fires","minClusterSize":1,"match":{"page":"/api/products"},"severity":"minor","edgeLabel":"explicit-far-future-expires"}
+{"kind":"cache_staleness","expect":"silent","reason":"Cache-Control: no-cache is appropriate","match":{"page":"/api/dashboard"}}
+{"kind":"cache_staleness","expect":"silent","reason":"max-age 30s is below the 60s threshold","match":{"page":"/api/feed"},"edgeLabel":"short-max-age"}
+{"kind":"cache_staleness","expect":"silent","reason":"private cache lowers risk; only stale on user's own browser","match":{"page":"/api/profile"},"edgeLabel":"private-cache-low-risk"}
+{"kind":"cache_staleness","expect":"silent","reason":"HTML page caching is acceptable","match":{"page":"/about"},"edgeLabel":"non-json-content-type"}
+{"kind":"cache_staleness","expect":"fires","minClusterSize":1,"match":{"page":"/api/inventory"},"severity":"minor","edgeLabel":"hour-long-cache-on-mutable-data"}
+{"kind":"cache_staleness","expect":"silent","reason":"must-revalidate forces freshness check","match":{"page":"/api/settings"},"edgeLabel":"must-revalidate-overrides-max-age"}
+{"kind":"cache_staleness","expect":"skipped","reason":"no_response"}
