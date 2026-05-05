@@ -778,4 +778,36 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'Per-route test plan controls method. For each mutating route, GETs /audit/recent before and after; fires when audit-log size does not increase post-mutation.',
   },
+  {
+    kind: 'data_integrity_orphan',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'data-integrity-mini',
+      servesKinds: ['data_integrity_orphan'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Triggers a parent-delete mutation, then GETs the parent\'s read endpoint and fires when the response includes orphans[] with length > 0.',
+  },
+  {
+    kind: 'soft_delete_consistency',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['surface-mcp'],
+      surface: 'api',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+    },
+    fixture: {
+      path: 'data-integrity-mini',
+      servesKinds: ['soft_delete_consistency'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'Triggers a soft-delete mutation, then GETs the corresponding /list endpoint; fires when the response still contains items whose deletedAt is set.',
+  },
 ];
