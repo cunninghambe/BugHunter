@@ -45,6 +45,8 @@ const BOOTSTRAP_SOURCE = `(() => {
       } catch (_e) { bh.harvestWarnings.push('sync_threw:' + String(_e)); }
     },
     pushAxe: function(violation) { bh.axeViolations.push(violation); bh.sync(); },
+    pushPerf: function(entry) { bh.performanceEntries.push(entry); bh.sync(); },
+    pushResource: function(req) { bh.resourceRequests.push(req); bh.sync(); },
   };
   window.__bh = bh;
   bh.sync();

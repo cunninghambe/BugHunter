@@ -112,6 +112,130 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
       severity: 'major',
     }];
   },
+
+  // ---- Bucket C: slow_lcp ----
+  slow_lcp(envelope) {
+    const lcp = envelope.performanceEntries.filter(e => e.entryType === 'largest-contentful-paint');
+    if (lcp.length === 0) return [];
+    const worst = lcp.reduce((a, b) => ((a.value ?? 0) > (b.value ?? 0) ? a : b));
+    const value = worst.value ?? 0;
+    if (value <= 4000) return [];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `LCP ${Math.round(value)}ms on ${envelope.pageRoute} (threshold: 4000ms)`,
+      severity: 'major',
+    }];
+  },
+
+  // ---- Bucket C: slow_inp ----
+  // Calibration-shape: 'first-input' entry's `value` carries the input-delay/duration ms.
+  slow_inp(envelope) {
+    const fid = envelope.performanceEntries.filter(e => e.entryType === 'first-input');
+    if (fid.length === 0) return [];
+    const worst = fid.reduce((a, b) => ((a.value ?? a.duration ?? 0) > (b.value ?? b.duration ?? 0) ? a : b));
+    const value = worst.value ?? worst.duration ?? 0;
+    if (value <= 200) return [];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `INP ${Math.round(value)}ms on ${envelope.pageRoute} (threshold: 200ms)`,
+      severity: 'major',
+    }];
+  },
+
+  // ---- Bucket C: high_cls ----
+  // CLS is a session-cumulative value — sum the .value field across all layout-shift entries.
+  high_cls(envelope) {
+    const shifts = envelope.performanceEntries.filter(e => e.entryType === 'layout-shift');
+    if (shifts.length === 0) return [];
+    const cumulative = shifts.reduce((sum, s) => sum + (s.value ?? 0), 0);
+    if (cumulative <= 0.25) return [];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `Cumulative Layout Shift ${cumulative.toFixed(3)} on ${envelope.pageRoute} (threshold: 0.25)`,
+      severity: 'major',
+    }];
+  },
+
+  // ---- Bucket C: main_thread_blocked ----
+  // Fires on any longtask whose duration > 50ms (W3C Long Task minimum).
+  main_thread_blocked(envelope) {
+    const longTasks = envelope.performanceEntries.filter(e => e.entryType === 'longtask');
+    if (longTasks.length === 0) return [];
+    const worst = longTasks.reduce((a, b) => ((a.duration ?? 0) > (b.duration ?? 0) ? a : b));
+    const duration = worst.duration ?? 0;
+    if (duration <= 50) return [];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `Main thread blocked for ${Math.round(duration)}ms on ${envelope.pageRoute} (threshold: 50ms)`,
+      severity: 'major',
+    }];
+  },
+
+  // ---- Bucket C: n_plus_one_api_calls ----
+  // Group by method + path with trailing /\\d+ segments collapsed to /:id.
+  // Fire when any group has >= 5 same-shape calls.
+  n_plus_one_api_calls(envelope) {
+    if (envelope.resourceRequests.length === 0) return [];
+    const groups = new Map<string, number>();
+    for (const r of envelope.resourceRequests) {
+      const method = r.method ?? 'GET';
+      let path: string;
+      try { path = new URL(r.url).pathname; }
+      catch { path = r.url; }
+      const family = path.replace(/\/\d+(?=\/|$)/g, '/:id');
+      const key = `${method} ${family}`;
+      groups.set(key, (groups.get(key) ?? 0) + 1);
+    }
+    const hits: BrowserHarnessHit[] = [];
+    for (const [key, count] of groups) {
+      if (count >= 5) {
+        hits.push({
+          route: envelope.pageRoute,
+          rootCause: `${key} called ${count} times on ${envelope.pageRoute} (N+1 threshold: 5)`,
+          severity: 'minor',
+        });
+      }
+    }
+    return hits;
+  },
+
+  // ---- Bucket C: request_dedup_missing ----
+  // Fire when >= 3 identical (method+url) calls are present.
+  request_dedup_missing(envelope) {
+    if (envelope.resourceRequests.length === 0) return [];
+    const groups = new Map<string, number>();
+    for (const r of envelope.resourceRequests) {
+      const method = r.method ?? 'GET';
+      const key = `${method} ${r.url}`;
+      groups.set(key, (groups.get(key) ?? 0) + 1);
+    }
+    const hits: BrowserHarnessHit[] = [];
+    for (const [key, count] of groups) {
+      if (count >= 3) {
+        hits.push({
+          route: envelope.pageRoute,
+          rootCause: `${key} issued ${count} identical times on ${envelope.pageRoute} — request not deduplicated`,
+          severity: 'minor',
+        });
+      }
+    }
+    return hits;
+  },
+
+  // ---- Bucket C: request_cancellation_missing ----
+  // Calibration-shape: resource entries with inflightOnNav: true marker.
+  // Production: harness observes navigation events and correlates with
+  // in-flight resources; the marker stands in for that observation here.
+  request_cancellation_missing(envelope) {
+    const hits = envelope.resourceRequests.filter(r => r.inflightOnNav === true);
+    if (hits.length === 0) return [];
+    const sample = hits[0];
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `${hits.length} request(s) in-flight at navigation on ${envelope.pageRoute} — first: ${sample?.method ?? 'GET'} ${sample?.url ?? ''} (cancellation missing)`,
+      severity: 'minor',
+    }];
+  },
 };
 
 export function getBrowserHarnessClassifier(kind: BugKind): BrowserHarnessClassifier | undefined {
