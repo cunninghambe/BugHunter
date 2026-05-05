@@ -1000,6 +1000,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'i18n_date_format_ambiguous',
@@ -1048,6 +1049,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V37_I18N_STRESS.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
 
   // — § v0.38 interaction-palette kinds (deferred — runner integration pending — V38.x) —
@@ -1199,6 +1201,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
     note: 'Interactive element bounding rect below 44×44 CSS px on mobile viewport.',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'hover_only_affordance',
@@ -1208,6 +1211,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V41_MOBILE_RESPONSIVE.md',
     note: 'CSS :hover-only interactive affordance with no touch/focus equivalent.',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'viewport_100vh_break',
