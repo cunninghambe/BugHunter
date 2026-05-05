@@ -1,0 +1,28 @@
+{"kind":"missing_state_change","expect":"fires","minClusterSize":1,"match":{"page":"/missing-no-effect"},"severity":"minor"}
+{"kind":"missing_state_change","expect":"silent","reason":"URL changed in post","match":{"page":"/url-changed"},"edgeLabel":"url-changed-skip"}
+{"kind":"missing_state_change","expect":"silent","reason":"network request fired","match":{"page":"/network-completed"},"edgeLabel":"network-completed-skip"}
+{"kind":"missing_state_change","expect":"silent","reason":"aria-expanded flipped → portal opened","match":{"page":"/aria-popover"},"edgeLabel":"aria-state-skip"}
+{"kind":"missing_state_change","expect":"silent","reason":"newPortalCount > 0","match":{"page":"/portal-appeared"},"edgeLabel":"portal-appeared-skip"}
+{"kind":"missing_state_change","expect":"silent","reason":"render action — not mutating","match":{"page":"/render-action"},"edgeLabel":"render-skip"}
+{"kind":"missing_state_change","expect":"silent","reason":"different bucket","match":{"page":"/surface-fail-404"}}
+{"kind":"missing_state_change","expect":"silent","reason":"different bucket","match":{"page":"/surface-fail-422"}}
+{"kind":"missing_state_change","expect":"silent","reason":"different bucket","match":{"page":"/surface-edge-skip"}}
+{"kind":"missing_state_change","expect":"silent","reason":"different bucket","match":{"page":"/surface-validation-rejection"}}
+{"kind":"missing_state_change","expect":"silent","reason":"different bucket","match":{"page":"/surface-5xx-skip"}}
+{"kind":"missing_state_change","expect":"silent","reason":"different bucket","match":{"page":"/surface-ok"}}
+{"kind":"missing_state_change","expect":"silent","reason":"no inputs","match":{"page":"/clean"}}
+{"kind":"missing_state_change","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"surface_call_failed","expect":"fires","minClusterSize":1,"match":{"page":"/surface-fail-404"},"severity":"major"}
+{"kind":"surface_call_failed","expect":"fires","minClusterSize":1,"match":{"page":"/surface-fail-422"},"severity":"major","edgeLabel":"422-validation-shape"}
+{"kind":"surface_call_failed","expect":"silent","reason":"palette === 'edge' — only happy fires","match":{"page":"/surface-edge-skip"},"edgeLabel":"edge-palette-skip"}
+{"kind":"surface_call_failed","expect":"silent","reason":"mutator validation rejection","match":{"page":"/surface-validation-rejection"},"edgeLabel":"validation-rejection-skip"}
+{"kind":"surface_call_failed","expect":"silent","reason":"5xx — out of 4xx range","match":{"page":"/surface-5xx-skip"},"edgeLabel":"5xx-skip"}
+{"kind":"surface_call_failed","expect":"silent","reason":"ok=true","match":{"page":"/surface-ok"}}
+{"kind":"surface_call_failed","expect":"silent","reason":"different bucket","match":{"page":"/missing-no-effect"}}
+{"kind":"surface_call_failed","expect":"silent","reason":"different bucket","match":{"page":"/url-changed"}}
+{"kind":"surface_call_failed","expect":"silent","reason":"different bucket","match":{"page":"/network-completed"}}
+{"kind":"surface_call_failed","expect":"silent","reason":"different bucket","match":{"page":"/aria-popover"}}
+{"kind":"surface_call_failed","expect":"silent","reason":"different bucket","match":{"page":"/portal-appeared"}}
+{"kind":"surface_call_failed","expect":"silent","reason":"different bucket","match":{"page":"/render-action"}}
+{"kind":"surface_call_failed","expect":"silent","reason":"no inputs","match":{"page":"/clean"}}
+{"kind":"surface_call_failed","expect":"skipped","reason":"browser_mcp_unavailable"}
