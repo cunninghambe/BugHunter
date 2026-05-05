@@ -1,0 +1,7 @@
+{
+  "fixture": "audit-log-mini",
+  "serves": ["audit_log_missing_for_mutation"],
+  "port": 9813,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

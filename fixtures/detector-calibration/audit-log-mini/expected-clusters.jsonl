@@ -1,0 +1,7 @@
+{"kind":"audit_log_missing_for_mutation","expect":"fires","minClusterSize":1,"match":{"page":"/api/posts/delete"},"severity":"major"}
+{"kind":"audit_log_missing_for_mutation","expect":"fires","minClusterSize":1,"match":{"page":"/api/users/update"},"severity":"major","edgeLabel":"put-method"}
+{"kind":"audit_log_missing_for_mutation","expect":"silent","reason":"route writes audit entry referencing the mutated route","match":{"page":"/api/payments/charge"}}
+{"kind":"audit_log_missing_for_mutation","expect":"silent","reason":"audit entry written for grant-role mutation","match":{"page":"/api/admin/grant-role"}}
+{"kind":"audit_log_missing_for_mutation","expect":"silent","reason":"GET on a list route is not a mutation","match":{"page":"/api/users/list"},"edgeLabel":"non-mutating-method"}
+{"kind":"audit_log_missing_for_mutation","expect":"silent","reason":"audit row written under a different route name — any logged entry post-mutation satisfies","match":{"page":"/api/orders/cancel"},"edgeLabel":"audit-under-internal-name"}
+{"kind":"audit_log_missing_for_mutation","expect":"skipped","reason":"no_response"}
