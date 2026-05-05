@@ -284,6 +284,66 @@ describe('CamofoxBrowserMcpAdapter — error mapping (§4.4)', () => {
     });
     await expect(adapter.screenshot()).rejects.toMatchObject({ kind: 'screenshot_failed' });
   });
+
+  // V56.4.x — auto-recovery on browser-context-closed.
+  // The recovery path tears down and re-creates the MCP Client (so a NEW callTool
+  // spy gets created on retry). We sequence behavior via mockState.callToolImpl
+  // rather than per-spy mockResolvedValueOnce chains.
+  it('browser_context_closed → auto-reconnect + retry once (success path)', async () => {
+    const adapter = await makeNavigatedAdapter();
+    let evaluateCallCount = 0;
+    mockState.callToolImpl = (params) => {
+      if (params.name === 'evaluate') {
+        evaluateCallCount += 1;
+        if (evaluateCallCount === 1) return Promise.reject(new Error('browserContext closed'));
+        return Promise.resolve(makeTextResult({ tabId: TAB_ID, result: 42 }));
+      }
+      if (params.name === 'navigate') return Promise.resolve(makeTextResult({ tabId: TAB_ID, url: 'http://x', finalUrl: 'http://x' }));
+      return Promise.resolve(makeTextResult({ ok: true }));
+    };
+    const result = await adapter.evaluate('1+1');
+    expect(result.value).toBe(42);
+    expect(evaluateCallCount).toBe(2);
+  }, 10_000);
+
+  it('browser_context_closed → bubbles up after one failed retry', async () => {
+    const adapter = await makeNavigatedAdapter();
+    let evaluateCallCount = 0;
+    mockState.callToolImpl = (params) => {
+      if (params.name === 'evaluate') {
+        evaluateCallCount += 1;
+        return Promise.reject(new Error(
+          evaluateCallCount === 1
+            ? 'browserContext closed'
+            : 'Target page, context or browser has been closed',
+        ));
+      }
+      return Promise.resolve(makeTextResult({ ok: true }));
+    };
+    await expect(adapter.evaluate('1+1')).rejects.toMatchObject({ kind: 'browser_context_closed' });
+    expect(evaluateCallCount).toBe(2);
+  }, 10_000);
+
+  it('isError:true with context-closed message also triggers recovery', async () => {
+    const adapter = await makeNavigatedAdapter();
+    let evaluateCallCount = 0;
+    mockState.callToolImpl = (params) => {
+      if (params.name === 'evaluate') {
+        evaluateCallCount += 1;
+        if (evaluateCallCount === 1) {
+          return Promise.resolve({
+            content: [{ type: 'text', text: 'Page has been closed' }],
+            isError: true,
+          });
+        }
+        return Promise.resolve(makeTextResult({ tabId: TAB_ID, result: 'recovered' }));
+      }
+      return Promise.resolve(makeTextResult({ ok: true }));
+    };
+    const result = await adapter.evaluate('1+1');
+    expect(result.value).toBe('recovered');
+    expect(evaluateCallCount).toBe(2);
+  }, 10_000);
 });
 
 describe('CamofoxBrowserMcpAdapter — no_tab guard', () => {

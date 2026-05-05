@@ -31,6 +31,7 @@
  */
 
 import * as fs from 'node:fs';
+import { log } from '../log.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -435,25 +436,75 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
   // ---- Generic tool dispatcher (internal — accessible by V20/V22/V23 callers) ----
 
   async tool<T>(name: string, args: Record<string, unknown>, expect: 'json' | 'image' = 'json', timeout?: number): Promise<T> {
+    return this.toolWithAutoRecovery<T>(name, args, expect, timeout, /*recoveryAttempts=*/ 1);
+  }
+
+  /** V56.4.x: wraps callTool() with auto-recovery on browser-context-closed errors.
+   *  When camofox-browser's underlying Playwright context dies (the most common
+   *  failure mode after a long idle, or when a previous test killed the context),
+   *  the SDK surfaces error messages classified by classifyRpcError as
+   *  'browser_context_closed'. On detection: dispose the MCP client + transport,
+   *  wait briefly for camofox-browser's own self-restart logic, reconnect, retry.
+   *  Retries are capped to prevent loops. */
+  private async toolWithAutoRecovery<T>(
+    name: string,
+    args: Record<string, unknown>,
+    expect: 'json' | 'image',
+    timeout: number | undefined,
+    recoveryAttempts: number,
+  ): Promise<T> {
     const client = await this.ensureConnected();
     let res: SdkCallToolResult;
     try {
       const opts = timeout !== undefined ? { timeout } : undefined;
       res = await client.callTool({ name, arguments: args }, undefined, opts) as SdkCallToolResult;
     } catch (err) {
+      const raw = String(err);
+      const kind = classifyRpcError(raw, name);
+      if (kind === 'browser_context_closed' && recoveryAttempts > 0) {
+        log.warn(`browser-mcp: detected browser-context-closed during ${name} — reconnecting + retrying`, { error: raw.slice(0, 200) });
+        await this.recoverFromContextClosed();
+        return this.toolWithAutoRecovery<T>(name, args, expect, timeout, recoveryAttempts - 1);
+      }
       throw new BrowserMcpError(
-        'transport',
-        `camofox ${name} transport error: ${sanitizeErrorMessage(String(err))}`,
+        kind === 'browser_context_closed' ? 'browser_context_closed' : 'transport',
+        `camofox ${name} transport error: ${sanitizeErrorMessage(raw)}`,
         undefined,
         err,
       );
     }
     if (res.isError === true) {
       const msg = sdkTextOf(res.content) ?? 'Unknown MCP tool error';
-      throw new BrowserMcpError(classifyRpcError(msg, name), `camofox ${name} error: ${msg}`);
+      const kind = classifyRpcError(msg, name);
+      if (kind === 'browser_context_closed' && recoveryAttempts > 0) {
+        log.warn(`browser-mcp: tool ${name} returned isError with browser-context-closed — reconnecting + retrying`, { msg: msg.slice(0, 200) });
+        await this.recoverFromContextClosed();
+        return this.toolWithAutoRecovery<T>(name, args, expect, timeout, recoveryAttempts - 1);
+      }
+      throw new BrowserMcpError(kind, `camofox ${name} error: ${msg}`);
     }
     if (expect === 'image') return sdkParseImage(res) as T;
     return sdkParseText<T>(res, name);
+  }
+
+  /** V56.4.x: tear down the MCP client + transport, drop the cached tabId, wait
+   *  briefly for camofox-browser to relaunch its own browser process (its
+   *  internal health-probe + restartBrowser() handle that), then return. The
+   *  next tool() call re-establishes the connection through ensureConnected. */
+  private async recoverFromContextClosed(): Promise<void> {
+    const c = this.client;
+    const t = this.transport;
+    this.client = undefined;
+    this.transport = undefined;
+    this.connectPromise = undefined;
+    this.currentTabId = undefined;
+    if (c !== undefined) await c.close().catch(() => {});
+    if (t !== undefined) await t.close().catch(() => {});
+    // Camofox-browser's self-heal restartBrowser() takes ~3-5s after detecting
+    // a dead context via its health probe. We give it 3s here; if its browser
+    // is still mid-relaunch, the next ensureConnected will block on the SDK's
+    // own connect timeout anyway.
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
 
   // ---- Private helpers ----
