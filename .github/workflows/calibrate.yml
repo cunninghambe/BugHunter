@@ -16,9 +16,11 @@ jobs:
         with:
           node-version: '20.11.x'
 
-      - name: Install dependencies and build
-        run: npm ci && npm run build
-        working-directory: packages/cli
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Build cli
+        run: npm run build -w packages/cli
 
       - name: Clone BugHunter-bench at pinned SHA
         run: |
