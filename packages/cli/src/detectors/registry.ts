@@ -329,6 +329,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V25_DETECTOR_LESS_KINDS.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   // — § v0.19 race-condition kinds (wired) —
   {

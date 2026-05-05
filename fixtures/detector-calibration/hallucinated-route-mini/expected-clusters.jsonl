@@ -1,0 +1,6 @@
+{"kind":"hallucinated_route","expect":"fires","minClusterSize":1,"match":{"page":"/team"},"severity":"major"}
+{"kind":"hallucinated_route","expect":"fires","minClusterSize":1,"match":{"page":"/blog"},"severity":"major","edgeLabel":"second-hallucinated"}
+{"kind":"hallucinated_route","expect":"silent","reason":"route is claimed AND exists","match":{"page":"/about"}}
+{"kind":"hallucinated_route","expect":"silent","reason":"route is claimed AND exists","match":{"page":"/products"}}
+{"kind":"hallucinated_route","expect":"silent","reason":"root route exists","match":{"page":"/"}}
+{"kind":"hallucinated_route","expect":"skipped","reason":"no_response"}
