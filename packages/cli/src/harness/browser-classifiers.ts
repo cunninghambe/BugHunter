@@ -8,6 +8,8 @@
 import type { BugKind } from '../types.js';
 import type { HarvestEnvelope } from './browser-executor.js';
 import { isReactError, isHydrationError } from '../classify/react.js';
+import { classifyNavTransition, classifyBackAfterFormFill } from '../classify/nav-state.js';
+import { classifyA11yBaseline } from '../classify/a11y-baseline.js';
 
 export type BrowserHarnessHit = {
   route: string;
@@ -236,7 +238,109 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
       severity: 'minor',
     }];
   },
+
+  // ---- Bucket D: nav-state ----
+  // All five nav-state kinds dispatch through production classifyNavTransition()
+  // / classifyBackAfterFormFill(). The fixture pushes pre/interim/post snapshots
+  // via window.__bh.pushNavInput() and setBackAfterFormFill() — same data shape
+  // the production nav-transition-runner produces, fed directly through the
+  // classifier without driving real back/forward/refresh navigation.
+  nav_state_corruption(envelope) { return dispatchNavTransitionFor('nav_state_corruption', envelope); },
+  nav_resubmit_on_back(envelope) { return dispatchNavTransitionFor('nav_resubmit_on_back', envelope); },
+  nav_refresh_double_mutation(envelope) { return dispatchNavTransitionFor('nav_refresh_double_mutation', envelope); },
+  nav_form_state_lost(envelope) { return dispatchBackAfterFormFillFor('nav_form_state_lost', envelope); },
+  nav_form_state_stale(envelope) { return dispatchBackAfterFormFillFor('nav_form_state_stale', envelope); },
+
+  // ---- Bucket E: keyboard_trap (dispatches through classifyA11yBaseline) ----
+  keyboard_trap(envelope) { return dispatchA11yBaselineFor('keyboard_trap', envelope); },
+
+  // ---- Bucket E: focus_lost_after_action ----
+  focus_lost_after_action(envelope) { return dispatchA11yBaselineFor('focus_lost_after_action', envelope); },
+
+  // ---- Bucket E: shadow_dom_a11y_violation ----
+  // Production: browser-platform-probe runs axe inside each open shadow root and
+  // emits one detection per critical/serious violation. Calibration: fixture pushes
+  // synthesized HarvestShadowAxeViolation records via window.__bh.pushShadowAxe.
+  shadow_dom_a11y_violation(envelope) {
+    if (envelope.shadowAxeViolations.length === 0) return [];
+    const hits = envelope.shadowAxeViolations.filter(v => v.impact === 'critical' || v.impact === 'serious');
+    if (hits.length === 0) return [];
+    return hits.map(v => ({
+      route: envelope.pageRoute,
+      rootCause: `Axe rule "${v.ruleId}" (${v.impact}) violated inside shadow root of <${v.hostTagName}>${v.description !== undefined ? ` — ${v.description}` : ''}`,
+      severity: 'major' as const,
+    }));
+  },
+
+  // ---- Bucket E: visibility_change_state_loss ----
+  // Production: multi-context-detectors observe state across two contexts after a
+  // lifecycle event and emit when state diverges or rolls back. Calibration: fixture
+  // pushes a HarvestVisibilityChangeLoss payload mimicking the production shape.
+  visibility_change_state_loss(envelope) {
+    if (envelope.visibilityChangeStateLoss === null) return [];
+    const v = envelope.visibilityChangeStateLoss;
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `${v.proof.replace(/_/g, ' ')} after ${v.lifecycleEvent} on ${v.toolPath} — ${v.evidence}`,
+      severity: 'minor' as const,
+    }];
+  },
 };
+
+function dispatchA11yBaselineFor(kind: BugKind, envelope: HarvestEnvelope): BrowserHarnessHit[] {
+  if (envelope.keyboardTrap === null && envelope.focusAfterAction === null) return [];
+  const detections = classifyA11yBaseline({
+    pageRoute: envelope.pageRoute,
+    axeViolations: [],
+    keyboardTrap: envelope.keyboardTrap ?? undefined,
+    focusAfterAction: envelope.focusAfterAction ?? undefined,
+  });
+  const hits: BrowserHarnessHit[] = [];
+  for (const d of detections) {
+    if (d.kind !== kind) continue;
+    hits.push({
+      route: envelope.pageRoute,
+      rootCause: d.rootCause,
+      severity: kind === 'keyboard_trap' ? 'major' : 'minor',
+    });
+  }
+  return hits;
+}
+
+// Run production classifyNavTransition over each pushed nav input and filter to
+// detections matching `kind`. Returns one BrowserHarnessHit per qualifying
+// detection.
+function dispatchNavTransitionFor(kind: BugKind, envelope: HarvestEnvelope): BrowserHarnessHit[] {
+  if (envelope.navInputs.length === 0) return [];
+  const hits: BrowserHarnessHit[] = [];
+  for (const input of envelope.navInputs) {
+    const detections = classifyNavTransition(input);
+    for (const d of detections) {
+      if (d.kind !== kind) continue;
+      hits.push({
+        route: envelope.pageRoute,
+        rootCause: d.rootCause,
+        severity: 'major',
+      });
+    }
+  }
+  return hits;
+}
+
+function dispatchBackAfterFormFillFor(kind: BugKind, envelope: HarvestEnvelope): BrowserHarnessHit[] {
+  if (envelope.backAfterFormFill === null) return [];
+  const detections = classifyBackAfterFormFill(envelope.backAfterFormFill);
+  const hits: BrowserHarnessHit[] = [];
+  for (const d of detections) {
+    if (d.kind !== kind) continue;
+    hits.push({
+      route: envelope.pageRoute,
+      rootCause: d.rootCause,
+      severity: 'minor',
+    });
+  }
+  return hits;
+}
 
 export function getBrowserHarnessClassifier(kind: BugKind): BrowserHarnessClassifier | undefined {
   return REGISTRY[kind];

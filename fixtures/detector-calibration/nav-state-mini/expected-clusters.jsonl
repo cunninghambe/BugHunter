@@ -1,0 +1,70 @@
+{"kind":"nav_refresh_double_mutation","expect":"fires","minClusterSize":1,"match":{"page":"/refresh-double-mutation"},"severity":"major"}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"no still-pending+doubled mutation","match":{"page":"/refresh-erased"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"clean refresh — state preserved","match":{"page":"/refresh-clean"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"back transition, not refresh","match":{"page":"/back-resubmit"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"back transition, not refresh","match":{"page":"/back-third-state"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"back transition, not refresh","match":{"page":"/back-clean"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"history_corrupt transition, not refresh","match":{"page":"/history-corrupt"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"deep_link transition, not refresh","match":{"page":"/deep-link-no-auth"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"modal-close guard","match":{"page":"/modal-close-skip"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"form-state input — different classifier path","match":{"page":"/form-state-lost"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"form-state input — different classifier path","match":{"page":"/form-state-stale"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"form-state input — different classifier path","match":{"page":"/form-state-clean"}}
+{"kind":"nav_refresh_double_mutation","expect":"silent","reason":"no nav input pushed","match":{"page":"/clean"}}
+{"kind":"nav_refresh_double_mutation","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"nav_resubmit_on_back","expect":"fires","minClusterSize":1,"match":{"page":"/back-resubmit"},"severity":"major"}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"no in-flight write request","match":{"page":"/back-third-state"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"clean back","match":{"page":"/back-clean"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"refresh transition, not back","match":{"page":"/refresh-double-mutation"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"refresh transition, not back","match":{"page":"/refresh-erased"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"refresh transition, not back","match":{"page":"/refresh-clean"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"history_corrupt transition","match":{"page":"/history-corrupt"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"deep_link transition","match":{"page":"/deep-link-no-auth"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"modal-close guard / no in-flight write","match":{"page":"/modal-close-skip"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"form-state input","match":{"page":"/form-state-lost"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"form-state input","match":{"page":"/form-state-stale"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"form-state input","match":{"page":"/form-state-clean"}}
+{"kind":"nav_resubmit_on_back","expect":"silent","reason":"no nav input pushed","match":{"page":"/clean"}}
+{"kind":"nav_resubmit_on_back","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"nav_state_corruption","expect":"fires","minClusterSize":1,"match":{"page":"/refresh-erased"},"severity":"major","edgeLabel":"refresh-erased"}
+{"kind":"nav_state_corruption","expect":"fires","minClusterSize":1,"match":{"page":"/back-third-state"},"severity":"major","edgeLabel":"back-third-state"}
+{"kind":"nav_state_corruption","expect":"fires","minClusterSize":1,"match":{"page":"/history-corrupt"},"severity":"major","edgeLabel":"history-corrupt"}
+{"kind":"nav_state_corruption","expect":"fires","minClusterSize":1,"match":{"page":"/deep-link-no-auth"},"severity":"major","edgeLabel":"deep-link-no-auth"}
+{"kind":"nav_state_corruption","expect":"silent","reason":"refresh with double-mutation precedence","match":{"page":"/refresh-double-mutation"}}
+{"kind":"nav_state_corruption","expect":"silent","reason":"clean refresh","match":{"page":"/refresh-clean"}}
+{"kind":"nav_state_corruption","expect":"silent","reason":"back-resubmit precedence","match":{"page":"/back-resubmit"}}
+{"kind":"nav_state_corruption","expect":"silent","reason":"clean back","match":{"page":"/back-clean"}}
+{"kind":"nav_state_corruption","expect":"silent","reason":"modal-close guard suppresses","match":{"page":"/modal-close-skip"}}
+{"kind":"nav_state_corruption","expect":"silent","reason":"form-state input — different classifier","match":{"page":"/form-state-lost"}}
+{"kind":"nav_state_corruption","expect":"silent","reason":"form-state input — different classifier","match":{"page":"/form-state-stale"}}
+{"kind":"nav_state_corruption","expect":"silent","reason":"form-state input — different classifier","match":{"page":"/form-state-clean"}}
+{"kind":"nav_state_corruption","expect":"silent","reason":"no nav input pushed","match":{"page":"/clean"}}
+{"kind":"nav_state_corruption","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"nav_form_state_lost","expect":"fires","minClusterSize":1,"match":{"page":"/form-state-lost"},"severity":"minor"}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"form values stale, not lost","match":{"page":"/form-state-stale"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"form values preserved","match":{"page":"/form-state-clean"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no form-state input","match":{"page":"/refresh-double-mutation"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no form-state input","match":{"page":"/refresh-erased"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no form-state input","match":{"page":"/refresh-clean"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no form-state input","match":{"page":"/back-resubmit"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no form-state input","match":{"page":"/back-third-state"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no form-state input","match":{"page":"/back-clean"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no form-state input","match":{"page":"/history-corrupt"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no form-state input","match":{"page":"/deep-link-no-auth"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no form-state input","match":{"page":"/modal-close-skip"}}
+{"kind":"nav_form_state_lost","expect":"silent","reason":"no input pushed","match":{"page":"/clean"}}
+{"kind":"nav_form_state_lost","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"nav_form_state_stale","expect":"fires","minClusterSize":1,"match":{"page":"/form-state-stale"},"severity":"minor"}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"form values lost (different kind)","match":{"page":"/form-state-lost"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"form values preserved","match":{"page":"/form-state-clean"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no form-state input","match":{"page":"/refresh-double-mutation"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no form-state input","match":{"page":"/refresh-erased"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no form-state input","match":{"page":"/refresh-clean"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no form-state input","match":{"page":"/back-resubmit"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no form-state input","match":{"page":"/back-third-state"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no form-state input","match":{"page":"/back-clean"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no form-state input","match":{"page":"/history-corrupt"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no form-state input","match":{"page":"/deep-link-no-auth"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no form-state input","match":{"page":"/modal-close-skip"}}
+{"kind":"nav_form_state_stale","expect":"silent","reason":"no input pushed","match":{"page":"/clean"}}
+{"kind":"nav_form_state_stale","expect":"skipped","reason":"browser_mcp_unavailable"}
