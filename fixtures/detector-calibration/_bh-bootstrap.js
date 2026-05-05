@@ -40,6 +40,12 @@ const BOOTSTRAP_SOURCE = `(() => {
           performanceEntries: bh.performanceEntries.slice(-200),
           resourceRequests: bh.resourceRequests.slice(-200),
           axeViolations: bh.axeViolations.slice(-100),
+          navInputs: (bh.navInputs || []).slice(-20),
+          backAfterFormFill: bh.backAfterFormFill || null,
+          keyboardTrap: bh.keyboardTrap || null,
+          focusAfterAction: bh.focusAfterAction || null,
+          shadowAxeViolations: (bh.shadowAxeViolations || []).slice(-100),
+          visibilityChangeStateLoss: bh.visibilityChangeStateLoss || null,
           harvestWarnings: bh.harvestWarnings.slice(-50),
         });
       } catch (_e) { bh.harvestWarnings.push('sync_threw:' + String(_e)); }
@@ -47,6 +53,15 @@ const BOOTSTRAP_SOURCE = `(() => {
     pushAxe: function(violation) { bh.axeViolations.push(violation); bh.sync(); },
     pushPerf: function(entry) { bh.performanceEntries.push(entry); bh.sync(); },
     pushResource: function(req) { bh.resourceRequests.push(req); bh.sync(); },
+    // V56.4.9: nav-state inputs. Each call adds one transition the harness will
+    // dispatch through production classifyNavTransition().
+    pushNavInput: function(input) { bh.navInputs = bh.navInputs || []; bh.navInputs.push(input); bh.sync(); },
+    setBackAfterFormFill: function(input) { bh.backAfterFormFill = input; bh.sync(); },
+    // V56.4.10 (Bucket E): a11y-baseline inputs.
+    setKeyboardTrap: function(result) { bh.keyboardTrap = result; bh.sync(); },
+    setFocusAfterAction: function(result) { bh.focusAfterAction = result; bh.sync(); },
+    pushShadowAxe: function(violation) { bh.shadowAxeViolations = bh.shadowAxeViolations || []; bh.shadowAxeViolations.push(violation); bh.sync(); },
+    setVisibilityChangeStateLoss: function(payload) { bh.visibilityChangeStateLoss = payload; bh.sync(); },
   };
   window.__bh = bh;
   bh.sync();

@@ -1,0 +1,7 @@
+{
+  "fixture": "nav-state-mini",
+  "serves": ["nav_state_corruption", "nav_resubmit_on_back", "nav_refresh_double_mutation", "nav_form_state_lost", "nav_form_state_stale"],
+  "port": 9703,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

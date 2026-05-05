@@ -645,6 +645,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'focus_lost_after_action',
@@ -654,6 +655,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V06_A11Y_SEO.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'image_missing_alt',
@@ -766,6 +768,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V40_MULTI_CONTEXT.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'multi_user_inconsistent_snapshot',
@@ -784,6 +787,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'nav_resubmit_on_back',
@@ -793,6 +797,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'nav_refresh_double_mutation',
@@ -802,6 +807,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'nav_form_state_lost',
@@ -811,6 +817,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
   {
     kind: 'nav_form_state_stale',
@@ -820,6 +827,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC_V22_NAV_STATE.md',
     defaultSeverity: 'minor',
+    harness: true,
   },
 
 
@@ -864,6 +872,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     specReference: 'SPEC_V36_BROWSER_PLATFORM.md',
     note: 'axe-core critical/serious violation inside an open shadow root.',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'permission_denied_unhandled',

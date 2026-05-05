@@ -1,0 +1,60 @@
+{"kind":"keyboard_trap","expect":"fires","minClusterSize":1,"match":{"page":"/keyboard-trap"},"severity":"major"}
+{"kind":"keyboard_trap","expect":"silent","reason":"keyboardTrap.trapped===false","match":{"page":"/keyboard-clean"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"no keyboardTrap probe ran","match":{"page":"/keyboard-not-probed"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/focus-lost"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/focus-preserved"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/focus-not-probed"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/shadow-violation-critical"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/shadow-violation-serious"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/shadow-moderate-skip"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/shadow-clean"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/visibility-state-lost"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/visibility-rollback"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"different bucket","match":{"page":"/visibility-clean"}}
+{"kind":"keyboard_trap","expect":"silent","reason":"no inputs","match":{"page":"/clean"}}
+{"kind":"keyboard_trap","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"focus_lost_after_action","expect":"fires","minClusterSize":1,"match":{"page":"/focus-lost"},"severity":"minor"}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"focus preserved","match":{"page":"/focus-preserved"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"no focus probe ran","match":{"page":"/focus-not-probed"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/keyboard-trap"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/keyboard-clean"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/keyboard-not-probed"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/shadow-violation-critical"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/shadow-violation-serious"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/shadow-moderate-skip"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/shadow-clean"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/visibility-state-lost"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/visibility-rollback"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"different bucket","match":{"page":"/visibility-clean"}}
+{"kind":"focus_lost_after_action","expect":"silent","reason":"no inputs","match":{"page":"/clean"}}
+{"kind":"focus_lost_after_action","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"shadow_dom_a11y_violation","expect":"fires","minClusterSize":1,"match":{"page":"/shadow-violation-critical"},"severity":"major"}
+{"kind":"shadow_dom_a11y_violation","expect":"fires","minClusterSize":1,"match":{"page":"/shadow-violation-serious"},"severity":"major","edgeLabel":"serious-impact"}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"impact moderate — below critical/serious threshold","match":{"page":"/shadow-moderate-skip"},"edgeLabel":"moderate-impact-skip"}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"no shadow violations pushed","match":{"page":"/shadow-clean"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"different bucket","match":{"page":"/keyboard-trap"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"different bucket","match":{"page":"/keyboard-clean"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"different bucket","match":{"page":"/keyboard-not-probed"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"different bucket","match":{"page":"/focus-lost"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"different bucket","match":{"page":"/focus-preserved"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"different bucket","match":{"page":"/focus-not-probed"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"different bucket","match":{"page":"/visibility-state-lost"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"different bucket","match":{"page":"/visibility-rollback"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"different bucket","match":{"page":"/visibility-clean"}}
+{"kind":"shadow_dom_a11y_violation","expect":"silent","reason":"no inputs","match":{"page":"/clean"}}
+{"kind":"shadow_dom_a11y_violation","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"visibility_change_state_loss","expect":"fires","minClusterSize":1,"match":{"page":"/visibility-state-lost"},"severity":"minor"}
+{"kind":"visibility_change_state_loss","expect":"fires","minClusterSize":1,"match":{"page":"/visibility-rollback"},"severity":"minor","edgeLabel":"rollback-shape"}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"no visibility-change payload","match":{"page":"/visibility-clean"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/keyboard-trap"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/keyboard-clean"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/keyboard-not-probed"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/focus-lost"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/focus-preserved"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/focus-not-probed"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/shadow-violation-critical"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/shadow-violation-serious"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/shadow-moderate-skip"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"different bucket","match":{"page":"/shadow-clean"}}
+{"kind":"visibility_change_state_loss","expect":"silent","reason":"no inputs","match":{"page":"/clean"}}
+{"kind":"visibility_change_state_loss","expect":"skipped","reason":"browser_mcp_unavailable"}
