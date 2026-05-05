@@ -119,6 +119,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'production',
     specReference: 'SPEC.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'accessibility_critical',

@@ -1,0 +1,7 @@
+{"kind":"unhandled_exception","expect":"fires","minClusterSize":1,"match":{"page":"/throw-from-timeout"},"severity":"critical"}
+{"kind":"unhandled_exception","expect":"fires","minClusterSize":1,"match":{"page":"/throw-from-microtask"},"severity":"critical","edgeLabel":"microtask-throw"}
+{"kind":"unhandled_exception","expect":"fires","minClusterSize":1,"match":{"page":"/unhandled-rejection"},"severity":"critical","edgeLabel":"unhandled-rejection"}
+{"kind":"unhandled_exception","expect":"silent","reason":"throw inside try/catch — handled, not unhandled","match":{"page":"/throw-caught"}}
+{"kind":"unhandled_exception","expect":"silent","reason":"page renders cleanly","match":{"page":"/clean"}}
+{"kind":"unhandled_exception","expect":"fires","minClusterSize":1,"match":{"page":"/throw-malformed"},"severity":"critical","edgeLabel":"malformed-html-still-detects"}
+{"kind":"unhandled_exception","expect":"skipped","reason":"browser_mcp_unavailable"}

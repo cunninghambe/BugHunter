@@ -28,6 +28,20 @@ const REGISTRY: Partial<Record<BugKind, BrowserHarnessClassifier>> = {
       severity: 'major',
     }];
   },
+
+  // ---- Bucket A: unhandled_exception ----
+  unhandled_exception(envelope) {
+    const total = envelope.uncaughtErrors.length + envelope.unhandledRejections.length;
+    if (total === 0) return [];
+    const sample = envelope.uncaughtErrors[0]?.message
+      ?? envelope.unhandledRejections[0]?.reason
+      ?? '';
+    return [{
+      route: envelope.pageRoute,
+      rootCause: `${total} uncaught exception(s)/rejection(s) on ${envelope.pageRoute} — first: "${sample.slice(0, 120)}"`,
+      severity: 'critical',
+    }];
+  },
 };
 
 export function getBrowserHarnessClassifier(kind: BugKind): BrowserHarnessClassifier | undefined {

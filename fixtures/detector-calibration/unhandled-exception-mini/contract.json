@@ -1,0 +1,7 @@
+{
+  "fixture": "unhandled-exception-mini",
+  "serves": ["unhandled_exception"],
+  "port": 9753,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

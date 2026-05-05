@@ -940,4 +940,21 @@ export const DETECTOR_CONTRACTS: ReadonlyArray<DetectorContract> = [
     defaultBudgetMs: 30_000,
     note: 'V56.4 browser harness — fixture HTML pages embed the bootstrap inline as the first <head> script so console-override is in the page world (camofox evaluate is isolated-world). Fires when the harvested envelope contains any console event with level==="error".',
   },
+  {
+    kind: 'unhandled_exception',
+    requires: {
+      phases: ['validate', 'execute', 'classify', 'cluster'],
+      tools: ['browser-mcp'],
+      surface: 'web',
+      role: { kind: 'none' },
+      pageContext: { kind: 'any-route' },
+      observationWindowMs: 1500,
+    },
+    fixture: {
+      path: 'unhandled-exception-mini',
+      servesKinds: ['unhandled_exception'],
+    },
+    defaultBudgetMs: 30_000,
+    note: 'V56.4 browser harness. Fires when the harvested envelope contains any uncaughtError (window.error) or unhandledRejection (window.unhandledrejection) event.',
+  },
 ];
