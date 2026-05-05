@@ -1,0 +1,7 @@
+{
+  "fixture": "cross-role-mini",
+  "serves": ["idor_horizontal", "idor_horizontal_mutate", "idor_vertical_role_escalate", "idor_vertical_suspicious"],
+  "port": 9673,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}

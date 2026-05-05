@@ -259,6 +259,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'idor_vertical_role_escalate',
@@ -268,6 +269,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V05_SECURITY_HYGIENE.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   // — § v0.21 IDOR rewire kinds (wired) —
   {
@@ -288,6 +290,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V21_IDOR.md',
     defaultSeverity: 'critical',
+    harness: true,
   },
   {
     kind: 'idor_vertical_suspicious',
@@ -297,6 +300,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V21_IDOR.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'auth_bypass_via_unauthed_route',
@@ -348,6 +352,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'race_condition_click_navigate',
@@ -357,6 +362,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'race_condition_optimistic_revert',
@@ -366,6 +372,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'race_condition_interleaved_mutations',
@@ -375,6 +382,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   {
     kind: 'race_condition_cross_tab',
@@ -384,6 +392,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
     inputSource: 'synthetic-only',
     specReference: 'SPEC_V19_RACE_CONDITIONS.md',
     defaultSeverity: 'major',
+    harness: true,
   },
   // — § v0.23 clock-injection kinds (deferred — clock-test-runner is a structural no-op without JWT issuance) —
   {
@@ -755,6 +764,7 @@ export const DETECTOR_REGISTRY: readonly DetectorRegistryEntry[] = [
   // — § v0.40 multi-context kinds (wired) —
   {
     kind: 'multi_context_state_divergence',
+    harness: true,
     status: 'wired',
     detectorSite: 'packages/cli/src/security/multi-context-detectors.ts:49',
     runnerSite: 'packages/cli/src/phases/multi-context-runner.ts',

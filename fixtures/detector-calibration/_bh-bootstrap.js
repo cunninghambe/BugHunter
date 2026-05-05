@@ -48,6 +48,9 @@ const BOOTSTRAP_SOURCE = `(() => {
           visibilityChangeStateLoss: bh.visibilityChangeStateLoss || null,
           missingStateChangeInput: bh.missingStateChangeInput || null,
           surfaceCallResults: (bh.surfaceCallResults || []).slice(-50),
+          idorReplays: (bh.idorReplays || []).slice(-30),
+          racePlans: (bh.racePlans || []).slice(-30),
+          multiContextDivergence: bh.multiContextDivergence || null,
           harvestWarnings: bh.harvestWarnings.slice(-50),
         });
       } catch (_e) { bh.harvestWarnings.push('sync_threw:' + String(_e)); }
@@ -67,6 +70,10 @@ const BOOTSTRAP_SOURCE = `(() => {
     // V56.4.11 (Bucket B remainder).
     setMissingStateChangeInput: function(input) { bh.missingStateChangeInput = input; bh.sync(); },
     pushSurfaceCallResult: function(result) { bh.surfaceCallResults = bh.surfaceCallResults || []; bh.surfaceCallResults.push(result); bh.sync(); },
+    // V56.4.13 (Bucket F): cross-role / race / multi-context shapes.
+    pushIdorReplay: function(replay) { bh.idorReplays = bh.idorReplays || []; bh.idorReplays.push(replay); bh.sync(); },
+    pushRacePlan: function(plan) { bh.racePlans = bh.racePlans || []; bh.racePlans.push(plan); bh.sync(); },
+    setMultiContextDivergence: function(payload) { bh.multiContextDivergence = payload; bh.sync(); },
   };
   window.__bh = bh;
   bh.sync();

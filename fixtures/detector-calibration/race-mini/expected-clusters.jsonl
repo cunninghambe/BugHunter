@@ -1,0 +1,60 @@
+{"kind":"race_condition_double_submit","expect":"fires","minClusterSize":1,"match":{"page":"/double-submit-fires"},"severity":"major"}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"only one 2xx response","match":{"page":"/double-submit-silent"}}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"different variant","match":{"page":"/click-navigate-fires"}}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"different variant","match":{"page":"/click-navigate-silent"}}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"different variant","match":{"page":"/optimistic-revert-fires"}}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"different variant","match":{"page":"/optimistic-revert-silent"}}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"different variant","match":{"page":"/interleaved-fires"}}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"different variant","match":{"page":"/interleaved-silent"}}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"different variant","match":{"page":"/cross-tab-fires"}}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"different variant","match":{"page":"/cross-tab-silent"}}
+{"kind":"race_condition_double_submit","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"race_condition_double_submit","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"race_condition_click_navigate","expect":"fires","minClusterSize":1,"match":{"page":"/click-navigate-fires"},"severity":"major"}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"final state — no stale navigation","match":{"page":"/click-navigate-silent"}}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"different variant","match":{"page":"/double-submit-fires"}}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"different variant","match":{"page":"/double-submit-silent"}}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"different variant","match":{"page":"/optimistic-revert-fires"}}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"different variant","match":{"page":"/optimistic-revert-silent"}}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"different variant","match":{"page":"/interleaved-fires"}}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"different variant","match":{"page":"/interleaved-silent"}}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"different variant","match":{"page":"/cross-tab-fires"}}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"different variant","match":{"page":"/cross-tab-silent"}}
+{"kind":"race_condition_click_navigate","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"race_condition_click_navigate","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"race_condition_optimistic_revert","expect":"fires","minClusterSize":1,"match":{"page":"/optimistic-revert-fires"},"severity":"major"}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"UI reverted correctly","match":{"page":"/optimistic-revert-silent"}}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"different variant","match":{"page":"/double-submit-fires"}}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"different variant","match":{"page":"/double-submit-silent"}}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"different variant","match":{"page":"/click-navigate-fires"}}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"different variant","match":{"page":"/click-navigate-silent"}}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"different variant","match":{"page":"/interleaved-fires"}}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"different variant","match":{"page":"/interleaved-silent"}}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"different variant","match":{"page":"/cross-tab-fires"}}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"different variant","match":{"page":"/cross-tab-silent"}}
+{"kind":"race_condition_optimistic_revert","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"race_condition_optimistic_revert","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"race_condition_interleaved_mutations","expect":"fires","minClusterSize":1,"match":{"page":"/interleaved-fires"},"severity":"major"}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"all 3 runs agree","match":{"page":"/interleaved-silent"}}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"different variant","match":{"page":"/double-submit-fires"}}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"different variant","match":{"page":"/double-submit-silent"}}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"different variant","match":{"page":"/click-navigate-fires"}}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"different variant","match":{"page":"/click-navigate-silent"}}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"different variant","match":{"page":"/optimistic-revert-fires"}}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"different variant","match":{"page":"/optimistic-revert-silent"}}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"different variant","match":{"page":"/cross-tab-fires"}}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"different variant","match":{"page":"/cross-tab-silent"}}
+{"kind":"race_condition_interleaved_mutations","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"race_condition_interleaved_mutations","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"race_condition_cross_tab","expect":"fires","minClusterSize":1,"match":{"page":"/cross-tab-fires"},"severity":"major"}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"both tabs match","match":{"page":"/cross-tab-silent"}}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"different variant","match":{"page":"/double-submit-fires"}}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"different variant","match":{"page":"/double-submit-silent"}}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"different variant","match":{"page":"/click-navigate-fires"}}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"different variant","match":{"page":"/click-navigate-silent"}}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"different variant","match":{"page":"/optimistic-revert-fires"}}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"different variant","match":{"page":"/optimistic-revert-silent"}}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"different variant","match":{"page":"/interleaved-fires"}}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"different variant","match":{"page":"/interleaved-silent"}}
+{"kind":"race_condition_cross_tab","expect":"silent","reason":"no input","match":{"page":"/clean"}}
+{"kind":"race_condition_cross_tab","expect":"skipped","reason":"browser_mcp_unavailable"}

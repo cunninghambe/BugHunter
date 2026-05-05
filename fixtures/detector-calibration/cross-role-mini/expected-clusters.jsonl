@@ -1,0 +1,44 @@
+{"kind":"idor_horizontal_mutate","expect":"fires","minClusterSize":1,"match":{"page":"/horizontal-mutate-fires"},"severity":"critical"}
+{"kind":"idor_horizontal_mutate","expect":"silent","reason":"non-2xx","match":{"page":"/replay-404"}}
+{"kind":"idor_horizontal_mutate","expect":"silent","reason":"empty body","match":{"page":"/replay-empty-body"}}
+{"kind":"idor_horizontal_mutate","expect":"silent","reason":"rate-limited","match":{"page":"/replay-429"}}
+{"kind":"idor_horizontal_mutate","expect":"silent","reason":"external sideEffectClass","match":{"page":"/replay-external"}}
+{"kind":"idor_horizontal_mutate","expect":"silent","reason":"legitimized hierarchy suppresses","match":{"page":"/replay-legitimized"}}
+{"kind":"idor_horizontal_mutate","expect":"silent","reason":"vertical-suspicious shape","match":{"page":"/vertical-suspicious-fires"}}
+{"kind":"idor_horizontal_mutate","expect":"silent","reason":"legacy shape — different dispatch","match":{"page":"/legacy-horizontal-fires"}}
+{"kind":"idor_horizontal_mutate","expect":"silent","reason":"legacy shape — different dispatch","match":{"page":"/legacy-vertical-escalate-fires"}}
+{"kind":"idor_horizontal_mutate","expect":"silent","reason":"no input pushed","match":{"page":"/clean"}}
+{"kind":"idor_horizontal_mutate","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"idor_vertical_suspicious","expect":"fires","minClusterSize":1,"match":{"page":"/vertical-suspicious-fires"},"severity":"major"}
+{"kind":"idor_vertical_suspicious","expect":"silent","reason":"horizontal-mutate shape","match":{"page":"/horizontal-mutate-fires"}}
+{"kind":"idor_vertical_suspicious","expect":"silent","reason":"legitimized hierarchy suppresses","match":{"page":"/replay-legitimized"}}
+{"kind":"idor_vertical_suspicious","expect":"silent","reason":"non-2xx","match":{"page":"/replay-404"}}
+{"kind":"idor_vertical_suspicious","expect":"silent","reason":"empty body","match":{"page":"/replay-empty-body"}}
+{"kind":"idor_vertical_suspicious","expect":"silent","reason":"rate-limited","match":{"page":"/replay-429"}}
+{"kind":"idor_vertical_suspicious","expect":"silent","reason":"external sideEffectClass","match":{"page":"/replay-external"}}
+{"kind":"idor_vertical_suspicious","expect":"silent","reason":"legacy shape","match":{"page":"/legacy-horizontal-fires"}}
+{"kind":"idor_vertical_suspicious","expect":"silent","reason":"legacy shape","match":{"page":"/legacy-vertical-escalate-fires"}}
+{"kind":"idor_vertical_suspicious","expect":"silent","reason":"no input pushed","match":{"page":"/clean"}}
+{"kind":"idor_vertical_suspicious","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"idor_horizontal","expect":"fires","minClusterSize":1,"match":{"page":"/legacy-horizontal-fires"},"severity":"major"}
+{"kind":"idor_horizontal","expect":"silent","reason":"modern shape","match":{"page":"/horizontal-mutate-fires"}}
+{"kind":"idor_horizontal","expect":"silent","reason":"modern shape","match":{"page":"/vertical-suspicious-fires"}}
+{"kind":"idor_horizontal","expect":"silent","reason":"legacy_vertical_role_escalate shape — different dispatch","match":{"page":"/legacy-vertical-escalate-fires"}}
+{"kind":"idor_horizontal","expect":"silent","reason":"non-2xx","match":{"page":"/replay-404"}}
+{"kind":"idor_horizontal","expect":"silent","reason":"empty body","match":{"page":"/replay-empty-body"}}
+{"kind":"idor_horizontal","expect":"silent","reason":"rate-limited","match":{"page":"/replay-429"}}
+{"kind":"idor_horizontal","expect":"silent","reason":"external sideEffectClass","match":{"page":"/replay-external"}}
+{"kind":"idor_horizontal","expect":"silent","reason":"modern shape","match":{"page":"/replay-legitimized"}}
+{"kind":"idor_horizontal","expect":"silent","reason":"no input pushed","match":{"page":"/clean"}}
+{"kind":"idor_horizontal","expect":"skipped","reason":"browser_mcp_unavailable"}
+{"kind":"idor_vertical_role_escalate","expect":"fires","minClusterSize":1,"match":{"page":"/legacy-vertical-escalate-fires"},"severity":"critical"}
+{"kind":"idor_vertical_role_escalate","expect":"silent","reason":"legacy_horizontal shape","match":{"page":"/legacy-horizontal-fires"}}
+{"kind":"idor_vertical_role_escalate","expect":"silent","reason":"modern shape","match":{"page":"/horizontal-mutate-fires"}}
+{"kind":"idor_vertical_role_escalate","expect":"silent","reason":"modern shape","match":{"page":"/vertical-suspicious-fires"}}
+{"kind":"idor_vertical_role_escalate","expect":"silent","reason":"non-2xx","match":{"page":"/replay-404"}}
+{"kind":"idor_vertical_role_escalate","expect":"silent","reason":"empty body","match":{"page":"/replay-empty-body"}}
+{"kind":"idor_vertical_role_escalate","expect":"silent","reason":"rate-limited","match":{"page":"/replay-429"}}
+{"kind":"idor_vertical_role_escalate","expect":"silent","reason":"external sideEffectClass","match":{"page":"/replay-external"}}
+{"kind":"idor_vertical_role_escalate","expect":"silent","reason":"modern shape","match":{"page":"/replay-legitimized"}}
+{"kind":"idor_vertical_role_escalate","expect":"silent","reason":"no input pushed","match":{"page":"/clean"}}
+{"kind":"idor_vertical_role_escalate","expect":"skipped","reason":"browser_mcp_unavailable"}

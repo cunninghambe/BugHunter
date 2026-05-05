@@ -1,0 +1,7 @@
+{
+  "fixture": "multi-context-mini",
+  "serves": ["multi_context_state_divergence"],
+  "port": 9653,
+  "boots": "node app/server.js",
+  "resetCommand": { "kind": "http", "method": "POST", "path": "/__bughunter_reset" }
+}
