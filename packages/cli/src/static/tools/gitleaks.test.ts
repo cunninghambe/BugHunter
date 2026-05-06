@@ -23,7 +23,7 @@ const FIXTURE_OUTPUT = JSON.stringify([
 
 describe('gitleaks adapter', () => {
   it('parses fixture output into hardcoded_credentials_in_source detections', () => {
-    const { detections, warnings } = gitleaksTool.parseStdout(FIXTURE_OUTPUT);
+    const { detections, warnings } = gitleaksTool.parseStdout(FIXTURE_OUTPUT, "/tmp");
     expect(warnings).toHaveLength(0);
     expect(detections).toHaveLength(2);
     expect(detections[0].kind).toBe('hardcoded_credentials_in_source');
@@ -34,7 +34,7 @@ describe('gitleaks adapter', () => {
   });
 
   it('returns empty detections and warning on schema mismatch', () => {
-    const { detections, warnings } = gitleaksTool.parseStdout(JSON.stringify([{ BadField: true }]));
+    const { detections, warnings } = gitleaksTool.parseStdout(JSON.stringify([{ BadField: true }]), "/tmp");
     // RuleID and File are required — should fail parse → warning returned
     expect(detections).toHaveLength(0);
     expect(warnings[0]).toMatch(/gitleaks schema parse error/);

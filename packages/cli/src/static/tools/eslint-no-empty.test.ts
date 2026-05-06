@@ -44,20 +44,20 @@ const FIXTURE = JSON.stringify([
 
 describe('eslint-no-empty adapter', () => {
   it('emits swallowed_error_empty_catch only for no-empty violations', () => {
-    const { detections, warnings } = eslintNoEmptyTool.parseStdout(FIXTURE);
+    const { detections, warnings } = eslintNoEmptyTool.parseStdout(FIXTURE, "/tmp");
     expect(warnings).toHaveLength(0);
     expect(detections).toHaveLength(2);
     expect(detections.every(d => d.kind === 'swallowed_error_empty_catch')).toBe(true);
   });
 
   it('ignores non-no-empty violations', () => {
-    const { detections } = eslintNoEmptyTool.parseStdout(FIXTURE);
+    const { detections } = eslintNoEmptyTool.parseStdout(FIXTURE, "/tmp");
     const rules = detections.map(d => d.staticContext?.ruleId);
     expect(rules.every(r => r === 'no-empty')).toBe(true);
   });
 
   it('populates staticContext correctly', () => {
-    const { detections } = eslintNoEmptyTool.parseStdout(FIXTURE);
+    const { detections } = eslintNoEmptyTool.parseStdout(FIXTURE, "/tmp");
     const first = detections[0];
     expect(first.staticContext?.tool).toBe('eslint-no-empty');
     expect(first.staticContext?.sourceFile).toBe('/app/src/utils/auth.ts');
@@ -65,7 +65,7 @@ describe('eslint-no-empty adapter', () => {
   });
 
   it('returns warning on schema mismatch', () => {
-    const { detections, warnings } = eslintNoEmptyTool.parseStdout(JSON.stringify({ not: 'an array' }));
+    const { detections, warnings } = eslintNoEmptyTool.parseStdout(JSON.stringify({ not: 'an array' }), "/tmp");
     expect(detections).toHaveLength(0);
     expect(warnings[0]).toMatch(/eslint-no-empty schema parse error/);
   });

@@ -30,20 +30,20 @@ const FIXTURE_SECRETS = JSON.stringify({
 
 describe('semgrep adapter', () => {
   it('emits hardcoded_credentials_in_source only for secrets rules', () => {
-    const { detections, warnings } = semgrepTool.parseStdout(FIXTURE_SECRETS);
+    const { detections, warnings } = semgrepTool.parseStdout(FIXTURE_SECRETS, '/tmp');
     expect(warnings).toHaveLength(0);
     expect(detections).toHaveLength(2);
     expect(detections.every(d => d.kind === 'hardcoded_credentials_in_source')).toBe(true);
   });
 
   it('skips non-secrets rules', () => {
-    const { detections } = semgrepTool.parseStdout(FIXTURE_SECRETS);
+    const { detections } = semgrepTool.parseStdout(FIXTURE_SECRETS, '/tmp');
     const ruleIds = detections.map(d => d.staticContext?.ruleId);
     expect(ruleIds).not.toContain('javascript.lang.security.audit.dangerous-exec');
   });
 
   it('populates staticContext correctly', () => {
-    const { detections } = semgrepTool.parseStdout(FIXTURE_SECRETS);
+    const { detections } = semgrepTool.parseStdout(FIXTURE_SECRETS, '/tmp');
     const first = detections[0];
     expect(first.staticContext?.tool).toBe('semgrep');
     expect(first.staticContext?.ruleId).toBe('secrets.generic-api-key');
@@ -52,7 +52,7 @@ describe('semgrep adapter', () => {
   });
 
   it('returns warning on schema mismatch', () => {
-    const { detections, warnings } = semgrepTool.parseStdout(JSON.stringify({ bad: 'field' }));
+    const { detections, warnings } = semgrepTool.parseStdout(JSON.stringify({ bad: 'field' }), '/tmp');
     expect(detections).toHaveLength(0);
     expect(warnings[0]).toMatch(/semgrep schema parse error/);
   });
