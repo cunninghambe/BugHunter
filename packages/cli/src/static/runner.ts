@@ -12,7 +12,7 @@ export type StaticTool = {
   id: string;
   binary: string;
   args: (projectDir: string) => string[];
-  parseStdout: (raw: string) => { detections: BugDetection[]; warnings: string[] };
+  parseStdout: (raw: string, projectDir: string) => { detections: BugDetection[]; warnings: string[] };
   timeoutMs: number;
   /** When true, missing binary is silently skipped with a structured-log warning. */
   optional: boolean;
@@ -82,7 +82,7 @@ export async function runStaticTool(tool: StaticTool, projectDir: string): Promi
       }
 
       try {
-        const { detections, warnings } = tool.parseStdout(raw);
+        const { detections, warnings } = tool.parseStdout(raw, projectDir);
         if (truncated) warnings.push('stdout truncated at 50MB');
         if (code !== 0) {
           const stderr = Buffer.concat(stderrChunks).toString('utf8').slice(0, 500);

@@ -2,6 +2,9 @@
 
 import type { NetworkRequest, BugDetection, ExpectedOutcome } from '../types.js';
 
+/** Roles that aren't expected to access admin endpoints — 401/403 is correct, not a bug. */
+const ANONYMOUS_ROLES: ReadonlySet<string> = new Set(['anon', 'anonymous']);
+
 /**
  * Patterns that identify mutator-synthesized paths. A 404 on these is expected
  * by design — not a linked-route bug (fixes false-positive class #112).
@@ -45,9 +48,11 @@ export function isDevServerPath(path: string): boolean {
 export function classifyNetworkRequests(
   requests: NetworkRequest[],
   expectedOutcome: ExpectedOutcome,
-  authorizedRole: boolean
+  authorizedRole: boolean,
+  role?: string,
 ): BugDetection[] {
   const bugs: BugDetection[] = [];
+  const isAnonymousRole = role !== undefined && ANONYMOUS_ROLES.has(role);
 
   for (const req of requests) {
     // Status 0 is the canonical signal for "request never completed" (network
@@ -75,9 +80,18 @@ export function classifyNetworkRequests(
     }
 
     if (req.status >= 400) {
+      // Anon/anonymous role hitting an auth-gated endpoint and getting 401/403
+      // is the correct security response, not an "unexpected" 4xx. Spoonworks
+      // calibration (May 2026): 50/52 surfaced 4xxs were anon-on-admin 401s.
+      const anonAuthBlock = (req.status === 401 || req.status === 403) && isAnonymousRole;
+      // 429 = rate-limited; that's correct app behavior triggered BY our scan
+      // load, not an app bug. Same suppression as surface_call_failed.
+      const rateLimited = req.status === 429;
       const isUnexpected =
-        (expectedOutcome === 'success') ||
-        ((req.status === 401 || req.status === 403) && authorizedRole);
+        !anonAuthBlock && !rateLimited && (
+          (expectedOutcome === 'success') ||
+          ((req.status === 401 || req.status === 403) && authorizedRole)
+        );
 
       if (isUnexpected) {
         // Suppress when the response body is a Zod / validation-rejection shape.

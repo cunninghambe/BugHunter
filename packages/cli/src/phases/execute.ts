@@ -440,7 +440,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
         if (har.log.entries.length > 0 && result.postState !== undefined) {
           const networkRequests = harEntriesToNetworkRequests(har.log.entries);
           result.postState.networkRequests = networkRequests;
-          const networkBugs = classifyNetworkRequests(networkRequests, tc.expectedOutcome, true);
+          const networkBugs = classifyNetworkRequests(networkRequests, tc.expectedOutcome, true, tc.role);
           result.bugs.push(...networkBugs);
           if (networkBugs.length > 0) result.passed = false;
         }
@@ -1150,7 +1150,7 @@ async function executeUiTestInner(
   // react_error, and console_error (fallthrough), so no classifications are lost.
   // classifyConsoleErrors remains in console.ts but is no longer called from here.
   bugs.push(...classifyReactErrors(postConsoleErrors, tc.page));
-  bugs.push(...classifyNetworkRequests([], tc.expectedOutcome, true));
+  bugs.push(...classifyNetworkRequests([], tc.expectedOutcome, true, tc.role));
 
   // V24: dom_error_text — emit only if error appeared post-action and was NOT already present
   // pre-action (EC-4 in spec: pre-existing error text is not the action's fault).
@@ -1613,15 +1613,17 @@ async function executeApiTest(
       // surface_call_failed
       if (callResult.ok !== true && tc.action.palette === 'happy') {
         const status = callResult.status ?? 0;
-        // Anonymous (and other non-authorized roles) hitting an admin
-        // endpoint and getting 401/403 is the correct security response, not
-        // a "surface call failed". A separate auth_bypass_via_unauthed_route
-        // detector handles the inverse (anon getting 200 on admin), and
-        // network_4xx_unexpected handles 401/403 against authorized roles.
-        // Spoonworks calibration (May 2026): surfaces lots of 401s on anon's
-        // happy probes against /api/admin/*.
         const isAnonymous = tc.role === 'anonymous' || tc.role === 'anon';
-        if (status >= 400 && status < 500 && !((status === 401 || status === 403) && isAnonymous)) {
+        // Suppress: 401/403 from anon (correct security response, separate
+        // auth_bypass_via_unauthed_route detector handles the inverse), 429
+        // (rate-limit hit during scan, not an app bug), 422 ("Unprocessable
+        // Entity" — HTTP-spec validation failure). Spoonworks calibration
+        // (May 2026).
+        const skipStatus =
+          ((status === 401 || status === 403) && isAnonymous)
+          || status === 429
+          || status === 422;
+        if (status >= 400 && status < 500 && !skipStatus) {
           if (!isMutatorValidationRejection(tc, callResult)) {
             const meta = callToolId !== undefined ? toolMap?.get(callToolId) : undefined;
             const endpoint = meta !== undefined
@@ -1665,7 +1667,7 @@ async function executeApiTest(
           status: callResult.status,
           duration: callResult.durationMs,
         };
-        bugs.push(...classifyNetworkRequests([req], tc.expectedOutcome, true));
+        bugs.push(...classifyNetworkRequests([req], tc.expectedOutcome, true, tc.role));
       }
 
       result = {

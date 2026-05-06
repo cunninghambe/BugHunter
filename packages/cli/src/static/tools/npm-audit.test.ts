@@ -55,7 +55,7 @@ const FIXTURE_V6 = JSON.stringify({
 
 describe('npm-audit adapter', () => {
   it('parses v7 format into vulnerable_dependency_high detections', () => {
-    const { detections, warnings } = npmAuditTool.parseStdout(FIXTURE_V7);
+    const { detections, warnings } = npmAuditTool.parseStdout(FIXTURE_V7, "/tmp");
     expect(warnings).toHaveLength(0);
     // Only high and critical, not moderate
     expect(detections).toHaveLength(2);
@@ -67,7 +67,7 @@ describe('npm-audit adapter', () => {
   });
 
   it('parses v6 advisories format, filtering by severity', () => {
-    const { detections, warnings } = npmAuditTool.parseStdout(FIXTURE_V6);
+    const { detections, warnings } = npmAuditTool.parseStdout(FIXTURE_V6, "/tmp");
     expect(warnings).toHaveLength(0);
     expect(detections).toHaveLength(1);
     expect(detections[0].staticContext?.ruleId).toBe('1234');
@@ -75,7 +75,7 @@ describe('npm-audit adapter', () => {
   });
 
   it('sets sourceFile to package-lock.json', () => {
-    const { detections } = npmAuditTool.parseStdout(FIXTURE_V7);
+    const { detections } = npmAuditTool.parseStdout(FIXTURE_V7, "/tmp");
     expect(detections.every(d => d.staticContext?.sourceFile === 'package-lock.json')).toBe(true);
   });
 
