@@ -23,6 +23,11 @@ const RUN_DIR = path.resolve(
   '/root/BugHunter/fixtures/bughunter-self-deliberate-bugs/.bughunter/runs/vtfpvdu6yhnvis298n1sjmca',
 );
 
+const RUN_DIR_AVAILABLE = (() => {
+  try { fs.accessSync(path.join(RUN_DIR, 'summary.json'), fs.constants.R_OK); return true; }
+  catch { return false; }
+})();
+
 function loadRealRunData(): { summary: RunSummary; clusters: BugCluster[] } {
   const summaryText = fs.readFileSync(path.join(RUN_DIR, 'summary.json'), 'utf8');
   const summary = JSON.parse(summaryText) as RunSummary;
@@ -40,7 +45,11 @@ function loadRealRunData(): { summary: RunSummary; clusters: BugCluster[] } {
   return { summary, clusters };
 }
 
-const { summary, clusters } = loadRealRunData();
+// Load only when the local fixture is present (Brad's dev box). In CI / fresh
+// checkout the fixture run dir doesn't exist, so we skip the suite.
+const { summary, clusters } = RUN_DIR_AVAILABLE
+  ? loadRealRunData()
+  : { summary: { runId: 'skip' } as RunSummary, clusters: [] as BugCluster[] };
 
 const EXPECTED_KINDS = [
   'coop_coep_violation',
@@ -55,7 +64,7 @@ const EXPECTED_KINDS = [
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('V47 smoke — real V33 run data', () => {
+describe.skipIf(!RUN_DIR_AVAILABLE)('V47 smoke — real V33 run data', () => {
   it('parses all 6 cluster kinds from bugs.jsonl', () => {
     const kinds = new Set(clusters.map(c => c.kind));
     for (const k of EXPECTED_KINDS) {
