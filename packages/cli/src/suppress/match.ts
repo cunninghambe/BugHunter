@@ -30,7 +30,9 @@ export function extractEndpoint(cluster: BugCluster): string | undefined {
 }
 
 function matchesBugIdentity(cluster: BugCluster, value: string): boolean {
-  const identity = cluster.signatureKey ?? '';
+  // Prefer cluster.bugIdentity (16-char hex) when present; fall back to
+  // cluster.signatureKey for pre-v0.27 clusters that lack a computed identity.
+  const identity = cluster.bugIdentity ?? cluster.signatureKey ?? '';
   return identity !== '' && identity === value;
 }
 

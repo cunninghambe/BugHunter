@@ -165,10 +165,12 @@ export function buildApiInput(
   return result;
 }
 
-function schemaToInputType(schema: { type?: string; format?: string }): InputType {
+function schemaToInputType(schema: { type?: string; format?: string; enum?: unknown[] }): InputType {
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) return 'select';
   if (schema.format === 'email') return 'email';
   if (schema.format === 'uri' || schema.format === 'url') return 'url';
-  if (schema.format === 'date' || schema.format === 'date-time') return 'date';
+  if (schema.format === 'date-time') return 'datetime';
+  if (schema.format === 'date') return 'date';
   if (schema.format === 'binary') return 'file';
   if (schema.format === 'color') return 'color';
   if (schema.format === 'password') return 'password';

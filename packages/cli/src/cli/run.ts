@@ -56,6 +56,10 @@ function aggregateDiscoverySkips(skipList: SkippedItem[]): Array<{ reason: strin
   return [...counts.entries()].map(([reason, count]) => ({ reason, count }));
 }
 
+// Re-exported so the MCP wrapper can dynamic-import a single module surface.
+// The implementation lives in ./replay.ts.
+export { replayCommand } from './replay.js';
+
 export type RunOptions = {
   projectDir: string;
   route?: string;

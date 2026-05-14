@@ -1,0 +1,55 @@
+name: verify
+
+on:
+  pull_request:
+    # Run on every PR (incl. stacked PRs whose base is not main) so we get
+    # signal on dependent branches before they're rebased to main.
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22 — rolldown (vitest 4.x dep) requires util.styleText which
+          # landed in Node ^20.19 / >=22.12. 20.11.x is below both.
+          node-version: '22.x'
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      # Each package has its own vitest config (aliases, jsdom env, setup
+       # files). Run from each package dir so the local config is picked up
+       # — running from repo root applies the wrong config and surfaces
+       # spurious "@bughunter/types not found" and "document not defined"
+       # errors that don't reproduce locally.
+
+      - name: Test (cli)
+        # Run only src/**/*.test.ts — the integration tests under tests/
+        # require live fixture servers (e2e setup) which CI doesn't provision.
+        run: ../../node_modules/.bin/vitest run src
+        working-directory: packages/cli
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      - name: Test (mcp)
+        run: ../../node_modules/.bin/vitest run
+        working-directory: packages/mcp
+
+      - name: Test (viewer)
+        run: ../../node_modules/.bin/vitest run
+        working-directory: packages/viewer

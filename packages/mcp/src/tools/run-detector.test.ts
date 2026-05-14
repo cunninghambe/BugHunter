@@ -257,11 +257,9 @@ describe('bughunt_run_detector with synthetic contract (integration)', () => {
     // Verify that an immediately-aborted signal causes runHarness to return
     // with budgetExceeded: true and phasesRun: []
     const { runHarness } = await import('bughunter/src/harness/executor.js');
-    const { DETECTOR_CONTRACTS } = await import('bughunter/src/detectors/contracts.js');
 
-    // V56.1: DETECTOR_CONTRACTS is empty, so we construct a synthetic contract
-    const { type: _t, ...rest } = { type: 'unused' }; void rest;
-
+    // Construct a synthetic contract independent of the live registry so the test
+    // verifies AbortSignal behavior in isolation, not contract content.
     const syntheticContract = {
       kind: 'missing_csp_header' as const,
       requires: {
@@ -292,9 +290,6 @@ describe('bughunt_run_detector with synthetic contract (integration)', () => {
     expect(result.budgetExceeded).toBe(true);
     expect(result.phasesRun).toHaveLength(0);
     expect(result.clusters).toEqual([]);
-
-    // Verify DETECTOR_CONTRACTS is empty in V56.1
-    expect(DETECTOR_CONTRACTS).toHaveLength(0);
   });
 
   it('persists run record with runMode: detector-call', async () => {

@@ -7,7 +7,7 @@ import type { BrowserMcpAdapter, TabScope } from '../adapters/browser-mcp.js';
 import { executeRaceTest } from './race-runner.js';
 import { executeMultiContextTest } from './multi-context-runner.js';
 import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
-import type { SurfaceMcpAdapter, SurfaceCallResult } from '../adapters/surface-mcp.js';
+import type { SurfaceMcpAdapter, SurfaceCallResult, SurfaceSummary } from '../adapters/surface-mcp.js';
 import type {
   TestCase, TestResult, BugDetection, InfrastructureFailure, PreState, PostState,
   ConsoleError, NetworkRequest, RunState, ToolMeta, DiscoveredIds, BugHunterConfig, PerfArtifacts,
@@ -80,6 +80,75 @@ import { filterInvariants } from '../dataIntegrity/filter.js';
 import { snapshotInvariantsBefore, evaluateInvariantsAfter } from '../dataIntegrity/evaluator.js';
 import type { ActionResult } from '../dataIntegrity/evaluator.js';
 import { appendJsonl } from '../store/filesystem.js';
+import { loginInBrowser, loginViaCookieEndpoint, cookieEndpointPlanFromConfig } from '../discovery/browser-login.js';
+
+/** Sentinel prefix in InfrastructureFailure.detail that signals a session-expiry skip. */
+const SESSION_EXPIRED_PREFIX = 'session_expired:';
+
+/** Accumulate a skip reason by incrementing an existing entry or adding a new one. */
+function recordSkipReason(
+  skipReasons: Array<{ reason: string; count: number }>,
+  reason: string,
+): void {
+  const existing = skipReasons.find(r => r.reason === reason);
+  if (existing !== undefined) {
+    existing.count++;
+  } else {
+    skipReasons.push({ reason, count: 1 });
+  }
+}
+
+/**
+ * Re-login on behalf of the given role. Mirrors the logic in runBrowserLoginPhase
+ * (discover.ts) so the browser context gets fresh session cookies.
+ * Returns true if re-login succeeded, false otherwise.
+ */
+async function attemptSessionRecovery(
+  config: BugHunterConfig,
+  browser: BrowserMcpAdapter,
+  surface: SurfaceMcpAdapter,
+  role: string,
+  baseUrl: string,
+): Promise<boolean> {
+  log.warn(`session_expired: re-login triggered for role="${role}"`);
+  const loginCfg = config.browserLogin;
+
+  if (config.auth?.kind === 'cookie') {
+    const cookieAuth = config.auth;
+    let plan;
+    try {
+      const smcpPlan = await surface.surface_describe_auth({ role });
+      plan = smcpPlan.authKind === 'cookie_endpoint' ? smcpPlan : cookieEndpointPlanFromConfig(cookieAuth);
+    } catch {
+      plan = cookieEndpointPlanFromConfig(cookieAuth);
+    }
+    let surfaceStack: SurfaceSummary['stack'] | undefined;
+    try {
+      const self = await surface.surface_describe_self();
+      surfaceStack = self.stack;
+    } catch { /* treat as unknown — defaults to UI path */ }
+    const result = await loginViaCookieEndpoint(browser, plan, cookieAuth, role, baseUrl, { surfaceStack, surface });
+    if (result.ok) {
+      log.warn(`session_expired: re-login succeeded (role="${role}", kind=cookie_endpoint)`);
+      return true;
+    }
+    log.warn(`session_expired: re-login failed (role="${role}", reason=${result.reason}): ${result.detail}`);
+    return false;
+  }
+
+  const result = await loginInBrowser(browser, surface, {
+    role,
+    baseUrl,
+    verifyTimeoutMs: loginCfg?.verifyTimeoutMs ?? 10_000,
+    verifyPollMs: loginCfg?.verifyPollMs ?? 500,
+  });
+  if (result.ok) {
+    log.warn(`session_expired: re-login succeeded (role="${role}", cookies=${result.cookies.length})`);
+    return true;
+  }
+  log.warn(`session_expired: re-login failed (role="${role}", reason=${result.reason}): ${result.detail}`);
+  return false;
+}
 
 export type ExecuteOptions = {
   testCases: TestCase[];
@@ -325,6 +394,13 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     skipReasons.push({ reason: 'no browserMcpUrl configured', count: uiQueue.length });
   }
 
+  // Session-expiry recovery: at most one re-login attempt per role per run.
+  const sessionRecoveryAttempted = new Set<string>();
+  const baseUrl = appBaseUrl ?? runState.config.appBaseUrl ?? (() => {
+    try { return new URL(runState.config.surfaceMcpUrl).origin; } catch { return ''; }
+  })();
+  const loginPathHint = '/login';
+
   const willRun = apiQueue.length + (browser !== undefined ? uiQueue.length : 0);
   const willSkip = uiQueue.length - (browser !== undefined ? uiQueue.length : 0);
   const apiLabel = `${apiQueue.length} api`;
@@ -394,7 +470,18 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
       let apiCapturedCall: SurfaceCallResult | undefined;
       if (tc.action.via === 'ui') {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- browser is defined whenever ui tests are queued (see skip guard above)
-        result = await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined, mobile: opts.runState.config.mobile?.enabled === true }, clock, perfCollector, syntheticOccurrenceId);
+        result = await executeUiTest(tc, browser!, surface, runState.runId, paths, extraHeaders, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, discoveredIds, onPageBaseline, asyncMaxWaitMs, { enableA11y: opts.enableA11y, enablePerf: perfCollector !== undefined, mobile: opts.runState.config.mobile?.enabled === true }, clock, perfCollector, syntheticOccurrenceId, loginPathHint);
+
+        // Session-expiry recovery: detect sentinel from executeUiTest, trigger re-login once per role.
+        if (result.infrastructureFailure?.detail.startsWith(SESSION_EXPIRED_PREFIX) === true) {
+          recordSkipReason(skipReasons, 'session_expired');
+          if (browser !== undefined && !sessionRecoveryAttempted.has(tc.role)) {
+            sessionRecoveryAttempted.add(tc.role);
+            await attemptSessionRecovery(runState.config, browser, surface, tc.role, baseUrl);
+          }
+          // Strip the infra failure so consecutive-infra-failure counter is not incremented.
+          result = { ...result, infrastructureFailure: undefined };
+        }
       } else {
         const outcome = await executeApiTest(tc, surface, runState.runId, paths, toolMap, discoveredIds, appBaseUrl, clock);
         result = outcome.testResult;
@@ -1341,6 +1428,13 @@ async function executeUiTest(
   perfCollector?: PerfCollector,
   /** Occurrence id used to tag the CDP action window (generated by runTest). */
   perfOccurrenceId?: string,
+  /**
+   * Session-expiry detection hint. When set, the executor checks the landed URL
+   * after tab navigation. If the URL contains this path segment and the test page
+   * does not, the session has expired mid-run; a sentinel infrastructureFailure is
+   * returned for the caller to handle (re-login + skip).
+   */
+  loginPathHint?: string,
 ): Promise<TestResult> {
   const start = Date.now();
   const occurrenceId = createId();
@@ -1380,6 +1474,34 @@ async function executeUiTest(
           log.warn('perf-collector: observe failed', { err: String(err), page: tc.page })
         );
         perfCollector.tick(perfOccurrenceId ?? occurrenceId);
+      }
+
+      // Session-expiry detection: if the tab landed on the login page instead of the
+      // intended page, the browser session expired mid-run. Return a sentinel so the
+      // outer runTest can trigger re-login (once per role) and skip this test.
+      if (loginPathHint !== undefined && !tc.page.toLowerCase().includes(loginPathHint)) {
+        const evalResult = await scope.evaluate('location.href').catch(() => ({ value: '' }));
+        const landedUrl = String(evalResult.value ?? '').toLowerCase();
+        if (landedUrl.includes(loginPathHint)) {
+          log.warn(`session_expired: test page=${tc.page} redirected to ${landedUrl}`);
+          return {
+            testId: tc.id,
+            occurrenceId,
+            passed: false,
+            bugs: [],
+            infrastructureFailure: {
+              id: createId(),
+              runId,
+              timestamp: nowIso(clock),
+              kind: 'generic' as const,
+              detail: `${SESSION_EXPIRED_PREFIX} page ${tc.page} redirected to ${landedUrl}`,
+              role: tc.role,
+              page: tc.page,
+              action: tc.action,
+            },
+            durationMs: Date.now() - start,
+          } satisfies TestResult;
+        }
       }
 
       // v0.20: apply network fault before executing the action; clear in finally.

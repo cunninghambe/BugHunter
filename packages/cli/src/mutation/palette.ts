@@ -29,6 +29,7 @@ export function generatePaletteCases(
     case 'email': return emailCases(runId);
     case 'number': return numberCases(field as NumberSchema, sampleValue);
     case 'date': return dateCases(clock);
+    case 'datetime': return datetimeCases(clock);
     case 'select': return selectCases(field.options);
     case 'checkbox': return checkboxCases();
     case 'file': return fileCases(field as { min?: number; max?: number });
@@ -88,6 +89,17 @@ function dateCases(clock?: Clock): MutationCase[] {
     { variant: 'edge', value: '1900-01-01' },
     { variant: 'edge', value: '2100-12-31' },
     { variant: 'out_of_bounds', value: 'not-a-date' },
+  ];
+}
+
+function datetimeCases(clock?: Clock): MutationCase[] {
+  const wallOrFrozen: Clock = clock ?? { kind: 'wall' };
+  return [
+    { variant: 'null', value: null },
+    { variant: 'happy', value: nowIso(wallOrFrozen) },
+    { variant: 'edge', value: '1900-01-01T00:00:00.000Z' },
+    { variant: 'edge', value: '2100-12-31T23:59:59.999Z' },
+    { variant: 'out_of_bounds', value: 'not-a-datetime' },
   ];
 }
 
