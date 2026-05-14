@@ -90,6 +90,17 @@ export class ClaudeCliVisionClient implements VisionClientInterface {
         });
       });
 
+      // Suppress EPIPE: when the child binary fails to start or exits before
+      // we finish writing, the kernel closes stdin and `.write()` throws
+      // EPIPE asynchronously. The 'close' handler above already rejects the
+      // promise with a transport error in that case, so the stdin error is
+      // redundant noise. Without this listener, vitest reports the EPIPE as
+      // an unhandled error and fails the test file (#NodeStreamsEPIPE).
+      child.stdin.on('error', (err) => {
+        if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
+          // Unexpected stdin error — let it propagate via 'close' anyway.
+        }
+      });
       child.stdin.write(prompt);
       child.stdin.end();
     });
