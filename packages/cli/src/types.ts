@@ -11,6 +11,7 @@ export type InputType =
   | 'email'
   | 'number'
   | 'date'
+  | 'datetime'
   | 'select'
   | 'checkbox'
   | 'file'

@@ -1,0 +1,41 @@
+name: verify
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.x'
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test (cli)
+        run: ./node_modules/.bin/vitest run packages/cli/src
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      - name: Test (mcp)
+        run: ./node_modules/.bin/vitest run packages/mcp/src
+
+      - name: Test (viewer)
+        run: ./node_modules/.bin/vitest run packages/viewer/src

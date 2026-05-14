@@ -470,41 +470,172 @@
       "fixture": "production",
       "port": null,
       "route": "/"
+    },
+    "clock_skew_token_invalid": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "clock_overflow": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "clock_dst_corruption": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "clock_leap_day_failure": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "clock_timezone_display": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "xss_stored": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "multi_user_inconsistent_snapshot": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "permission_denied_unhandled": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "infinite_loading": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "idempotency_key_violation": {
+      "fixture": "mixed-runtime-mini",
+      "port": 9553,
+      "route": "/clean"
+    },
+    "unbounded_list_render": {
+      "fixture": "perf-deferred-mini",
+      "port": 9543,
+      "route": "/clean"
+    },
+    "oversized_bundle": {
+      "fixture": "perf-deferred-mini",
+      "port": 9543,
+      "route": "/clean"
+    },
+    "excessive_re_renders": {
+      "fixture": "perf-deferred-mini",
+      "port": 9543,
+      "route": "/clean"
+    },
+    "memory_leak_suspected": {
+      "fixture": "perf-deferred-mini",
+      "port": 9543,
+      "route": "/clean"
+    },
+    "memory_leak_attributed": {
+      "fixture": "perf-deferred-mini",
+      "port": 9543,
+      "route": "/clean"
+    },
+    "agent_response_hallucinated": {
+      "fixture": "agent-runner-mini",
+      "port": 9533,
+      "route": "/clean"
+    },
+    "agent_action_timeout": {
+      "fixture": "agent-runner-mini",
+      "port": 9533,
+      "route": "/clean"
+    },
+    "streaming_response_truncated": {
+      "fixture": "agent-runner-mini",
+      "port": 9533,
+      "route": "/clean"
+    },
+    "tool_call_failure_unhandled": {
+      "fixture": "agent-runner-mini",
+      "port": 9533,
+      "route": "/clean"
+    },
+    "agent_cost_per_turn_high": {
+      "fixture": "agent-runner-mini",
+      "port": 9533,
+      "route": "/clean"
+    },
+    "drag_drop_failure": {
+      "fixture": "interaction-palette-mini",
+      "port": 9523,
+      "route": "/clean"
+    },
+    "paste_handler_failure": {
+      "fixture": "interaction-palette-mini",
+      "port": 9523,
+      "route": "/clean"
+    },
+    "autofill_state_desync": {
+      "fixture": "interaction-palette-mini",
+      "port": 9523,
+      "route": "/clean"
+    },
+    "animation_state_corruption": {
+      "fixture": "interaction-palette-mini",
+      "port": 9523,
+      "route": "/clean"
+    },
+    "print_stylesheet_broken": {
+      "fixture": "interaction-palette-mini",
+      "port": 9523,
+      "route": "/clean"
+    },
+    "reduced_motion_violation": {
+      "fixture": "interaction-palette-mini",
+      "port": 9523,
+      "route": "/clean"
+    },
+    "forced_colors_failure": {
+      "fixture": "interaction-palette-mini",
+      "port": 9523,
+      "route": "/clean"
+    },
+    "dark_mode_layout_break": {
+      "fixture": "interaction-palette-mini",
+      "port": 9523,
+      "route": "/clean"
+    },
+    "zoom_layout_break": {
+      "fixture": "interaction-palette-mini",
+      "port": 9523,
+      "route": "/clean"
+    },
+    "viewport_100vh_break": {
+      "fixture": "mobile-responsive-mini",
+      "port": 9513,
+      "route": "/clean"
+    },
+    "soft_keyboard_occlusion": {
+      "fixture": "mobile-responsive-mini",
+      "port": 9513,
+      "route": "/clean"
+    },
+    "orientation_change_layout_break": {
+      "fixture": "mobile-responsive-mini",
+      "port": 9513,
+      "route": "/clean"
+    },
+    "pull_to_refresh_conflict": {
+      "fixture": "mobile-responsive-mini",
+      "port": 9513,
+      "route": "/clean"
     }
   },
-  "deferred": [
-    "agent_action_timeout",
-    "agent_cost_per_turn_high",
-    "agent_response_hallucinated",
-    "animation_state_corruption",
-    "autofill_state_desync",
-    "clock_dst_corruption",
-    "clock_leap_day_failure",
-    "clock_overflow",
-    "clock_skew_token_invalid",
-    "clock_timezone_display",
-    "dark_mode_layout_break",
-    "drag_drop_failure",
-    "excessive_re_renders",
-    "forced_colors_failure",
-    "idempotency_key_violation",
-    "infinite_loading",
-    "memory_leak_attributed",
-    "memory_leak_suspected",
-    "multi_user_inconsistent_snapshot",
-    "orientation_change_layout_break",
-    "oversized_bundle",
-    "paste_handler_failure",
-    "permission_denied_unhandled",
-    "print_stylesheet_broken",
-    "pull_to_refresh_conflict",
-    "reduced_motion_violation",
-    "soft_keyboard_occlusion",
-    "streaming_response_truncated",
-    "tool_call_failure_unhandled",
-    "unbounded_list_render",
-    "viewport_100vh_break",
-    "xss_stored",
-    "zoom_layout_break"
-  ]
+  "deferred": []
 }
