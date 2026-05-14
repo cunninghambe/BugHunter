@@ -10,17 +10,25 @@ BugHunter automates the boring half. It discovers your app's surface from [Surfa
 
 ## Empirical numbers
 
-Real BugHunter runs against the deliberate-bugs fixture, the comprehensive-bench fixture, and 5 bench apps in [BugHunter-bench](https://github.com/cunninghambe/BugHunter-bench). Numbers vary as the calibration pipeline matures — the trajectory is documented honestly rather than smoothed.
+Real BugHunter runs against the deliberate-bugs fixture, the comprehensive-bench fixture, 5 bench apps in [BugHunter-bench](https://github.com/cunninghambe/BugHunter-bench), and a real production-shaped Next.js app (spoonworks). Numbers vary as the calibration pipeline matures — the trajectory is documented honestly rather than smoothed.
 
-**Detector calibration (V56.4.15, 127 BugKinds):** **127/127 PASS** on the per-detector self-test. Every wired BugKind in the registry has a `DetectorContract`, a fixture, and a per-route scorecard. A serial sweep against camofox + 17 fixture servers completes in ~50 min with all 127 PASSing.
+**Real-app precision (spoonworks, 2026-05-14, v0.52):** **4 / 5 = 80 %** precision. 5 clusters emitted from a 38-page production e-commerce app (3338 tests across owner + anon roles, 2h20m budget). 4 real `vulnerable_dependency_high` clusters (confirmed against `npm audit`), 1 likely-FP `missing_state_change` (app code correctly removes the row; BugHunter's state-change heuristic over-fired). See **[docs/benchmarks/BENCHMARK_SPOONWORKS.md](docs/benchmarks/BENCHMARK_SPOONWORKS.md)** for the per-cluster triage.
+
+Trajectory of the same target across three measurements:
+
+| run | clusters | precision | comment |
+|---|---|---|---|
+| 2026-05-11 (baseline) | 77 | 6/77 = 7.8 % | 71 FPs concentrated in 3 detector patterns |
+| 2026-05-14 v0.51 (PR #265) | 25 | ~4/25 = ~16 % | dom_error_text, surface_call_failed, 422 fixed; 404_for_linked_route leaked through |
+| 2026-05-14 v0.52 (PR #266) | 5 | 4/5 = **80 %** | classifier-side gate added for unresolved `:id` placeholders |
+
+**Detector calibration (V56.4.15, 127 BugKinds):** **127/127 PASS** on the per-detector self-test. Every wired BugKind in the registry has a `DetectorContract`, a fixture, and a per-route scorecard. A serial sweep against camofox + 17 fixture servers completes in ~50 min with all 127 PASSing. This measures whether each detector fires when a fixture is engineered to trip it — it does NOT measure precision on real apps. Per the spoonworks benchmark above, real-app precision is the load-bearing metric.
 
 **Bench-app calibration (5 web apps × ~100 BugKinds):** runs on every push to main via the `calibrate` workflow, posts per-PR comments, and writes the auto-updated block at the bottom of this README. Bench-app stability is upstream of BugHunter — the workflow tolerates per-app health-check timeouts and emits a vacuous aggregate rather than failing CI.
 
-**Peak measurement (smoke #14, focused fixture):** 17/85 golden BugKinds detected — **20.0% kind recall, 49.7% plant recall, 0 false positives.** Both UI and API kinds firing in one run.
+**Peak measurement (smoke #14, focused fixture):** 17/85 golden BugKinds detected — **20.0% kind recall, 49.7% plant recall, 0 false positives.** Both UI and API kinds firing in one run. Synthetic-fixture number; see spoonworks above for real-app behavior.
 
 **Determinism:** verified — two consecutive runs with `--seed 42 --frozen-clock` against the race-bad fixture produce byte-identical canonical `summary.json` (SHA-256 `9c5ea3362c04efb4a4fbf7495ece90cb014e814a0744554c71dc8d17a8747faf`). The only fields that differ between runs are `actualRuntimeMs` (stripped from canonical hash per spec §6.5) and `runId` (by design).
-
-**False-positive precision:** 0 detector-class FPs on the focused fixture. On real-world targets (an Aspect staging app), 8 FP categories were identified and addressed across PRs #110–#114, #145, #150 (Vite dev-URL artifacts, mutator-validation rejections, Radix portal popovers, intentional brand colors as visual anomalies, etc.). The current FP rate on real apps is the honest open question — not the kind-recall number.
 
 ## Status
 
