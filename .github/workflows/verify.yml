@@ -38,7 +38,9 @@ jobs:
        # errors that don't reproduce locally.
 
       - name: Test (cli)
-        run: ../../node_modules/.bin/vitest run
+        # Run only src/**/*.test.ts — the integration tests under tests/
+        # require live fixture servers (e2e setup) which CI doesn't provision.
+        run: ../../node_modules/.bin/vitest run src
         working-directory: packages/cli
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
