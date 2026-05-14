@@ -86,3 +86,89 @@ describe('npm-audit adapter', () => {
     expect(args).toContain('--audit-level=high');
   });
 });
+
+describe('npm-audit adapter — v0.51 transitive collapse', () => {
+  it('collapses a transitive vuln into its direct parent (1 emission instead of 2)', () => {
+    // Models spoonworks shape: @sentry/nextjs (direct, high) pulls in rollup (transitive, high)
+    const fixture = JSON.stringify({
+      auditReportVersion: 2,
+      vulnerabilities: {
+        '@sentry/nextjs': {
+          name: '@sentry/nextjs', severity: 'high', isDirect: true, via: ['rollup'],
+        },
+        'rollup': {
+          name: 'rollup', severity: 'high', isDirect: false, via: [],
+        },
+      },
+    });
+    const { detections } = npmAuditTool.parseStdout(fixture, "/tmp");
+    expect(detections).toHaveLength(1);
+    expect(detections[0].staticContext?.ruleId).toBe('@sentry/nextjs');
+    expect(detections[0].rootCause).toContain('pulls in vulnerable: rollup');
+  });
+
+  it('collapses multiple transitives into one direct parent', () => {
+    const fixture = JSON.stringify({
+      auditReportVersion: 2,
+      vulnerabilities: {
+        '@sentry/nextjs': {
+          name: '@sentry/nextjs', severity: 'high', isDirect: true, via: ['rollup', 'glob'],
+        },
+        'rollup': { name: 'rollup', severity: 'high', isDirect: false, via: [] },
+        'glob':   { name: 'glob',   severity: 'high', isDirect: false, via: [] },
+      },
+    });
+    const { detections } = npmAuditTool.parseStdout(fixture, "/tmp");
+    expect(detections).toHaveLength(1);
+    expect(detections[0].rootCause).toContain('glob');
+    expect(detections[0].rootCause).toContain('rollup');
+  });
+
+  it('emits transitives separately when no direct parent traces to them (graph partial)', () => {
+    // Transitive with no `via` chain pointing to it — emit standalone.
+    const fixture = JSON.stringify({
+      auditReportVersion: 2,
+      vulnerabilities: {
+        'orphan-pkg': { name: 'orphan-pkg', severity: 'high', isDirect: false, via: [] },
+      },
+    });
+    const { detections } = npmAuditTool.parseStdout(fixture, "/tmp");
+    expect(detections).toHaveLength(1);
+    expect(detections[0].staticContext?.ruleId).toBe('orphan-pkg');
+    expect(detections[0].rootCause).toContain('transitive; no direct parent');
+  });
+
+  it('emits two clusters for two separate direct vulns each with their own transitives', () => {
+    const fixture = JSON.stringify({
+      auditReportVersion: 2,
+      vulnerabilities: {
+        '@sentry/nextjs': { name: '@sentry/nextjs', severity: 'high',     isDirect: true, via: ['rollup'] },
+        'next':           { name: 'next',           severity: 'critical', isDirect: true, via: ['glob'] },
+        'rollup':         { name: 'rollup',         severity: 'high',     isDirect: false, via: [] },
+        'glob':           { name: 'glob',           severity: 'high',     isDirect: false, via: [] },
+      },
+    });
+    const { detections } = npmAuditTool.parseStdout(fixture, "/tmp");
+    expect(detections).toHaveLength(2);
+    const sentry = detections.find(d => d.staticContext?.ruleId === '@sentry/nextjs');
+    const next   = detections.find(d => d.staticContext?.ruleId === 'next');
+    expect(sentry?.rootCause).toContain('rollup');
+    expect(next?.rootCause).toContain('glob');
+  });
+
+  it('walks via chain transitively (grandparent: direct → mid-transitive → leaf-transitive)', () => {
+    const fixture = JSON.stringify({
+      auditReportVersion: 2,
+      vulnerabilities: {
+        'parent': { name: 'parent', severity: 'high', isDirect: true,  via: ['middle'] },
+        'middle': { name: 'middle', severity: 'high', isDirect: false, via: ['leaf'] },
+        'leaf':   { name: 'leaf',   severity: 'high', isDirect: false, via: [] },
+      },
+    });
+    const { detections } = npmAuditTool.parseStdout(fixture, "/tmp");
+    expect(detections).toHaveLength(1);
+    expect(detections[0].staticContext?.ruleId).toBe('parent');
+    expect(detections[0].rootCause).toContain('leaf');
+    expect(detections[0].rootCause).toContain('middle');
+  });
+});

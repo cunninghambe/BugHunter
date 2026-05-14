@@ -268,3 +268,50 @@ describe('classifyNetworkRequests — 404_for_linked_route dev-server suppressio
     expect(bugs.some(b => b.kind === '404_for_linked_route')).toBe(true);
   });
 });
+
+describe('classifyNetworkRequests — v0.51 422 suppression for happy palette', () => {
+  it('drops 422 entirely when expectedOutcome is success (BugHunter input synth failure)', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'POST', path: '/api/products', status: 422, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.every(b => b.kind !== 'network_4xx_unexpected')).toBe(true);
+  });
+
+  it('drops 422 even when responseBodySnippet is empty (snippet capture not reliable)', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'POST', path: '/api/orders', status: 422, duration: 10, responseBodySnippet: '' }],
+      'success',
+      true,
+    );
+    expect(bugs.length).toBe(0);
+  });
+
+  it('drops 422 when responseBodySnippet does NOT contain a Zod marker (previous rule missed these)', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'POST', path: '/api/products', status: 422, duration: 10, responseBodySnippet: '{"error":"bad request"}' }],
+      'success',
+      true,
+    );
+    expect(bugs.length).toBe(0);
+  });
+
+  it('still emits non-422 4xx (e.g. 400) on happy palette', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'POST', path: '/api/products', status: 400, duration: 10 }],
+      'success',
+      true,
+    );
+    expect(bugs.some(b => b.kind === 'network_4xx_unexpected' && b.status === 400)).toBe(true);
+  });
+
+  it('does not fire on 422 with expected_failure palette (mutator probes expecting failure)', () => {
+    const bugs = classifyNetworkRequests(
+      [{ method: 'POST', path: '/api/x', status: 422, duration: 10 }],
+      'expected_failure',
+      true,
+    );
+    expect(bugs.length).toBe(0);
+  });
+});

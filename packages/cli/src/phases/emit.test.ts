@@ -108,3 +108,98 @@ describe('runEmit — coverage.json', () => {
     expect(kindsWiredAndFired + kindsWiredButInputAbsent + kindsDead + kindsDeferred).toBe(kindsTotal);
   });
 });
+
+describe('runEmit — bugs.jsonl severity × confidence sort', () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bh-emit-sort-'));
+    fs.mkdirSync(path.join(tmpDir, '.bughunter', 'runs', 'emit-test-run'), { recursive: true });
+  });
+
+  function makeClusterWithSeverity(
+    kind: string,
+    severity: 'critical' | 'major' | 'minor' | 'info' | undefined,
+    confidence: 'high' | 'medium' | 'low' | undefined,
+    sig: string,
+  ): BugCluster {
+    return {
+      id: `c-${sig}`,
+      kind,
+      severity,
+      confidence,
+      signatureKey: sig,
+      clusterSize: 1,
+      occurrences: [{ role: 'anon', page: '/', actionIndex: 0, detection: { kind, rootCause: 'x' }, id: `o-${sig}` }],
+      rootCause: 'x',
+      suspectedFiles: [],
+      verdict: 'open',
+      bugIdentity: undefined,
+    } as unknown as BugCluster;
+  }
+
+  function readBugsJsonl(): Array<{ kind: string; severity?: string; confidence?: string; signatureKey?: string }> {
+    const file = path.join(tmpDir, '.bughunter', 'runs', 'emit-test-run', 'bugs.jsonl');
+    return fs.readFileSync(file, 'utf-8').trim().split('\n').map(l => JSON.parse(l) as { kind: string; severity?: string; confidence?: string; signatureKey?: string });
+  }
+
+  it('orders critical > major > minor > info', () => {
+    const runState = makeRunState(tmpDir);
+    runEmit([
+      makeClusterWithSeverity('a', 'info', 'high', 'a'),
+      makeClusterWithSeverity('b', 'critical', 'high', 'b'),
+      makeClusterWithSeverity('c', 'minor', 'high', 'c'),
+      makeClusterWithSeverity('d', 'major', 'high', 'd'),
+    ], [], runState, 0, 0, undefined);
+    const out = readBugsJsonl();
+    expect(out.map(c => c.severity)).toEqual(['critical', 'major', 'minor', 'info']);
+  });
+
+  it('breaks ties on confidence: high > medium > low', () => {
+    const runState = makeRunState(tmpDir);
+    runEmit([
+      makeClusterWithSeverity('a', 'critical', 'low', 'a'),
+      makeClusterWithSeverity('b', 'critical', 'high', 'b'),
+      makeClusterWithSeverity('c', 'critical', 'medium', 'c'),
+    ], [], runState, 0, 0, undefined);
+    const out = readBugsJsonl();
+    expect(out.map(c => c.confidence)).toEqual(['high', 'medium', 'low']);
+  });
+
+  it('breaks (severity, confidence) ties on signatureKey ASC for determinism', () => {
+    const runState = makeRunState(tmpDir);
+    runEmit([
+      makeClusterWithSeverity('z', 'major', 'high', 'z-sig'),
+      makeClusterWithSeverity('a', 'major', 'high', 'a-sig'),
+      makeClusterWithSeverity('m', 'major', 'high', 'm-sig'),
+    ], [], runState, 0, 0, undefined);
+    const out = readBugsJsonl();
+    expect(out.map(c => c.signatureKey)).toEqual(['a-sig', 'm-sig', 'z-sig']);
+  });
+
+  it('treats undefined severity as info (lowest) by registry default', () => {
+    const runState = makeRunState(tmpDir);
+    // missing_csp_header has registry defaultSeverity 'major'; xss_reflected 'critical'.
+    runEmit([
+      makeClusterWithSeverity('xss_reflected', undefined, 'high', 'b'),
+      makeClusterWithSeverity('missing_csp_header', undefined, 'high', 'a'),
+    ], [], runState, 0, 0, undefined);
+    const out = readBugsJsonl();
+    // xss_reflected (critical from registry) should come before missing_csp_header (major).
+    expect(out[0]?.kind).toBe('xss_reflected');
+    expect(out[1]?.kind).toBe('missing_csp_header');
+  });
+
+  it('orders by combined criteria across all three keys', () => {
+    const runState = makeRunState(tmpDir);
+    runEmit([
+      makeClusterWithSeverity('a', 'info',    'high',   'a'),
+      makeClusterWithSeverity('b', 'critical','low',    'b'),
+      makeClusterWithSeverity('c', 'critical','high',   'c'),
+      makeClusterWithSeverity('d', 'major',   'medium', 'd'),
+      makeClusterWithSeverity('e', 'major',   'medium', 'a-z'),
+    ], [], runState, 0, 0, undefined);
+    const out = readBugsJsonl();
+    // critical-high(c) > critical-low(b) > major-medium with a-z < d > info-high(a)
+    expect(out.map(c => c.kind)).toEqual(['c', 'b', 'e', 'd', 'a']);
+  });
+});
