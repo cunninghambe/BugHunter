@@ -1804,7 +1804,12 @@ async function executeApiTest(
       // status: 0 means "request never completed" (connectivity failure, CORS, abort) —
       // treat it as a real signal, not as "no status reported". Only skip when
       // the field is entirely absent (undefined).
-      if (callResult.status !== undefined) {
+      // v0.52: skip when tc.page has an unresolved :id placeholder. The same
+      // BugHunter probe-coverage gap that prior surface_call_failed bypass
+      // covered (PR #265) was leaking through here as `404_for_linked_route`
+      // and `network_4xx_unexpected` (the server synthesised an ID, the server
+      // doesn't recognise it, returns 404). Spoonworks validation 2026-05-14.
+      if (callResult.status !== undefined && findUnresolvedPlaceholder(tc.page) === null) {
         const req: NetworkRequest = {
           method: 'POST',
           path: callToolId ?? callToolName ?? '',
