@@ -2,7 +2,8 @@ name: verify
 
 on:
   pull_request:
-    branches: [main]
+    # Run on every PR (incl. stacked PRs whose base is not main) so we get
+    # signal on dependent branches before they're rebased to main.
   push:
     branches: [main]
 
