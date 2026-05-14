@@ -24,7 +24,11 @@
  * detect whether the script ran before app code (CDP) or after (late-inject).
  */
 export function buildClockPolyfill(fakeNowMs: number): string {
-  return CLOCK_POLYFILL_TEMPLATE.replace('__BUGHUNTER_CLOCK_MS__', String(fakeNowMs));
+  // replaceAll: the placeholder appears at function-arg declaration, in the
+  // offset calculation, and at the IIFE invocation site. .replace() (single
+  // replace) leaves two occurrences and produces a runtime ReferenceError when
+  // injected. Caught by clock-polyfill-source.test.ts.
+  return CLOCK_POLYFILL_TEMPLATE.replaceAll('__BUGHUNTER_CLOCK_MS__', String(fakeNowMs));
 }
 
 /**
