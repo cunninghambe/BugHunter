@@ -131,7 +131,7 @@ bughunter doctor --cleanup
 This greps for processes matching `bh-e2e-fixture` or `bughunter-fixture-`, sends SIGTERM, waits 5 s, then SIGKILLs any stragglers. It prints a JSON report of what it killed and which ports were freed.
 
 <!-- BEGIN CALIBRATION -->
-## Calibration (last updated 2026-05-06; bench v?; 0 apps; 0 gold entries; bench@fbc45b2)
+## Calibration (last updated 2026-05-14; bench v?; 0 apps; 0 gold entries; bench@fbc45b2)
 
 **Overall**: precision=1 recall=1 f1=0 (tp=0 fp=0 fn=0)
 
