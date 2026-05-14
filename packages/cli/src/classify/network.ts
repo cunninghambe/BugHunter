@@ -87,8 +87,24 @@ export function classifyNetworkRequests(
       // 429 = rate-limited; that's correct app behavior triggered BY our scan
       // load, not an app bug. Same suppression as surface_call_failed.
       const rateLimited = req.status === 429;
+
+      // v0.51: 422 ("Unprocessable Entity") is by HTTP spec a validation failure.
+      // For happy-palette probes (expectedOutcome === 'success'), a 422 almost
+      // always means BugHunter synthesised input that the server's schema
+      // (Zod, Joi, class-validator, etc.) correctly rejected — i.e. the mutator
+      // couldn't satisfy the server's schema, NOT an app bug. The earlier
+      // "downgrade 422 to confidence=low" rule (PR #262) still produced 15/15
+      // FPs on the spoonworks benchmark because they all landed in
+      // bugs-low-confidence.jsonl and cluttered triage. Drop them entirely for
+      // happy palette. For non-happy palettes 422 is expected_failure anyway,
+      // so this is a no-op there. Tradeoff: a real regression that newly
+      // rejects previously-valid input is now a false-negative; that case is
+      // expected to surface via other detectors (functional, contract).
+      // Documented in docs/benchmarks/BENCHMARK_SPOONWORKS.md.
+      const happyPaletteValidationFailure = req.status === 422 && expectedOutcome === 'success';
+
       const isUnexpected =
-        !anonAuthBlock && !rateLimited && (
+        !anonAuthBlock && !rateLimited && !happyPaletteValidationFailure && (
           (expectedOutcome === 'success') ||
           ((req.status === 401 || req.status === 403) && authorizedRole)
         );
@@ -102,20 +118,13 @@ export function classifyNetworkRequests(
           snippet.includes('"issues"') ||
           /\b(invalid|required|expected.+received|zod)\b/i.test(snippet);
         if (!isValidationRejection) {
-          // 422 ("Unprocessable Entity") is by HTTP spec a validation failure.
-          // When happy probes against admin POSTs return 422 the cause is
-          // almost always incomplete synthesised input — not an app bug.
-          // Mark 422 as low confidence regardless of body snippet (which may
-          // not be captured in some code paths). Other 4xx stay medium.
-          // Spoonworks calibration (May 2026).
-          const confidence: 'high' | 'medium' | 'low' = req.status === 422 ? 'low' : 'medium';
           bugs.push({
             kind: 'network_4xx_unexpected',
             rootCause: `Unexpected HTTP ${req.status} from ${req.method} ${req.path}`,
             status: req.status,
             endpoint: `${req.method} ${normalizePath(req.path)}`,
             responseBodyShape: req.responseBodySnippet,
-            confidence,
+            confidence: 'medium',
           });
         }
       }

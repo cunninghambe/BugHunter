@@ -5,6 +5,7 @@ import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import type { BrowserMcpAdapter, TabScope } from '../adapters/browser-mcp.js';
 import { executeRaceTest } from './race-runner.js';
+import { findUnresolvedPlaceholder } from '../lib/path-placeholder.js';
 import { executeMultiContextTest } from './multi-context-runner.js';
 import { BrowserMcpError } from '../adapters/browser-mcp-error.js';
 import type { SurfaceMcpAdapter, SurfaceCallResult, SurfaceSummary } from '../adapters/surface-mcp.js';
@@ -1122,9 +1123,10 @@ async function executeUiTestInner(
     log.debug('v24: post dom-error-text eval failed', { err: String(err), occurrenceId });
     return null;
   });
-  const postErrPayload = postErrEval?.value as { found?: boolean; text?: string } | null | undefined;
+  const postErrPayload = postErrEval?.value as { found?: boolean; text?: string; indicator?: { source: string; value: string } } | null | undefined;
   const postDomErrFound = postErrPayload?.found === true;
   const postDomErrText = postErrPayload?.text ?? '';
+  const postDomErrIndicator = postErrPayload?.indicator;
 
   // V24: post-action outerHTML capture for unbounded_list_render. Gated on enablePerf.
   // Capped at 2 MiB; truncation under-counts rows (false-negative, not false-positive).
@@ -1241,8 +1243,16 @@ async function executeUiTestInner(
 
   // V24: dom_error_text — emit only if error appeared post-action and was NOT already present
   // pre-action (EC-4 in spec: pre-existing error text is not the action's fault).
+  // v0.51: pass indicator (role/aria-live/classname evidence) through to the classifier.
   if (postDomErrFound && !preDomErrFound) {
-    const domErrDetection = classifyDomErrorText(postDomErrText, tc.page, '');
+    let indicator: { source: 'role' | 'aria-live' | 'class' | 'tag'; value: string } | undefined;
+    if (postDomErrIndicator !== undefined) {
+      const src = postDomErrIndicator.source;
+      if (src === 'role' || src === 'aria-live' || src === 'class' || src === 'tag') {
+        indicator = { source: src, value: postDomErrIndicator.value };
+      }
+    }
+    const domErrDetection = classifyDomErrorText(postDomErrText, tc.page, '', indicator);
     if (domErrDetection !== null) bugs.push(domErrDetection);
   }
 
@@ -1745,7 +1755,19 @@ async function executeApiTest(
           ((status === 401 || status === 403) && isAnonymous)
           || status === 429
           || status === 422;
-        if (status >= 400 && status < 500 && !skipStatus) {
+
+        // v0.51: route page with unsubstituted path-param placeholders
+        // (`/:id`, `/:productId`, `/:index`, etc.) was sent with the literal
+        // `:id` in the URL. The 4xx is the server correctly handling an
+        // unparseable URL — a BugHunter probe-coverage gap (missing
+        // discoveryFixtures entry), not an app bug. 20/20 FP on spoonworks per
+        // docs/benchmarks/BENCHMARK_SPOONWORKS.md.
+        const unresolvedPlaceholder = findUnresolvedPlaceholder(tc.page);
+        if (unresolvedPlaceholder !== null) {
+          // Don't emit a bug. The next iteration's infra-failure tracking will
+          // surface this as a route-coverage gap.
+          log.debug(`surface_call_failed: skipped — unresolved path placeholder ${unresolvedPlaceholder} in ${tc.page} (configure discoveryFixtures)`);
+        } else if (status >= 400 && status < 500 && !skipStatus) {
           if (!isMutatorValidationRejection(tc, callResult)) {
             const meta = callToolId !== undefined ? toolMap?.get(callToolId) : undefined;
             const endpoint = meta !== undefined

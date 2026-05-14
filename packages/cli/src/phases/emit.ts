@@ -95,10 +95,28 @@ export function runEmit(
   const byRole: Record<string, number> = {};
   const bySeverity: Record<Severity, number> = { critical: 0, major: 0, minor: 0, info: 0 };
 
+  // Set severity on every cluster from registry default, then sort by
+  // (severity desc, confidence desc, signatureKey asc) so bugs.jsonl leads
+  // with the most important findings. signatureKey tiebreaker preserves V32
+  // deterministic byte-identity within ties.
   for (const cluster of clusters) {
     const sev: Severity = cluster.severity ?? registryLookup[cluster.kind]?.defaultSeverity ?? 'info';
     (cluster as BugCluster & { severity: Severity }).severity = sev;
-    bySeverity[sev] += 1;
+  }
+  const sevRank = (s: Severity | undefined): number =>
+    s === 'critical' ? 3 : s === 'major' ? 2 : s === 'minor' ? 1 : 0;
+  const confRank = (c: BugCluster['confidence']): number =>
+    c === 'high' ? 2 : c === 'medium' ? 1 : 0;
+  const sortedClusters = [...clusters].sort((a, b) => {
+    const ds = sevRank(b.severity) - sevRank(a.severity);
+    if (ds !== 0) return ds;
+    const dc = confRank(b.confidence) - confRank(a.confidence);
+    if (dc !== 0) return dc;
+    return (a.signatureKey ?? '').localeCompare(b.signatureKey ?? '');
+  });
+
+  for (const cluster of sortedClusters) {
+    bySeverity[cluster.severity ?? 'info'] += 1;
     byKind[cluster.kind] = (byKind[cluster.kind] ?? 0) + 1;
     for (const occ of cluster.occurrences) {
       byRole[occ.role] = (byRole[occ.role] ?? 0) + 1;
