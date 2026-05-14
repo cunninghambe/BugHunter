@@ -31,13 +31,22 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Each package has its own vitest config (aliases, jsdom env, setup
+       # files). Run from each package dir so the local config is picked up
+       # — running from repo root applies the wrong config and surfaces
+       # spurious "@bughunter/types not found" and "document not defined"
+       # errors that don't reproduce locally.
+
       - name: Test (cli)
-        run: ./node_modules/.bin/vitest run packages/cli/src
+        run: ./node_modules/.bin/vitest run
+        working-directory: packages/cli
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
 
       - name: Test (mcp)
-        run: ./node_modules/.bin/vitest run packages/mcp/src
+        run: ./node_modules/.bin/vitest run
+        working-directory: packages/mcp
 
       - name: Test (viewer)
-        run: ./node_modules/.bin/vitest run packages/viewer/src
+        run: ./node_modules/.bin/vitest run
+        working-directory: packages/viewer
