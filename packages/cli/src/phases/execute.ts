@@ -1107,7 +1107,16 @@ async function executeUiTestInner(
   }
 
   const mutResult = await scope.evaluate(MUTATION_OBSERVER_STOP_SCRIPT).catch(() => null);
-  const mutWindowMs = (mutResult?.value as { durationMs?: number } | undefined)?.durationMs ?? 0;
+  const mutPayload = mutResult?.value as { durationMs?: number; mutations?: Array<{ type?: string; addedCount?: number; removedCount?: number }> } | undefined;
+  const mutWindowMs = mutPayload?.durationMs ?? 0;
+  // v0.53: count meaningful (childList) mutations so classifyMissingStateChange
+  // can distinguish "the action did nothing" from "the action mutated DOM but
+  // not URL/network/aria/portal". Spoonworks Remove-row case. Threading was
+  // dropped during PR #268's squash merge; restored here.
+  const mutations = Array.isArray(mutPayload?.mutations) ? mutPayload.mutations : [];
+  const domMutationCount = mutations.filter(m =>
+    (m.addedCount ?? 0) + (m.removedCount ?? 0) > 0,
+  ).length;
 
   const consoleResult = await scope.evaluate(
     '(window.__bhConsoleErrors || []).map(e => ({ level: "error", text: e.text, stack: e.stack }))'
@@ -1232,6 +1241,7 @@ async function executeUiTestInner(
     // V24: set the real value instead of hardcoded false, so classifyMissingStateChange sees it.
     domErrorTextDetected: postDomErrFound,
     mutationObserverWindowMs: mutWindowMs,
+    domMutationCount,
     ariaSnapshot: postAriaSnapshot,
     newPortalCount,
   };
