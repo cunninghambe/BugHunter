@@ -12,15 +12,18 @@ BugHunter automates the boring half. It discovers your app's surface from [Surfa
 
 Real BugHunter runs against the deliberate-bugs fixture, the comprehensive-bench fixture, 5 bench apps in [BugHunter-bench](https://github.com/cunninghambe/BugHunter-bench), and a real production-shaped Next.js app (spoonworks). Numbers vary as the calibration pipeline matures — the trajectory is documented honestly rather than smoothed.
 
-**Real-app precision (spoonworks, 2026-05-14, v0.52):** **4 / 5 = 80 %** precision. 5 clusters emitted from a 38-page production e-commerce app (3338 tests across owner + anon roles, 2h20m budget). 4 real `vulnerable_dependency_high` clusters (confirmed against `npm audit`), 1 likely-FP `missing_state_change` (app code correctly removes the row; BugHunter's state-change heuristic over-fired). See **[docs/benchmarks/BENCHMARK_SPOONWORKS.md](docs/benchmarks/BENCHMARK_SPOONWORKS.md)** for the per-cluster triage.
+**Real-app precision (spoonworks, 2026-05-16, v0.53.1):** **4 / 4 = 100 %** precision. 4 clusters emitted from a 38-page production e-commerce app, all `vulnerable_dependency_high` confirmed against `npm audit`. See **[docs/benchmarks/BENCHMARK_SPOONWORKS.md](docs/benchmarks/BENCHMARK_SPOONWORKS.md)** for the per-cluster triage.
 
-Trajectory of the same target across three measurements:
+Trajectory of the same target across four measurements:
 
 | run | clusters | precision | comment |
 |---|---|---|---|
 | 2026-05-11 (baseline) | 77 | 6/77 = 7.8 % | 71 FPs concentrated in 3 detector patterns |
 | 2026-05-14 v0.51 (PR #265) | 25 | ~4/25 = ~16 % | dom_error_text, surface_call_failed, 422 fixed; 404_for_linked_route leaked through |
-| 2026-05-14 v0.52 (PR #266) | 5 | 4/5 = **80 %** | classifier-side gate added for unresolved `:id` placeholders |
+| 2026-05-14 v0.52 (PR #266) | 5 | 4/5 = 80 % | classifier-side gate added for unresolved `:id` placeholders |
+| 2026-05-16 v0.53.1 (PRs #268, #269) | 4 | 4/4 = **100 %** | MutationObserver childList count threaded through PostState; classifier honors it |
+
+Caveats: the v0.53.1 run hit a camofox cache issue mid-execution (`/root/.cache/camoufox/version.json` was missing) and stopped at `max_infra_failures` with 3047/3338 UI tests completed. Precision is over what completed; the four real-bug clusters were captured before the env issue triggered.
 
 **Detector calibration (V56.4.15, 127 BugKinds):** **127/127 PASS** on the per-detector self-test. Every wired BugKind in the registry has a `DetectorContract`, a fixture, and a per-route scorecard. A serial sweep against camofox + 17 fixture servers completes in ~50 min with all 127 PASSing. This measures whether each detector fires when a fixture is engineered to trip it — it does NOT measure precision on real apps. Per the spoonworks benchmark above, real-app precision is the load-bearing metric.
 
