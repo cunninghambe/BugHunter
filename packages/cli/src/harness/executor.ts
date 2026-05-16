@@ -3316,7 +3316,7 @@ function findXssDomSinks(html: string): boolean {
       /location\.(search|hash|pathname|href)/i.test(arg)
       || /params\.get\b/i.test(arg)
       || /\.value\b/i.test(arg)
-      || /^[A-Za-z_$][\w$]*\s*[\(.]/.test(arg)
+      || /^[A-Za-z_$][\w$]*\s*[(.]/.test(arg)
     ) return true;
     // Variable name alone — assume tainted
     if (/^[A-Za-z_$][\w$]*\s*$/.test(arg)) return true;
@@ -3607,6 +3607,7 @@ function extractInternalLinks(html: string): string[] {
     if (href.length === 0) continue;
     if (href.startsWith('#')) continue;                // fragment
     if (href.startsWith('mailto:') || href.startsWith('tel:')) continue;
+    // eslint-disable-next-line no-script-url -- skip javascript: hrefs (not navigable HTTP routes)
     if (href.startsWith('javascript:')) continue;
     if (/^https?:\/\//i.test(href) || href.startsWith('//')) continue;  // external origin
     if (!href.startsWith('/')) continue;               // require absolute path

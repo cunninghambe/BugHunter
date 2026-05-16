@@ -367,6 +367,14 @@ export type PostState = {
   domErrorTextDetected: boolean;
   mutationObserverWindowMs: number;
   /**
+   * v0.53: count of meaningful DOM mutations during the observer window.
+   * "Meaningful" = MutationRecord with addedNodes.length + removedNodes.length > 0
+   * (childList changes — actual DOM topology shifts, not attribute flips).
+   * classifyMissingStateChange returns null when > 0. Optional for backward
+   * compat with pre-v0.53 PostStates and synthesized occurrences.
+   */
+  domMutationCount?: number;
+  /**
    * v0.22: SHA-1 (20-hex) over visible text of <main>/[role="main"].
    * Populated by nav-transition-runner after transition settles.
    * Undefined on non-nav-state tests.
@@ -1832,7 +1840,7 @@ export type BugHunterConfig = {
   /** v0.35: git bisect configuration. */
   bisect?: BisectConfig;
   /** v0.48: outbound notification channels. Disabled by default. */
-  notifications?: import('./notify/types.js').NotificationsConfig;
+  notifications?: NotificationsConfig;
   /** v0.23: clock-injection palette config. Default: disabled. */
   clockTesting?: ClockTestingConfig;
   /**

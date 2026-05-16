@@ -24,7 +24,7 @@ export async function runTimezoneDisplayVariant(
   settleMs: number,
   pageUrl: string,
 ): Promise<{ detections: BugDetection[]; restored: boolean }> {
-  await new Promise(r => setTimeout(r, settleMs));
+  await new Promise<void>((r) => { setTimeout(r, settleMs); });
   const result = await browser.evaluate(GET_BODY_TEXT_SCRIPT).catch(() => null);
   if (result === null || typeof result.value !== 'string') return { detections: [], restored: true };
 

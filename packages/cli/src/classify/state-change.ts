@@ -39,6 +39,14 @@ export function classifyMissingStateChange(
   // Option A (fallback): a known portal element appeared in document.body post-click
   if ((postState.newPortalCount ?? 0) > 0) return null;
 
+  // v0.53: MutationObserver signal — the action mutated DOM topology (added or
+  // removed nodes) but in a way that doesn't show up via URL/network/aria/portal.
+  // Real spoonworks case: "Remove row" click → setRows(p.filter(...)) → row
+  // removed via React reconciliation. No URL change, no network, no aria.
+  // Pre-v0.53 PostStates lack the field; treat undefined as "no information"
+  // and fall through (legacy behavior, conservative).
+  if ((postState.domMutationCount ?? 0) > 0) return null;
+
   // No observable change after the action window
   return {
     kind: 'missing_state_change',

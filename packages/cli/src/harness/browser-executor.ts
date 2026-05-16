@@ -14,8 +14,8 @@ import type { DetectorContract, RequiredPhase } from '../detectors/contracts.js'
 import type { BugCluster, BugKind, Occurrence } from '../types.js';
 import type { BrowserMcpAdapter, EvaluateResult } from '../adapters/browser-mcp.js';
 import type { NavClassifyInput, BackAfterFormFillInput } from '../classify/nav-state.js';
-import type { KeyboardTrapResult, FocusAfterActionResult, A11yViolation } from '../classify/a11y-baseline.js';
-import type { PreState, PostState, Action, RaceObservation, IdorConfig } from '../types.js';
+import type { KeyboardTrapResult, FocusAfterActionResult } from '../classify/a11y-baseline.js';
+import type { PreState, PostState, Action, RaceObservation } from '../types.js';
 import type { IdorClassifyInput } from '../security/idor-classifier.js';
 import type {
   DoubleSubmitPlan,

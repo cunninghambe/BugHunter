@@ -145,7 +145,6 @@ describe.skipIf(!RUN_DIR_AVAILABLE)('V47 smoke — real V33 run data', () => {
     );
     expect(screen.getByText('xss_reflected')).toBeDefined();
     // Occurrences tab label includes count
-    const occ = cluster.occurrences[0]!;
     expect(screen.getByText(`Occurrences (${cluster.occurrences.length})`)).toBeDefined();
   });
 

@@ -29,7 +29,7 @@ async function runPayload(
   pageUrl: string,
 ): Promise<BugDetection[]> {
   await browser.evaluate(makeApplyScript(payload));
-  await new Promise(r => setTimeout(r, settleMs));
+  await new Promise<void>((r) => { setTimeout(r, settleMs); });
 
   const variantRectMap = await captureRectMap(browser);
   const viewport = variantRectMap['__viewport__'] ?? { x: 0, y: 0, w: 1280, h: 800 };

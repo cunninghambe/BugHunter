@@ -504,7 +504,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
     // a dead context via its health probe. We give it 3s here; if its browser
     // is still mid-relaunch, the next ensureConnected will block on the SDK's
     // own connect timeout anyway.
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise<void>((resolve) => { setTimeout(resolve, 3000); });
   }
 
   // ---- Private helpers ----
@@ -866,7 +866,7 @@ export class CamofoxBrowserMcpAdapter implements BrowserMcpAdapter {
       if (delegate.applyNetworkFault === undefined) {
         return { applied: false, reason: 'tool_not_available' };
       }
-      return await delegate.applyNetworkFault(fault);
+      return delegate.applyNetworkFault(fault);
     }
     const tabId = this.requireTab();
     try {

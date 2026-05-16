@@ -10,6 +10,7 @@ import type {
 import { createId } from '../lib/ids.js';
 import { nowIso } from '../lib/clock.js';
 import type { Clock } from '../lib/clock.js';
+import { perfMs } from '../lib/perf.js';
 import { createHash } from 'node:crypto';
 import { log } from '../log.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
@@ -148,7 +149,7 @@ export async function executeMultiContextTest(
   tc: TestCase,
   ctx: MultiContextTestContext,
 ): Promise<TestResult> {
-  const start = Date.now();
+  const start = perfMs();
   const occurrenceId = createId();
   const clock = ctx.clock ?? { kind: 'wall' as const };
 
@@ -177,7 +178,7 @@ export async function executeMultiContextTest(
       occurrenceId,
       passed: bugs.length === 0,
       bugs,
-      durationMs: Date.now() - start,
+      durationMs: perfMs() - start,
     };
   } catch (err) {
     const infra: InfrastructureFailure = {
@@ -196,7 +197,7 @@ export async function executeMultiContextTest(
       passed: false,
       bugs: [],
       infrastructureFailure: infra,
-      durationMs: Date.now() - start,
+      durationMs: perfMs() - start,
     };
   }
 }
@@ -355,7 +356,7 @@ async function runInconsistentSnapshot(
 
       const pre = await fetchCapture(readerScope, variant.readerEndpoint, ctx.appBaseUrl, 0);
 
-      const writerStart = Date.now();
+      const writerStart = perfMs();
       const [writerObs, midCapture, postCapture] = await Promise.all([
         (async () => {
           if (selector !== '') {
@@ -365,8 +366,8 @@ async function runInconsistentSnapshot(
           }
           return captureAtOffsets(writerScope, selector, [0, 100, 500, writerSettleMs]);
         })(),
-        sleep(midOffsetMs).then(() => fetchCapture(readerScope, variant.readerEndpoint, ctx.appBaseUrl, Date.now() - writerStart)),
-        sleep(writerSettleMs).then(() => fetchCapture(readerScope, variant.readerEndpoint, ctx.appBaseUrl, Date.now() - writerStart)),
+        sleep(midOffsetMs).then(() => fetchCapture(readerScope, variant.readerEndpoint, ctx.appBaseUrl, perfMs() - writerStart)),
+        sleep(writerSettleMs).then(() => fetchCapture(readerScope, variant.readerEndpoint, ctx.appBaseUrl, perfMs() - writerStart)),
       ]);
 
       writerObservations = writerObs;

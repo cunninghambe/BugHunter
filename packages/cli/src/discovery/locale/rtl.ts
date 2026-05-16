@@ -20,7 +20,7 @@ export async function runRtlVariant(
   screenshotPath: string | undefined,
 ): Promise<{ detections: BugDetection[]; variantRectMap: Record<string, DOMRectLite>; restored: boolean }> {
   await browser.evaluate(APPLY_SCRIPT);
-  await new Promise(r => setTimeout(r, settleMs));
+  await new Promise<void>((r) => { setTimeout(r, settleMs); });
 
   const variantRectMap = await captureRectMap(browser);
   const viewport = variantRectMap['__viewport__'] ?? { x: 0, y: 0, w: 1280, h: 800 };
