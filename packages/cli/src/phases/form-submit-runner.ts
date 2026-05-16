@@ -3,6 +3,7 @@
 
 import type { EvaluateResult } from '../adapters/browser-mcp.js';
 import { log } from '../log.js';
+import { perfMs } from '../lib/perf.js';
 
 /** Minimal browser interface required by runFormSubmit. */
 type FormSubmitScope = {
@@ -277,7 +278,7 @@ export async function waitForFormPresent(
   formSelector: string,
   asyncMaxWaitMs: number,
 ): Promise<{ present: boolean; latencyMs: number }> {
-  const start = Date.now();
+  const start = perfMs();
   const fs = JSON.stringify(formSelector);
   const script = `(() => {
   const deadline = Date.now() + ${asyncMaxWaitMs};
@@ -290,7 +291,7 @@ export async function waitForFormPresent(
   return f !== null;
 })()`;
   const result = await scope.evaluate(script);
-  const latencyMs = Date.now() - start;
+  const latencyMs = perfMs() - start;
   return { present: result.value === true, latencyMs };
 }
 

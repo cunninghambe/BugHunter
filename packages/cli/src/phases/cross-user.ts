@@ -11,6 +11,7 @@
 import { createId } from '../lib/ids.js';
 import { nowIso } from '../lib/clock.js';
 import type { Clock } from '../lib/clock.js';
+import { perfMs } from '../lib/perf.js';
 import type { SurfaceMcpAdapter } from '../adapters/surface-mcp.js';
 import type { BugDetection, BugCluster, RunState, TestCase, IdorTelemetry } from '../types.js';
 import { decodeDiscoveredIdKey, isToolPathDenied, isOpaqueSignedToken } from '../security/resource-id-extractor.js';
@@ -162,7 +163,7 @@ async function runV21IdorPass(opts: V21PassOpts): Promise<CrossUserResult> {
     discoveredIds, detections, testCases, clusterKeys, idorCfg, adminHints,
   } = opts;
 
-  const startMs = Date.now();
+  const startMs = perfMs();
   const maxFixtures = idorCfg.maxFixturesPerRoleResource ?? MAX_FIXTURES_PER_ROLE_RESOURCE;
   const skipResources = new Set(idorCfg.skipResources ?? []);
   const skipFixtureFromTools = new Set(idorCfg.skipFixtureFromTools ?? []);
@@ -339,7 +340,7 @@ async function runV21IdorPass(opts: V21PassOpts): Promise<CrossUserResult> {
     return { from, to, count };
   });
   telemetry.skippedReasons = [...skippedReasons.entries()].map(([reason, count]) => ({ reason, count }));
-  telemetry.durationMs = Date.now() - startMs;
+  telemetry.durationMs = perfMs() - startMs;
 
   log.info(
     `cross-user v0.21: ${replayCount} replays → ${detections.length} detections${

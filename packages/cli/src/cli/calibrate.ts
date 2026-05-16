@@ -4,10 +4,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as child_process from 'node:child_process';
 import { loadGoldStandard } from '../calibrate/gold.js';
-import { matchClustersToGold, MissingBugIdentityError, DuplicateBugIdentityError, extractIdentityUpdates } from '../calibrate/match.js';
+import { matchClustersToGold, extractIdentityUpdates } from '../calibrate/match.js';
 import { aggregateReport, formatSummaryLine } from '../calibrate/report.js';
 import { recordIdentitiesInGold } from '../calibrate/gold.js';
-import type { CalibrationReport, AcceptanceThresholds } from '../calibrate/types.js';
+import type { AcceptanceThresholds } from '../calibrate/types.js';
 import { DETECTOR_REGISTRY } from '../detectors/registry.js';
 import { runCommand } from './run.js';
 import { listRunIds, runPaths, writeJsonFile } from '../store/filesystem.js';
@@ -174,7 +174,8 @@ function resolveBenchVersion(appPath: string): string {
 function resolveGitCommit(): string {
   try {
     const result = child_process.spawnSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf-8' });
-    return result.stdout.trim() || 'unknown';
+    const trimmed = result.stdout.trim();
+    return trimmed !== '' ? trimmed : 'unknown';
   } catch {
     return 'unknown';
   }
@@ -242,7 +243,7 @@ export async function calibrateCommand(opts: CalibrateOptions): Promise<void> {
 
   // Step 3: boot (unless --no-boot)
   const calibrateCfg = config.calibrate;
-  if (!opts.noBootTeardown && calibrateCfg?.bootScript !== undefined) {
+  if (opts.noBootTeardown !== true && calibrateCfg?.bootScript !== undefined) {
     if (calibrateCfg.seedScript !== undefined) {
       runScript(calibrateCfg.seedScript, appPath, 'seed');
     }
@@ -331,7 +332,7 @@ export async function calibrateCommand(opts: CalibrateOptions): Promise<void> {
     }
   } finally {
     // Step 9: teardown (always, even on error)
-    if (!opts.noBootTeardown && calibrateCfg?.teardownScript !== undefined) {
+    if (opts.noBootTeardown !== true && calibrateCfg?.teardownScript !== undefined) {
       try {
         runScript(calibrateCfg.teardownScript, appPath, 'teardown');
       } catch (e) {

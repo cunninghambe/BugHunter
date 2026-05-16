@@ -7,6 +7,7 @@ import type { BrowserMcpAdapter } from '../adapters/browser-mcp.js';
 import type { DiscoveredPage } from '../types.js';
 import { waitForFormPresent } from './form-submit-runner.js';
 import { log } from '../log.js';
+import { perfMs } from '../lib/perf.js';
 
 export type ProbeKey = `${string}::${string}::${string}`; // role::pageRoute::formSelector
 
@@ -49,7 +50,7 @@ async function runSingleProbe(
   extraHeaders: Record<string, string> | undefined,
   asyncMaxWaitMs: number,
 ): Promise<ProbeResult> {
-  const startMs = Date.now();
+  const startMs = perfMs();
   const ctx = page.stateContext;
   if (ctx === undefined) {
     return { probed: true, formPresent: false, latencyMs: 0, reason: 'navigate_failed' };
@@ -61,14 +62,14 @@ async function runSingleProbe(
 
   return browser.withTab(targetUrl, extraHeaders, async (scope) => {
     const clickRes = await scope.clickByHint(ctx.triggerHint);
-    const latencyMs = Date.now() - startMs;
+    const latencyMs = perfMs() - startMs;
 
     if (!clickRes.clicked) {
       return { probed: true, formPresent: false, latencyMs, reason: 'trigger_not_found' };
     }
 
     const { present, latencyMs: waitLatency } = await waitForFormPresent(scope, formSelector, asyncMaxWaitMs);
-    const totalLatency = Date.now() - startMs;
+    const totalLatency = perfMs() - startMs;
 
     if (present) {
       return { probed: true, formPresent: true, latencyMs: totalLatency };
@@ -86,7 +87,7 @@ export async function runFormReachabilityProbes(opts: ProbeOptions): Promise<{
   telemetry: ProbeTelemetry;
 }> {
   const results = new Map<ProbeKey, ProbeResult>();
-  const phaseStart = Date.now();
+  const phaseStart = perfMs();
   let probesRun = 0;
   let skippedByBudget = 0;
 
@@ -97,7 +98,7 @@ export async function runFormReachabilityProbes(opts: ProbeOptions): Promise<{
   for (const role of opts.roles) {
     for (const page of statePagesWithForms) {
       for (const form of page.forms) {
-        const budgetRemaining = opts.budgetMs - (Date.now() - phaseStart);
+        const budgetRemaining = opts.budgetMs - (perfMs() - phaseStart);
         if (budgetRemaining < opts.perProbeTimeoutMs) {
           skippedByBudget += 1;
           log.warn('form-reachability-probe: budget exhausted; remaining tuples will default to emit', {
@@ -139,7 +140,7 @@ export async function runFormReachabilityProbes(opts: ProbeOptions): Promise<{
     }
   }
 
-  const durationMs = Date.now() - phaseStart;
+  const durationMs = perfMs() - phaseStart;
   log.info('form-reachability-probe: complete', { probesRun, skippedByBudget, durationMs });
 
   return { results, telemetry: { probesRun, skippedByBudget, durationMs } };

@@ -10,6 +10,7 @@ import type {
 import { createId } from '../lib/ids.js';
 import { nowIso } from '../lib/clock.js';
 import type { Clock } from '../lib/clock.js';
+import { perfMs } from '../lib/perf.js';
 import { createHash } from 'node:crypto';
 import { log } from '../log.js';
 import {
@@ -41,7 +42,7 @@ export type RaceTestContext = {
  * collects observations, runs the detector.
  */
 export async function executeRaceTest(tc: TestCase, ctx: RaceTestContext): Promise<TestResult> {
-  const start = Date.now();
+  const start = perfMs();
   const occurrenceId = createId();
 
   if (tc.race === undefined) {
@@ -62,7 +63,7 @@ export async function executeRaceTest(tc: TestCase, ctx: RaceTestContext): Promi
       occurrenceId,
       passed: bugs.length === 0,
       bugs,
-      durationMs: Date.now() - start,
+      durationMs: perfMs() - start,
     };
   } catch (err) {
     const clock = ctx.clock ?? { kind: 'wall' as const };
@@ -82,7 +83,7 @@ export async function executeRaceTest(tc: TestCase, ctx: RaceTestContext): Promi
       passed: false,
       bugs: [],
       infrastructureFailure: infra,
-      durationMs: Date.now() - start,
+      durationMs: perfMs() - start,
     };
   }
 }

@@ -1,13 +1,9 @@
 // v0.44: matchClustersToGold — pure matching function.
 // Primary match: bugIdentity. Fallback: structural (kind + normalizedLocation + normalizedMessage).
 
-import type { BugCluster, BugKind } from '../types.js';
+import type { BugCluster } from '../types.js';
 import type { GoldEntry } from './gold.js';
 import type { MatchOutcome } from './types.js';
-
-function structuralKey(kind: string, loc: string, msg: string): string {
-  return `${kind}|${loc}|${msg}`;
-}
 
 export type MatchResult = {
   outcomes: MatchOutcome[];

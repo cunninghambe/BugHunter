@@ -62,7 +62,7 @@ export async function runPluralizationVariant(
   pageUrl: string,
 ): Promise<{ detections: BugDetection[]; restored: boolean }> {
   // Capture initial state (n=many heuristic — whatever is on screen)
-  await new Promise(r => setTimeout(r, settleMs));
+  await new Promise<void>((r) => { setTimeout(r, settleMs); });
   const nManyText = await captureCountText(browser);
 
   // n=0: attempt to clear count-related inputs
@@ -73,7 +73,7 @@ export async function runPluralizationVariant(
     });
   })()`;
   await browser.evaluate(clearScript).catch(() => {});
-  await new Promise(r => setTimeout(r, settleMs));
+  await new Promise<void>((r) => { setTimeout(r, settleMs); });
   const n0Text = await captureCountText(browser);
 
   // n=1
@@ -84,7 +84,7 @@ export async function runPluralizationVariant(
     });
   })()`;
   await browser.evaluate(oneScript).catch(() => {});
-  await new Promise(r => setTimeout(r, settleMs));
+  await new Promise<void>((r) => { setTimeout(r, settleMs); });
   const n1Text = await captureCountText(browser);
 
   const detections = checkCounts(n0Text, n1Text, nManyText, pageUrl);

@@ -29,6 +29,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Lint (errors only — warnings advisory)
+        # `lint:ci` script uses default eslint exit codes: 0 errors → pass, ≥1 error → fail.
+        # `npm run lint` keeps --max-warnings 0 for local dev.
+        run: npm run lint:ci
+
       - name: Build
         run: npm run build
 

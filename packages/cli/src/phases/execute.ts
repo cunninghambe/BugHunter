@@ -53,6 +53,7 @@ import { hashSchema } from '../util/hash.js';
 import { runPaths, type RunPaths } from '../store/filesystem.js';
 import { log } from '../log.js';
 import { createId } from '../lib/ids.js';
+import { perfMs } from '../lib/perf.js';
 import { nowIso } from '../lib/clock.js';
 import type { Clock } from '../lib/clock.js';
 import { MAX_CONSECUTIVE_INFRA_FAILURES } from '../config.js';
@@ -230,7 +231,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   const { testCases, runState, browser, surface, maxRuntimeMs, budgetMs, concurrency, apiConcurrency, extraHeaders, toolMap, appBaseUrl, visionEnabled, visionConfig, visionClient, visionBudget, headerProbeEnabled, pageUrls, perfCollector, a11yStrict, seoEnabled, seoSuppressDuplicateTitles, keyboardTrapMaxPresses, asyncMaxWaitMs, discoveryPages, fixtureUnresolvableRoutes } = opts;
   const clock = opts.clock ?? { kind: 'wall' as const };
   const paths = runPaths(runState.projectDir, runState.runId);
-  const deadline = Date.now() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
+  const deadline = perfMs() + Math.min(maxRuntimeMs, budgetMs ?? maxRuntimeMs);
 
   // Initialize discoveredIds on runState for IDOR cross-user phase.
   const discoveredIds: DiscoveredIds = runState.discoveredIds ?? new Map<string, Map<string, Set<string>>>();
@@ -418,7 +419,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
   // AXE_INJECT_SCRIPT / addInitScript path removed — kept exported for legacy callers.
 
   async function runTest(tc: TestCase): Promise<TestResult> {
-    const start = Date.now();
+    const start = perfMs();
     const syntheticOccurrenceId = createId();
 
     try {
@@ -607,7 +608,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
         passed: false,
         bugs: [],
         infrastructureFailure: infra,
-        durationMs: Date.now() - start,
+        durationMs: perfMs() - start,
       };
     }
   }
@@ -617,7 +618,7 @@ export async function runExecute(opts: ExecuteOptions): Promise<ExecuteResult> {
     const inFlight = new Set<Promise<void>>();
 
     for (const tc of queue) {
-      if (Date.now() > deadline) {
+      if (perfMs() > deadline) {
         abortReason = 'budget';
         break;
       }
@@ -847,7 +848,7 @@ async function executeUiTestInner(
           page: tc.page,
           action: tc.action,
         },
-        durationMs: Date.now() - start,
+        durationMs: perfMs() - start,
       };
     }
     // For submit actions: replace the fixed 250ms sleep with a bounded form-present poll.
@@ -871,7 +872,7 @@ async function executeUiTestInner(
             page: tc.page,
             action: tc.action,
           },
-          durationMs: Date.now() - start,
+          durationMs: perfMs() - start,
         };
       }
     } else {
@@ -1059,7 +1060,7 @@ async function executeUiTestInner(
           page: tc.page,
           action: tc.action,
         } as InfrastructureFailure,
-        durationMs: Date.now() - start,
+        durationMs: perfMs() - start,
       };
     }
     if (err instanceof BrowserMcpError && (err.kind === 'transport' || err.kind === 'timeout')) {
@@ -1078,7 +1079,7 @@ async function executeUiTestInner(
           page: tc.page,
           action: tc.action,
         } as InfrastructureFailure,
-        durationMs: Date.now() - start,
+        durationMs: perfMs() - start,
       };
     }
     throw new Error(`Browser action failed: ${String(err)}`);
@@ -1321,7 +1322,7 @@ async function executeUiTestInner(
     occurrenceId,
     passed: bugs.length === 0,
     bugs,
-    durationMs: Date.now() - start,
+    durationMs: perfMs() - start,
     preState,
     postState,
     ...(interimState !== undefined ? { interimState } : {}),
@@ -1446,7 +1447,7 @@ async function executeUiTest(
    */
   loginPathHint?: string,
 ): Promise<TestResult> {
-  const start = Date.now();
+  const start = perfMs();
   const occurrenceId = createId();
   const headers = { 'X-BugHunter-Run': runId, ...(extraHeaders ?? {}) };
   const navTarget = tc.stateContext !== undefined ? tc.stateContext.baseRoute : tc.page;
@@ -1509,7 +1510,7 @@ async function executeUiTest(
               page: tc.page,
               action: tc.action,
             },
-            durationMs: Date.now() - start,
+            durationMs: perfMs() - start,
           } satisfies TestResult;
         }
       }
@@ -1532,7 +1533,7 @@ async function executeUiTest(
               page: tc.page,
               action: tc.action,
             },
-            durationMs: Date.now() - start,
+            durationMs: perfMs() - start,
           } satisfies TestResult;
         }
         const applyResult = await scope.applyNetworkFault(tc.faultInjected).catch((err: unknown) => {
@@ -1554,7 +1555,7 @@ async function executeUiTest(
               page: tc.page,
               action: tc.action,
             },
-            durationMs: Date.now() - start,
+            durationMs: perfMs() - start,
           } satisfies TestResult;
         }
       }
@@ -1638,7 +1639,7 @@ async function executeUiTest(
         page: tc.page,
         action: tc.action,
       },
-      durationMs: Date.now() - start,
+      durationMs: perfMs() - start,
     };
   } finally {
     try {
@@ -1663,7 +1664,7 @@ async function executeApiTest(
   appBaseUrl?: string,
   clock: Clock = { kind: 'wall' },
 ): Promise<ApiTestOutcome> {
-  const start = Date.now();
+  const start = perfMs();
   const bugs: BugDetection[] = [];
   const occurrenceId = createId();
   let capturedCall: SurfaceCallResult | undefined;
@@ -1824,7 +1825,7 @@ async function executeApiTest(
         occurrenceId,
         passed: bugs.length === 0,
         bugs,
-        durationMs: Date.now() - start,
+        durationMs: perfMs() - start,
       };
     }
   } catch (err) {
@@ -1843,7 +1844,7 @@ async function executeApiTest(
         page: tc.page,
         action: tc.action,
       },
-      durationMs: Date.now() - start,
+      durationMs: perfMs() - start,
     };
   } finally {
     // API occurrences only emit the action log; no screenshot/DOM/console/HAR.

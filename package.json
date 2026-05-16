@@ -13,6 +13,7 @@
     "test": "npm run test -w packages/cli",
     "lint": "eslint packages/*/src --max-warnings 0",
     "lint:fast": "ESLINT_FAST=1 eslint packages/*/src --max-warnings 0",
+    "lint:ci": "eslint packages/*/src",
     "test:self-test": "BUGHUNTER_SELF_TEST_RUN=1 node packages/cli/dist/cli/main.js self-test"
   },
   "devDependencies": {
